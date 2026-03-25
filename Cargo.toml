@@ -47,6 +47,10 @@ wfe-yaml = { path = "wfe-yaml" }
 serde_yaml = "0.9"
 regex = "1"
 
+# Deno runtime
+deno_core = "0.394"
+url = "2"
+
 # Dev/Test
 pretty_assertions = "1"
 rstest = "0.23"

@@ -71,6 +71,24 @@ fn validate_steps(
             }
         }
 
+        // Deno steps must have config with script or file.
+        if let Some(ref step_type) = step.step_type
+            && step_type == "deno"
+        {
+            let config = step.config.as_ref().ok_or_else(|| {
+                YamlWorkflowError::Validation(format!(
+                    "Deno step '{}' must have a 'config' section",
+                    step.name
+                ))
+            })?;
+            if config.script.is_none() && config.file.is_none() {
+                return Err(YamlWorkflowError::Validation(format!(
+                    "Deno step '{}' must have 'config.script' or 'config.file'",
+                    step.name
+                )));
+            }
+        }
+
         // Validate step-level error behavior.
         if let Some(ref eb) = step.error_behavior {
             validate_error_behavior_type(&eb.behavior_type)?;
