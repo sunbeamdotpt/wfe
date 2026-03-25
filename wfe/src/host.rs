@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 use wfe_core::executor::{StepRegistry, WorkflowExecutor};
 use wfe_core::models::{
@@ -202,6 +202,15 @@ impl WorkflowHost {
     }
 
     /// Start a new workflow instance.
+    #[tracing::instrument(
+        name = "workflow.start",
+        skip(self, data),
+        fields(
+            workflow.definition_id = %definition_id,
+            workflow.version = version,
+            workflow.id,
+        )
+    )]
     pub async fn start_workflow(
         &self,
         definition_id: &str,
@@ -226,6 +235,9 @@ impl WorkflowHost {
         // Persist the instance.
         let id = self.persistence.create_new_workflow(&instance).await?;
         instance.id = id.clone();
+        tracing::Span::current().record("workflow.id", id.as_str());
+
+        info!(workflow_id = %id, "Workflow instance created");
 
         // Queue for execution.
         self.queue_provider
@@ -236,6 +248,14 @@ impl WorkflowHost {
     }
 
     /// Publish an event that may resume waiting workflows.
+    #[tracing::instrument(
+        name = "event.publish",
+        skip(self, data),
+        fields(
+            event.name = %event_name,
+            event.key = %event_key,
+        )
+    )]
     pub async fn publish_event(
         &self,
         event_name: &str,
@@ -312,6 +332,11 @@ impl WorkflowHost {
 }
 
 /// Process an event: find matching subscriptions, set event_data on pointers, re-queue workflows.
+#[tracing::instrument(
+    name = "event.process",
+    skip(persistence, lock_provider, queue),
+    fields(event.id = %event_id)
+)]
 async fn process_event(
     persistence: &Arc<dyn PersistenceProvider>,
     lock_provider: &Arc<dyn DistributedLockProvider>,
