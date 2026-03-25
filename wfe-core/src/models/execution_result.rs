@@ -26,6 +26,9 @@ pub struct ExecutionResult {
     pub branch_values: Option<Vec<serde_json::Value>>,
     /// Poll endpoint configuration for external service polling.
     pub poll_endpoint: Option<PollEndpointConfig>,
+    /// Output data to merge into workflow.data after step completion.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_data: Option<serde_json::Value>,
 }
 
 impl ExecutionResult {

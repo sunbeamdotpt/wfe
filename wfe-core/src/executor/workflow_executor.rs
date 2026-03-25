@@ -214,6 +214,14 @@ impl WorkflowExecutor {
 
                     all_subscriptions.extend(process_result.subscriptions);
 
+                    // Merge output data into workflow.data.
+                    #[allow(clippy::collapsible_if)]
+                    if let Some(serde_json::Value::Object(out_map)) = process_result.output_data {
+                        if let serde_json::Value::Object(wf_map) = &mut workflow.data {
+                            wf_map.extend(out_map);
+                        }
+                    }
+
                     // Add new pointers.
                     for new_pointer in process_result.new_pointers {
                         workflow.execution_pointers.push(new_pointer);

@@ -201,6 +201,17 @@ impl WorkflowHost {
         sr.register::<S>();
     }
 
+    /// Register a step factory with an explicit key and factory function.
+    /// Used by wfe-yaml and other dynamic step sources.
+    pub async fn register_step_factory(
+        &self,
+        key: &str,
+        factory: impl Fn() -> Box<dyn StepBody> + Send + Sync + 'static,
+    ) {
+        let mut sr = self.step_registry.write().await;
+        sr.register_factory(key, factory);
+    }
+
     /// Start a new workflow instance.
     #[tracing::instrument(
         name = "workflow.start",
