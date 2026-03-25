@@ -106,7 +106,7 @@ impl WorkflowExecutor {
         let mut execution_errors = Vec::new();
 
         // 3. Find runnable execution pointers.
-        info!(
+        debug!(
             workflow_id,
             definition_id = %workflow.workflow_definition_id,
             pointers = workflow.execution_pointers.len(),
