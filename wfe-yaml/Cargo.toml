@@ -1,0 +1,22 @@
+[package]
+name = "wfe-yaml"
+version.workspace = true
+edition.workspace = true
+description = "YAML workflow definitions for WFE"
+
+[dependencies]
+wfe-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+regex = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
+tokio = { workspace = true, features = ["test-util", "process"] }
+wfe-core = { workspace = true, features = ["test-support"] }
+wfe = { path = "../wfe" }

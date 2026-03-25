@@ -1,5 +1,5 @@
 [workspace]
-members = ["wfe-core", "wfe-sqlite", "wfe-postgres", "wfe-opensearch", "wfe-valkey", "wfe"]
+members = ["wfe-core", "wfe-sqlite", "wfe-postgres", "wfe-opensearch", "wfe-valkey", "wfe", "wfe-yaml"]
 resolver = "2"
 
 [workspace.package]
@@ -41,6 +41,11 @@ wfe-sqlite = { path = "wfe-sqlite" }
 wfe-postgres = { path = "wfe-postgres" }
 wfe-opensearch = { path = "wfe-opensearch" }
 wfe-valkey = { path = "wfe-valkey" }
+wfe-yaml = { path = "wfe-yaml" }
+
+# YAML
+serde_yaml = "0.9"
+regex = "1"
 
 # Dev/Test
 pretty_assertions = "1"
