@@ -8,6 +8,7 @@ use crate::traits::step::{StepBody, StepExecutionContext};
 
 /// A step that repeatedly schedules child execution at an interval
 /// until a stop condition is met.
+#[derive(Default)]
 pub struct RecurStep {
     pub interval: Duration,
     pub stop_condition: bool,

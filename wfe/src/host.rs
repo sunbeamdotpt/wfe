@@ -33,8 +33,27 @@ pub struct WorkflowHost {
 }
 
 impl WorkflowHost {
+    /// Register all built-in primitive step types.
+    async fn register_primitives(&self) {
+        use wfe_core::primitives::*;
+        let mut sr = self.step_registry.write().await;
+        sr.register::<decide::DecideStep>();
+        sr.register::<delay::DelayStep>();
+        sr.register::<end_step::EndStep>();
+        sr.register::<foreach_step::ForEachStep>();
+        sr.register::<if_step::IfStep>();
+        sr.register::<poll_endpoint::PollEndpointStep>();
+        sr.register::<recur::RecurStep>();
+        sr.register::<saga_container::SagaContainerStep>();
+        sr.register::<schedule::ScheduleStep>();
+        sr.register::<sequence::SequenceStep>();
+        sr.register::<wait_for::WaitForStep>();
+        sr.register::<while_step::WhileStep>();
+    }
+
     /// Spawn background polling tasks for processing workflows and events.
     pub async fn start(&self) -> Result<()> {
+        self.register_primitives().await;
         self.queue_provider.start().await?;
         self.lock_provider.start().await?;
         if let Some(ref search) = self.search {

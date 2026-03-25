@@ -444,6 +444,13 @@ fn build_pizza_workflow() -> WorkflowDefinition {
 
 #[tokio::main]
 async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    // Set up tracing so we can see the executor's step-by-step logging.
+    tracing_subscriber::fmt()
+        .with_target(false)
+        .with_timer(tracing_subscriber::fmt::time::uptime())
+        .with_env_filter("wfe_core=info,wfe=info")
+        .init();
+
     println!("=== WFE Pizza Workflow Engine Demo ===\n");
 
     // Build the host with in-memory providers (swap for SQLite/Postgres/Valkey in prod)

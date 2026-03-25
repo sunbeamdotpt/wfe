@@ -3,8 +3,9 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HttpMethod {
+    #[default]
     Get,
     Post,
     Put,
@@ -25,7 +26,13 @@ pub enum PollCondition {
     BodyContains(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+impl Default for PollCondition {
+    fn default() -> Self {
+        Self::StatusCode(200)
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct PollEndpointConfig {
     /// URL template. Supports `{placeholder}` interpolation from workflow data.
     pub url: String,

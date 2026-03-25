@@ -6,6 +6,7 @@ use crate::traits::step::{StepBody, StepExecutionContext};
 
 /// A step that polls an external HTTP endpoint until a condition is met.
 /// The actual HTTP polling is handled by the executor, not this step.
+#[derive(Default)]
 pub struct PollEndpointStep {
     pub config: PollEndpointConfig,
 }

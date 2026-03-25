@@ -17,6 +17,8 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 tokio-util = "0.7"
 
+tracing-subscriber = { workspace = true }
+
 [dev-dependencies]
 wfe-core = { workspace = true, features = ["test-support"] }
 wfe-sqlite = { workspace = true }

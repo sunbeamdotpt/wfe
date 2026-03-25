@@ -4,6 +4,7 @@ use crate::models::ExecutionResult;
 use crate::traits::step::{StepBody, StepExecutionContext};
 
 /// A no-op marker step indicating the end of a workflow branch.
+#[derive(Default)]
 pub struct EndStep;
 
 #[async_trait]
