@@ -277,12 +277,13 @@ fn build_shell_config(step: &YamlStep) -> Result<ShellConfig, YamlWorkflowError>
 
 fn parse_duration_ms(s: &str) -> Option<u64> {
     let s = s.trim();
-    if let Some(secs) = s.strip_suffix('s') {
+    // Check "ms" before "s" since strip_suffix('s') would also match "500ms"
+    if let Some(ms) = s.strip_suffix("ms") {
+        ms.trim().parse::<u64>().ok()
+    } else if let Some(secs) = s.strip_suffix('s') {
         secs.trim().parse::<u64>().ok().map(|v| v * 1000)
     } else if let Some(mins) = s.strip_suffix('m') {
         mins.trim().parse::<u64>().ok().map(|v| v * 60 * 1000)
-    } else if let Some(ms) = s.strip_suffix("ms") {
-        ms.trim().parse::<u64>().ok()
     } else {
         s.parse::<u64>().ok()
     }

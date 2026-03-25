@@ -75,3 +75,44 @@ merged:
     assert!(result.contains("&default"));
     assert!(result.contains("*default"));
 }
+
+#[test]
+fn null_value_interpolated_as_null_string() {
+    let mut config = HashMap::new();
+    config.insert("val".to_string(), serde_json::Value::Null);
+
+    let result = interpolate("value: ((val))", &config).unwrap();
+    assert_eq!(result, "value: null");
+}
+
+#[test]
+fn boolean_value_interpolated() {
+    let mut config = HashMap::new();
+    config.insert("flag".to_string(), serde_json::json!(true));
+
+    let result = interpolate("enabled: ((flag))", &config).unwrap();
+    assert_eq!(result, "enabled: true");
+}
+
+#[test]
+fn nested_path_unresolved_segment_returns_error() {
+    let mut config = HashMap::new();
+    config.insert(
+        "config".to_string(),
+        serde_json::json!({"database": {"host": "localhost"}}),
+    );
+
+    let result = interpolate("port: ((config.database.port))", &config);
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("config.database.port"));
+}
+
+#[test]
+fn numeric_value_interpolated() {
+    let mut config = HashMap::new();
+    config.insert("count".to_string(), serde_json::json!(42));
+
+    let result = interpolate("count: ((count))", &config).unwrap();
+    assert_eq!(result, "count: 42");
+}
