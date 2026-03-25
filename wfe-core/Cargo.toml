@@ -1,0 +1,26 @@
+[package]
+name = "wfe-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Core traits, models, builder, and executor for the WFE workflow engine"
+
+[features]
+default = []
+test-support = []
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tokio-util = "0.7"
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
+rstest = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
