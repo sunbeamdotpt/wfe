@@ -4,10 +4,12 @@ use crate::models::{
     EventSubscription, ExecutionPointer, ExecutionResult, PointerStatus, WorkflowDefinition,
 };
 
-/// Outcome of processing an ExecutionResult: new pointers and optional subscriptions.
+/// Outcome of processing an ExecutionResult: new pointers, subscriptions, and output data.
 pub struct ProcessResult {
     pub new_pointers: Vec<ExecutionPointer>,
     pub subscriptions: Vec<EventSubscription>,
+    /// Output data to merge into workflow.data (from step's output_data field).
+    pub output_data: Option<serde_json::Value>,
 }
 
 /// Process an ExecutionResult and update the pointer accordingly.
@@ -113,6 +115,7 @@ pub fn process_result(
     ProcessResult {
         new_pointers,
         subscriptions,
+        output_data: result.output_data.clone(),
     }
 }
 
