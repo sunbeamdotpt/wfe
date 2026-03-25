@@ -49,6 +49,7 @@ regex = "1"
 
 # Deno runtime
 deno_core = "0.394"
+deno_error = "0.7"
 url = "2"
 
 # Dev/Test
@@ -56,3 +57,4 @@ pretty_assertions = "1"
 rstest = "0.23"
 wiremock = "0.6"
 tokio-stream = "0.1"
+tempfile = "3"

@@ -51,6 +51,8 @@ impl StepBody for DenoStep {
 
         let config = self.config.clone();
         let timeout_ms = self.config.timeout_ms;
+        let use_module = needs_module_evaluation(&source);
+        let file_path = self.config.file.clone();
 
         // JsRuntime is !Send, so we run it on a dedicated thread with its own
         // single-threaded tokio runtime.
@@ -63,8 +65,19 @@ impl StepBody for DenoStep {
                 })?;
 
             rt.block_on(async move {
-                run_script_inner(&config, workflow_data, &step_name, &source, timeout_ms)
+                if use_module {
+                    run_module_inner(
+                        &config,
+                        workflow_data,
+                        &step_name,
+                        &source,
+                        file_path.as_deref(),
+                        timeout_ms,
+                    )
                     .await
+                } else {
+                    run_script_inner(&config, workflow_data, &step_name, &source, timeout_ms).await
+                }
             })
         });
 
@@ -77,6 +90,13 @@ impl StepBody for DenoStep {
         .await
         .map_err(|e| WfeError::StepExecution(format!("Join error: {e}")))?
     }
+}
+
+/// Check if the source code uses ES module syntax or top-level await.
+fn needs_module_evaluation(source: &str) -> bool {
+    // Top-level await requires module evaluation. ES import/export also require it.
+    source.contains("import ") || source.contains("import(") || source.contains("export ")
+        || source.contains("await ")
 }
 
 async fn run_script_inner(
@@ -130,7 +150,100 @@ async fn run_script_inner(
             }
         })?;
 
-    // Extract outputs from OpState.
+    extract_outputs(&mut runtime)
+}
+
+async fn run_module_inner(
+    config: &DenoConfig,
+    workflow_data: serde_json::Value,
+    step_name: &str,
+    source: &str,
+    file_path: Option<&str>,
+    timeout_ms: Option<u64>,
+) -> wfe_core::Result<ExecutionResult> {
+    let mut runtime = create_runtime(config, workflow_data, step_name)?;
+
+    let _timeout_guard = timeout_ms.map(|ms| {
+        let isolate_handle = runtime.v8_isolate().thread_safe_handle();
+        let duration = std::time::Duration::from_millis(ms);
+        std::thread::spawn(move || {
+            std::thread::sleep(duration);
+            isolate_handle.terminate_execution();
+        })
+    });
+
+    // Determine the module URL. Use the file path if available, otherwise a synthetic URL.
+    let module_url = if let Some(path) = file_path {
+        let abs = std::path::Path::new(path);
+        let abs = if abs.is_absolute() {
+            abs.to_path_buf()
+        } else {
+            std::env::current_dir()
+                .map_err(|e| WfeError::StepExecution(format!("Cannot get cwd: {e}")))?
+                .join(abs)
+        };
+        url::Url::from_file_path(&abs)
+            .map_err(|_| {
+                WfeError::StepExecution(format!("Cannot convert path to URL: {}", abs.display()))
+            })?
+            .to_string()
+    } else {
+        "wfe:///inline-module.js".to_string()
+    };
+
+    let specifier = deno_core::ModuleSpecifier::parse(&module_url).map_err(|e| {
+        WfeError::StepExecution(format!("Invalid module URL '{module_url}': {e}"))
+    })?;
+
+    let module_id = runtime
+        .load_main_es_module_from_code(&specifier, source.to_string())
+        .await
+        .map_err(|e| {
+            let msg = e.to_string();
+            if msg.contains("terminated") {
+                WfeError::StepExecution(format!(
+                    "Deno script timed out after {}ms",
+                    timeout_ms.unwrap_or(0)
+                ))
+            } else {
+                WfeError::StepExecution(format!("Deno module load error: {e}"))
+            }
+        })?;
+
+    let eval_future = runtime.mod_evaluate(module_id);
+
+    // Drive the event loop to resolve imports and execute the module.
+    runtime
+        .run_event_loop(Default::default())
+        .await
+        .map_err(|e| {
+            let msg = e.to_string();
+            if msg.contains("terminated") {
+                WfeError::StepExecution(format!(
+                    "Deno script timed out after {}ms",
+                    timeout_ms.unwrap_or(0)
+                ))
+            } else {
+                WfeError::StepExecution(format!("Deno event loop error: {e}"))
+            }
+        })?;
+
+    eval_future.await.map_err(|e| {
+        let msg = e.to_string();
+        if msg.contains("terminated") {
+            WfeError::StepExecution(format!(
+                "Deno script timed out after {}ms",
+                timeout_ms.unwrap_or(0)
+            ))
+        } else {
+            WfeError::StepExecution(format!("Deno module error: {e}"))
+        }
+    })?;
+
+    extract_outputs(&mut runtime)
+}
+
+fn extract_outputs(runtime: &mut deno_core::JsRuntime) -> wfe_core::Result<ExecutionResult> {
     let outputs = {
         let state = runtime.op_state();
         let mut state = state.borrow_mut();
