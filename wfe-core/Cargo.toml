@@ -8,8 +8,11 @@ description = "Core traits, models, builder, and executor for the WFE workflow e
 [features]
 default = []
 test-support = []
+otel = ["tracing-opentelemetry", "opentelemetry"]
 
 [dependencies]
+tracing-opentelemetry = { workspace = true, optional = true }
+opentelemetry = { workspace = true, optional = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -59,6 +59,15 @@ impl WorkflowExecutor {
     /// 6. Check for completion
     /// 7. Persist
     /// 8. Release lock
+    #[tracing::instrument(
+        name = "workflow.execute",
+        skip(self, definition, step_registry),
+        fields(
+            workflow.id = %workflow_id,
+            workflow.definition_id,
+            workflow.status,
+        )
+    )]
     pub async fn execute(
         &self,
         workflow_id: &str,
@@ -95,6 +104,8 @@ impl WorkflowExecutor {
             .persistence
             .get_workflow_instance(workflow_id)
             .await?;
+
+        tracing::Span::current().record("workflow.definition_id", workflow.workflow_definition_id.as_str());
 
         if workflow.status != WorkflowStatus::Runnable {
             debug!(workflow_id, status = ?workflow.status, "Workflow not runnable, skipping");
@@ -170,6 +181,15 @@ impl WorkflowExecutor {
             // Now we can mutate again since context is dropped.
             match step_result {
                 Ok(result) => {
+                    let step_status = if result.sleep_for.is_some() {
+                        "sleeping"
+                    } else if result.event_name.is_some() {
+                        "waiting_for_event"
+                    } else {
+                        "completed"
+                    };
+                    tracing::Span::current().record("step.status", step_status);
+
                     info!(
                         workflow_id,
                         step_id,
@@ -202,6 +222,7 @@ impl WorkflowExecutor {
                 Err(e) => {
                     // f. Handle error.
                     let error_msg = e.to_string();
+                    tracing::Span::current().record("step.status", "failed");
                     warn!(workflow_id, step_id, error = %error_msg, "Step execution failed");
 
                     let pointer_id = workflow.execution_pointers[idx].id.clone();
@@ -252,6 +273,8 @@ impl WorkflowExecutor {
             workflow.status = WorkflowStatus::Complete;
             workflow.complete_time = Some(Utc::now());
         }
+
+        tracing::Span::current().record("workflow.status", tracing::field::debug(&workflow.status));
 
         // Determine next_execution.
         let has_active = workflow.execution_pointers.iter().any(|p| p.active);
