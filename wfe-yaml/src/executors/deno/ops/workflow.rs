@@ -46,7 +46,7 @@ pub fn op_log(state: &mut OpState, #[string] msg: String) {
 
 deno_core::extension!(
     wfe_ops,
-    ops = [op_inputs, op_output, op_log],
+    ops = [op_inputs, op_output, op_log, super::http::op_fetch],
     esm_entry_point = "ext:wfe/bootstrap.js",
     esm = ["ext:wfe/bootstrap.js" = "src/executors/deno/js/bootstrap.js"],
 );

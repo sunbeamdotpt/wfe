@@ -1,4 +1,5 @@
 pub mod config;
+pub mod module_loader;
 pub mod ops;
 pub mod permissions;
 pub mod runtime;

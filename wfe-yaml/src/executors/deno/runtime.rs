@@ -1,10 +1,13 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use deno_core::JsRuntime;
 use deno_core::RuntimeOptions;
 use wfe_core::WfeError;
 
 use super::config::DenoConfig;
+use super::module_loader::WfeModuleLoader;
 use super::ops::workflow::{wfe_ops, StepMeta, StepOutputs, WorkflowInputs};
 use super::permissions::PermissionChecker;
 
@@ -16,8 +19,18 @@ pub fn create_runtime(
 ) -> Result<JsRuntime, WfeError> {
     let ext = wfe_ops::init();
 
+    // Build permissions, auto-adding esm.sh if modules are declared.
+    let mut permissions = config.permissions.clone();
+    if !config.modules.is_empty() && !permissions.net.iter().any(|h| h == "esm.sh") {
+        permissions.net.push("esm.sh".to_string());
+    }
+
+    let checker = Rc::new(RefCell::new(PermissionChecker::from_config(&permissions)));
+    let module_loader = WfeModuleLoader::new(checker.clone());
+
     let runtime = JsRuntime::new(RuntimeOptions {
         extensions: vec![ext],
+        module_loader: Some(Rc::new(module_loader)),
         ..Default::default()
     });
 
@@ -34,10 +47,16 @@ pub fn create_runtime(
         state.put(StepMeta {
             name: step_name.to_string(),
         });
-        state.put(PermissionChecker::from_config(&config.permissions));
+        state.put(PermissionChecker::from_config(&permissions));
     }
 
     Ok(runtime)
+}
+
+/// Returns whether esm.sh would be auto-added for the given config.
+/// Exposed for testing.
+pub fn would_auto_add_esm_sh(config: &DenoConfig) -> bool {
+    !config.modules.is_empty() && !config.permissions.net.iter().any(|h| h == "esm.sh")
 }
 
 #[cfg(test)]
@@ -77,5 +96,47 @@ mod tests {
         assert_eq!(inputs.data, serde_json::json!({"key": "val"}));
         let meta = state.borrow::<StepMeta>();
         assert_eq!(meta.name, "my-step");
+    }
+
+    #[test]
+    fn auto_add_esm_sh_when_modules_declared() {
+        let config = DenoConfig {
+            script: Some("1".to_string()),
+            file: None,
+            permissions: DenoPermissions::default(),
+            modules: vec!["npm:lodash@4".to_string()],
+            env: HashMap::new(),
+            timeout_ms: None,
+        };
+        assert!(would_auto_add_esm_sh(&config));
+    }
+
+    #[test]
+    fn no_auto_add_esm_sh_when_no_modules() {
+        let config = DenoConfig {
+            script: Some("1".to_string()),
+            file: None,
+            permissions: DenoPermissions::default(),
+            modules: vec![],
+            env: HashMap::new(),
+            timeout_ms: None,
+        };
+        assert!(!would_auto_add_esm_sh(&config));
+    }
+
+    #[test]
+    fn no_auto_add_esm_sh_when_already_present() {
+        let config = DenoConfig {
+            script: Some("1".to_string()),
+            file: None,
+            permissions: DenoPermissions {
+                net: vec!["esm.sh".to_string()],
+                ..Default::default()
+            },
+            modules: vec!["npm:lodash@4".to_string()],
+            env: HashMap::new(),
+            timeout_ms: None,
+        };
+        assert!(!would_auto_add_esm_sh(&config));
     }
 }
