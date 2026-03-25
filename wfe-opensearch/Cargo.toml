@@ -1,0 +1,25 @@
+[package]
+name = "wfe-opensearch"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OpenSearch index provider for WFE"
+
+[dependencies]
+wfe-core = { workspace = true }
+opensearch = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+wfe-core = { workspace = true, features = ["test-support"] }
+pretty_assertions = { workspace = true }
+rstest = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
+uuid = { workspace = true }
+chrono = { workspace = true }
+opensearch = { workspace = true }
