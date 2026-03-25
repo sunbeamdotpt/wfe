@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use chrono::Utc;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 use super::error_handler;
 use super::result_processor;
@@ -106,6 +106,12 @@ impl WorkflowExecutor {
         let mut execution_errors = Vec::new();
 
         // 3. Find runnable execution pointers.
+        info!(
+            workflow_id,
+            definition_id = %workflow.workflow_definition_id,
+            pointers = workflow.execution_pointers.len(),
+            "Executing workflow"
+        );
         let runnable_indices: Vec<usize> = workflow
             .execution_pointers
             .iter()
@@ -124,6 +130,14 @@ impl WorkflowExecutor {
                 .iter()
                 .find(|s| s.id == step_id)
                 .ok_or(WfeError::StepNotFound(step_id))?;
+
+            info!(
+                workflow_id,
+                step_id,
+                step_type = %step.step_type,
+                step_name = step.name.as_deref().unwrap_or("(unnamed)"),
+                "Running step"
+            );
 
             // b. Resolve the step body.
             let mut step_body = step_registry
@@ -156,6 +170,15 @@ impl WorkflowExecutor {
             // Now we can mutate again since context is dropped.
             match step_result {
                 Ok(result) => {
+                    info!(
+                        workflow_id,
+                        step_id,
+                        proceed = result.proceed,
+                        has_sleep = result.sleep_for.is_some(),
+                        has_event = result.event_name.is_some(),
+                        has_branches = result.branch_values.is_some(),
+                        "Step completed"
+                    );
                     // e. Process the ExecutionResult.
                     // Extract workflow_id before mutable borrow.
                     let wf_id = workflow.id.clone();
@@ -225,6 +248,7 @@ impl WorkflowExecutor {
             });
 
         if all_done && workflow.status == WorkflowStatus::Runnable {
+            info!(workflow_id, "All pointers complete, workflow finished");
             workflow.status = WorkflowStatus::Complete;
             workflow.complete_time = Some(Utc::now());
         }

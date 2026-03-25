@@ -6,6 +6,7 @@ use crate::traits::step::{StepBody, StepExecutionContext};
 
 /// A container step that executes its children sequentially.
 /// Completes when all children have finished.
+#[derive(Default)]
 pub struct SequenceStep;
 
 #[async_trait]

@@ -7,6 +7,7 @@ use crate::models::ExecutionResult;
 use crate::traits::step::{StepBody, StepExecutionContext};
 
 /// A step that schedules child execution after a delay.
+#[derive(Default)]
 pub struct ScheduleStep {
     pub interval: Duration,
 }
