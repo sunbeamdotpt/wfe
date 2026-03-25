@@ -6,6 +6,8 @@ use wfe_core::traits::StepBody;
 
 use crate::error::YamlWorkflowError;
 use crate::executors::shell::{ShellConfig, ShellStep};
+#[cfg(feature = "deno")]
+use crate::executors::deno::{DenoConfig, DenoPermissions, DenoStep};
 use crate::schema::{WorkflowSpec, YamlErrorBehavior, YamlStep};
 
 /// Factory type alias for step creation closures.
@@ -69,20 +71,24 @@ fn compile_steps(
             definition.steps.push(container);
             main_step_ids.push(container_id);
         } else {
-            // Regular step (shell).
+            // Regular step.
             let step_id = *next_id;
             *next_id += 1;
 
-            let step_type_key = format!("wfe_yaml::shell::{}", yaml_step.name);
-            let config = build_shell_config(yaml_step)?;
+            let step_type = yaml_step
+                .step_type
+                .as_deref()
+                .unwrap_or("shell");
+
+            let (step_type_key, step_config_value, factory): (
+                String,
+                serde_json::Value,
+                StepFactory,
+            ) = build_step_config_and_factory(yaml_step, step_type)?;
 
             let mut wf_step = WorkflowStep::new(step_id, &step_type_key);
             wf_step.name = Some(yaml_step.name.clone());
-            wf_step.step_config = Some(serde_json::to_value(&config).map_err(|e| {
-                YamlWorkflowError::Compilation(format!(
-                    "Failed to serialize shell config: {e}"
-                ))
-            })?);
+            wf_step.step_config = Some(step_config_value);
 
             if let Some(ref eb) = yaml_step.error_behavior {
                 wf_step.error_behavior = Some(map_error_behavior(eb)?);
@@ -93,31 +99,22 @@ fn compile_steps(
                 let comp_id = *next_id;
                 *next_id += 1;
 
-                let comp_key = format!("wfe_yaml::shell::{}", on_failure.name);
-                let comp_config = build_shell_config(on_failure)?;
+                let on_failure_type = on_failure
+                    .step_type
+                    .as_deref()
+                    .unwrap_or("shell");
+                let (comp_key, comp_config_value, comp_factory) =
+                    build_step_config_and_factory(on_failure, on_failure_type)?;
 
                 let mut comp_step = WorkflowStep::new(comp_id, &comp_key);
                 comp_step.name = Some(on_failure.name.clone());
-                comp_step.step_config =
-                    Some(serde_json::to_value(&comp_config).map_err(|e| {
-                        YamlWorkflowError::Compilation(format!(
-                            "Failed to serialize shell config: {e}"
-                        ))
-                    })?);
+                comp_step.step_config = Some(comp_config_value);
 
                 wf_step.compensation_step_id = Some(comp_id);
                 wf_step.error_behavior = Some(ErrorBehavior::Compensate);
 
                 definition.steps.push(comp_step);
-
-                let comp_config_clone = comp_config.clone();
-                factories.push((
-                    comp_key,
-                    Box::new(move || {
-                        Box::new(ShellStep::new(comp_config_clone.clone()))
-                            as Box<dyn StepBody>
-                    }),
-                ));
+                factories.push((comp_key, comp_factory));
             }
 
             // Handle on_success: insert between this step and the next.
@@ -125,17 +122,16 @@ fn compile_steps(
                 let success_id = *next_id;
                 *next_id += 1;
 
-                let success_key = format!("wfe_yaml::shell::{}", on_success.name);
-                let success_config = build_shell_config(on_success)?;
+                let on_success_type = on_success
+                    .step_type
+                    .as_deref()
+                    .unwrap_or("shell");
+                let (success_key, success_config_value, success_factory) =
+                    build_step_config_and_factory(on_success, on_success_type)?;
 
                 let mut success_step = WorkflowStep::new(success_id, &success_key);
                 success_step.name = Some(on_success.name.clone());
-                success_step.step_config =
-                    Some(serde_json::to_value(&success_config).map_err(|e| {
-                        YamlWorkflowError::Compilation(format!(
-                            "Failed to serialize shell config: {e}"
-                        ))
-                    })?);
+                success_step.step_config = Some(success_config_value);
 
                 // Wire main step -> on_success step.
                 wf_step.outcomes.push(StepOutcome {
@@ -145,15 +141,7 @@ fn compile_steps(
                 });
 
                 definition.steps.push(success_step);
-
-                let success_config_clone = success_config.clone();
-                factories.push((
-                    success_key,
-                    Box::new(move || {
-                        Box::new(ShellStep::new(success_config_clone.clone()))
-                            as Box<dyn StepBody>
-                    }),
-                ));
+                factories.push((success_key, success_factory));
             }
 
             // Handle ensure: create an ensure step wired after both paths.
@@ -161,17 +149,16 @@ fn compile_steps(
                 let ensure_id = *next_id;
                 *next_id += 1;
 
-                let ensure_key = format!("wfe_yaml::shell::{}", ensure.name);
-                let ensure_config = build_shell_config(ensure)?;
+                let ensure_type = ensure
+                    .step_type
+                    .as_deref()
+                    .unwrap_or("shell");
+                let (ensure_key, ensure_config_value, ensure_factory) =
+                    build_step_config_and_factory(ensure, ensure_type)?;
 
                 let mut ensure_step = WorkflowStep::new(ensure_id, &ensure_key);
                 ensure_step.name = Some(ensure.name.clone());
-                ensure_step.step_config =
-                    Some(serde_json::to_value(&ensure_config).map_err(|e| {
-                        YamlWorkflowError::Compilation(format!(
-                            "Failed to serialize shell config: {e}"
-                        ))
-                    })?);
+                ensure_step.step_config = Some(ensure_config_value);
 
                 // Wire main step -> ensure (if no on_success already).
                 if yaml_step.on_success.is_none() {
@@ -183,27 +170,13 @@ fn compile_steps(
                 }
 
                 definition.steps.push(ensure_step);
-
-                let ensure_config_clone = ensure_config.clone();
-                factories.push((
-                    ensure_key,
-                    Box::new(move || {
-                        Box::new(ShellStep::new(ensure_config_clone.clone()))
-                            as Box<dyn StepBody>
-                    }),
-                ));
+                factories.push((ensure_key, ensure_factory));
             }
 
             definition.steps.push(wf_step);
 
             // Register factory for main step.
-            let config_clone = config.clone();
-            factories.push((
-                step_type_key,
-                Box::new(move || {
-                    Box::new(ShellStep::new(config_clone.clone())) as Box<dyn StepBody>
-                }),
-            ));
+            factories.push((step_type_key, factory));
 
             main_step_ids.push(step_id);
         }
@@ -241,6 +214,90 @@ fn compile_steps(
     }
 
     Ok(main_step_ids)
+}
+
+fn build_step_config_and_factory(
+    step: &YamlStep,
+    step_type: &str,
+) -> Result<(String, serde_json::Value, StepFactory), YamlWorkflowError> {
+    match step_type {
+        "shell" => {
+            let config = build_shell_config(step)?;
+            let key = format!("wfe_yaml::shell::{}", step.name);
+            let value = serde_json::to_value(&config).map_err(|e| {
+                YamlWorkflowError::Compilation(format!(
+                    "Failed to serialize shell config: {e}"
+                ))
+            })?;
+            let config_clone = config.clone();
+            let factory: StepFactory = Box::new(move || {
+                Box::new(ShellStep::new(config_clone.clone())) as Box<dyn StepBody>
+            });
+            Ok((key, value, factory))
+        }
+        #[cfg(feature = "deno")]
+        "deno" => {
+            let config = build_deno_config(step)?;
+            let key = format!("wfe_yaml::deno::{}", step.name);
+            let value = serde_json::to_value(&config).map_err(|e| {
+                YamlWorkflowError::Compilation(format!(
+                    "Failed to serialize deno config: {e}"
+                ))
+            })?;
+            let config_clone = config.clone();
+            let factory: StepFactory = Box::new(move || {
+                Box::new(DenoStep::new(config_clone.clone())) as Box<dyn StepBody>
+            });
+            Ok((key, value, factory))
+        }
+        other => Err(YamlWorkflowError::Compilation(format!(
+            "Unknown step type: '{other}'"
+        ))),
+    }
+}
+
+#[cfg(feature = "deno")]
+fn build_deno_config(step: &YamlStep) -> Result<DenoConfig, YamlWorkflowError> {
+    let config = step.config.as_ref().ok_or_else(|| {
+        YamlWorkflowError::Compilation(format!(
+            "Deno step '{}' is missing 'config' section",
+            step.name
+        ))
+    })?;
+
+    let script = config.script.clone();
+    let file = config.file.clone();
+
+    if script.is_none() && file.is_none() {
+        return Err(YamlWorkflowError::Compilation(format!(
+            "Deno step '{}' must have 'script' or 'file' in config",
+            step.name
+        )));
+    }
+
+    let timeout_ms = config.timeout.as_ref().and_then(|t| parse_duration_ms(t));
+
+    let permissions = config
+        .permissions
+        .as_ref()
+        .map(|p| DenoPermissions {
+            net: p.net.clone(),
+            read: p.read.clone(),
+            write: p.write.clone(),
+            env: p.env.clone(),
+            run: p.run,
+            dynamic_import: p.dynamic_import,
+        })
+        .unwrap_or_default();
+
+    Ok(DenoConfig {
+        script,
+        file,
+        permissions,
+        modules: config.modules.clone(),
+        env: config.env.clone(),
+        timeout_ms,
+    })
 }
 
 fn build_shell_config(step: &YamlStep) -> Result<ShellConfig, YamlWorkflowError> {

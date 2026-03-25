@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 description = "YAML workflow definitions for WFE"
 
+[features]
+default = []
+deno = ["deno_core", "url"]
+
 [dependencies]
 wfe-core = { workspace = true }
 serde = { workspace = true }
@@ -14,9 +18,12 @@ tokio = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 regex = { workspace = true }
+deno_core = { workspace = true, optional = true }
+url = { workspace = true, optional = true }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "process"] }
+tokio-util = "0.7"
 wfe-core = { workspace = true, features = ["test-support"] }
 wfe = { path = "../wfe" }

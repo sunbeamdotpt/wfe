@@ -54,6 +54,27 @@ pub struct StepConfig {
     pub env: HashMap<String, String>,
     pub timeout: Option<String>,
     pub working_dir: Option<String>,
+    #[serde(default)]
+    pub permissions: Option<DenoPermissionsYaml>,
+    #[serde(default)]
+    pub modules: Vec<String>,
+}
+
+/// YAML-level permission configuration for Deno steps.
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct DenoPermissionsYaml {
+    #[serde(default)]
+    pub net: Vec<String>,
+    #[serde(default)]
+    pub read: Vec<String>,
+    #[serde(default)]
+    pub write: Vec<String>,
+    #[serde(default)]
+    pub env: Vec<String>,
+    #[serde(default)]
+    pub run: bool,
+    #[serde(default)]
+    pub dynamic_import: bool,
 }
 
 #[derive(Debug, Deserialize)]
