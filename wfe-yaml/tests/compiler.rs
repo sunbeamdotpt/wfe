@@ -223,3 +223,592 @@ workflow:
     assert_eq!(test_config.run, "cargo build");
     assert_eq!(test_config.shell, "bash", "shell should be inherited from YAML anchor alias");
 }
+
+#[test]
+fn on_success_creates_step_wired_after_main() {
+    let yaml = r#"
+workflow:
+  id: success-hook-wf
+  version: 1
+  steps:
+    - name: build
+      type: shell
+      config:
+        run: cargo build
+      on_success:
+        name: notify
+        type: shell
+        config:
+          run: echo "build succeeded"
+"#;
+    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+
+    let build = compiled
+        .definition
+        .steps
+        .iter()
+        .find(|s| s.name.as_deref() == Some("build"))
+        .unwrap();
+    let notify = compiled
+        .definition
+        .steps
+        .iter()
+        .find(|s| s.name.as_deref() == Some("notify"))
+        .unwrap();
+
+    // build should have an outcome pointing to notify with label "success".
+    assert_eq!(build.outcomes.len(), 1);
+    assert_eq!(build.outcomes[0].next_step, notify.id);
+    assert_eq!(build.outcomes[0].label.as_deref(), Some("success"));
+}
+
+#[test]
+fn ensure_creates_step_wired_after_main() {
+    let yaml = r#"
+workflow:
+  id: ensure-wf
+  version: 1
+  steps:
+    - name: deploy
+      type: shell
+      config:
+        run: deploy.sh
+      ensure:
+        name: cleanup
+        type: shell
+        config:
+          run: cleanup.sh
+"#;
+    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+
+    let deploy = compiled
+        .definition
+        .steps
+        .iter()
+        .find(|s| s.name.as_deref() == Some("deploy"))
+        .unwrap();
+    let cleanup = compiled
+        .definition
+        .steps
+        .iter()
+        .find(|s| s.name.as_deref() == Some("cleanup"))
+        .unwrap();
+
+    // deploy should have an outcome pointing to cleanup with label "ensure".
+    assert_eq!(deploy.outcomes.len(), 1);
+    assert_eq!(deploy.outcomes[0].next_step, cleanup.id);
+    assert_eq!(deploy.outcomes[0].label.as_deref(), Some("ensure"));
+}
+
+#[test]
+fn ensure_not_wired_when_on_success_present() {
+    let yaml = r#"
+workflow:
+  id: both-hooks-wf
+  version: 1
+  steps:
+    - name: deploy
+      type: shell
+      config:
+        run: deploy.sh
+      on_success:
+        name: notify
+        type: shell
+        config:
+          run: echo ok
+      ensure:
+        name: cleanup
+        type: shell
+        config:
+          run: cleanup.sh
+"#;
+    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+
+    let deploy = compiled
+        .definition
+        .steps
+        .iter()
+        .find(|s| s.name.as_deref() == Some("deploy"))
+        .unwrap();
+
+    // When on_success is present, ensure should NOT add another outcome to the main step.
+    // Only the on_success outcome should be there.
+    assert_eq!(deploy.outcomes.len(), 1);
+    assert_eq!(deploy.outcomes[0].label.as_deref(), Some("success"));
+}
+
+#[test]
+fn error_behavior_terminate_maps_correctly() {
+    let yaml = r#"
+workflow:
+  id: terminate-wf
+  version: 1
+  error_behavior:
+    type: terminate
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+"#;
+    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    assert_eq!(
+        compiled.definition.default_error_behavior,
+        ErrorBehavior::Terminate
+    );
+}
+
+#[test]
+fn error_behavior_compensate_maps_correctly() {
+    let yaml = r#"
+workflow:
+  id: compensate-wf
+  version: 1
+  error_behavior:
+    type: compensate
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+"#;
+    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    assert_eq!(
+        compiled.definition.default_error_behavior,
+        ErrorBehavior::Compensate
+    );
+}
+
+#[test]
+fn error_behavior_retry_defaults() {
+    // retry with no interval or max_retries should use defaults.
+    let yaml = r#"
+workflow:
+  id: retry-defaults-wf
+  version: 1
+  error_behavior:
+    type: retry
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+"#;
+    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    assert_eq!(
+        compiled.definition.default_error_behavior,
+        ErrorBehavior::Retry {
+            interval: Duration::from_secs(60),
+            max_retries: 3,
+        }
+    );
+}
+
+#[test]
+fn error_behavior_retry_with_minute_interval() {
+    let yaml = r#"
+workflow:
+  id: retry-min-wf
+  version: 1
+  error_behavior:
+    type: retry
+    interval: 2m
+    max_retries: 5
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+"#;
+    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    assert_eq!(
+        compiled.definition.default_error_behavior,
+        ErrorBehavior::Retry {
+            interval: Duration::from_millis(2 * 60 * 1000),
+            max_retries: 5,
+        }
+    );
+}
+
+#[test]
+fn error_behavior_retry_with_raw_number_interval() {
+    // When interval is a raw number (no suffix), it is treated as milliseconds.
+    let yaml = r#"
+workflow:
+  id: retry-raw-wf
+  version: 1
+  error_behavior:
+    type: retry
+    interval: "500"
+    max_retries: 2
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+"#;
+    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    assert_eq!(
+        compiled.definition.default_error_behavior,
+        ErrorBehavior::Retry {
+            interval: Duration::from_millis(500),
+            max_retries: 2,
+        }
+    );
+}
+
+#[test]
+fn unknown_error_behavior_returns_error() {
+    let yaml = r#"
+workflow:
+  id: bad-eb-wf
+  version: 1
+  error_behavior:
+    type: explode
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+"#;
+    let result = load_workflow_from_str(yaml, &HashMap::new());
+    assert!(result.is_err());
+    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    assert!(err.contains("explode"), "Error should mention the invalid type, got: {err}");
+}
+
+#[test]
+fn parallel_block_children_have_step_configs() {
+    let yaml = r#"
+workflow:
+  id: parallel-config-wf
+  version: 1
+  steps:
+    - name: parallel-group
+      parallel:
+        - name: task-a
+          type: shell
+          config:
+            run: echo a
+        - name: task-b
+          type: shell
+          config:
+            run: echo b
+        - name: task-c
+          type: shell
+          config:
+            run: echo c
+"#;
+    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+
+    let container = compiled
+        .definition
+        .steps
+        .iter()
+        .find(|s| s.name.as_deref() == Some("parallel-group"))
+        .unwrap();
+    assert_eq!(container.children.len(), 3);
+
+    // Each child should have a step_config.
+    for child_name in &["task-a", "task-b", "task-c"] {
+        let child = compiled
+            .definition
+            .steps
+            .iter()
+            .find(|s| s.name.as_deref() == Some(*child_name))
+            .unwrap();
+        assert!(child.step_config.is_some(), "Child {child_name} should have step_config");
+    }
+
+    // Factories should include entries for all 3 children.
+    assert!(compiled.step_factories.len() >= 3);
+}
+
+#[test]
+fn step_config_serializes_shell_config() {
+    let yaml = r#"
+workflow:
+  id: config-ser-wf
+  version: 1
+  steps:
+    - name: build
+      type: shell
+      config:
+        run: cargo build
+        shell: bash
+        timeout: 30s
+        env:
+          RUST_LOG: debug
+        working_dir: /tmp
+"#;
+    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+
+    let step = compiled
+        .definition
+        .steps
+        .iter()
+        .find(|s| s.name.as_deref() == Some("build"))
+        .unwrap();
+
+    let config: wfe_yaml::executors::shell::ShellConfig =
+        serde_json::from_value(step.step_config.clone().unwrap()).unwrap();
+    assert_eq!(config.run, "cargo build");
+    assert_eq!(config.shell, "bash");
+    assert_eq!(config.timeout_ms, Some(30_000));
+    assert_eq!(config.env.get("RUST_LOG").unwrap(), "debug");
+    assert_eq!(config.working_dir.as_deref(), Some("/tmp"));
+}
+
+#[test]
+fn config_file_field_generates_run_command() {
+    let yaml = r#"
+workflow:
+  id: file-wf
+  version: 1
+  steps:
+    - name: run-script
+      type: shell
+      config:
+        file: my_script.sh
+"#;
+    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    let step = compiled
+        .definition
+        .steps
+        .iter()
+        .find(|s| s.name.as_deref() == Some("run-script"))
+        .unwrap();
+
+    let config: wfe_yaml::executors::shell::ShellConfig =
+        serde_json::from_value(step.step_config.clone().unwrap()).unwrap();
+    assert_eq!(config.run, "sh my_script.sh");
+}
+
+#[test]
+fn default_shell_is_sh() {
+    let yaml = r#"
+workflow:
+  id: default-shell-wf
+  version: 1
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hello
+"#;
+    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    let step = compiled
+        .definition
+        .steps
+        .iter()
+        .find(|s| s.name.as_deref() == Some("step1"))
+        .unwrap();
+
+    let config: wfe_yaml::executors::shell::ShellConfig =
+        serde_json::from_value(step.step_config.clone().unwrap()).unwrap();
+    assert_eq!(config.shell, "sh", "Default shell should be 'sh'");
+}
+
+#[test]
+fn on_failure_factory_is_registered() {
+    let yaml = r#"
+workflow:
+  id: factory-wf
+  version: 1
+  steps:
+    - name: deploy
+      type: shell
+      config:
+        run: deploy.sh
+      on_failure:
+        name: rollback
+        type: shell
+        config:
+          run: rollback.sh
+"#;
+    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+
+    // Should have factories for both deploy and rollback.
+    let has_deploy = compiled
+        .step_factories
+        .iter()
+        .any(|(key, _)| key.contains("deploy"));
+    let has_rollback = compiled
+        .step_factories
+        .iter()
+        .any(|(key, _)| key.contains("rollback"));
+    assert!(has_deploy, "Should have factory for deploy step");
+    assert!(has_rollback, "Should have factory for rollback step");
+}
+
+#[test]
+fn on_success_factory_is_registered() {
+    let yaml = r#"
+workflow:
+  id: success-factory-wf
+  version: 1
+  steps:
+    - name: build
+      type: shell
+      config:
+        run: cargo build
+      on_success:
+        name: notify
+        type: shell
+        config:
+          run: echo ok
+"#;
+    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+
+    let has_notify = compiled
+        .step_factories
+        .iter()
+        .any(|(key, _)| key.contains("notify"));
+    assert!(has_notify, "Should have factory for on_success step");
+}
+
+#[test]
+fn ensure_factory_is_registered() {
+    let yaml = r#"
+workflow:
+  id: ensure-factory-wf
+  version: 1
+  steps:
+    - name: deploy
+      type: shell
+      config:
+        run: deploy.sh
+      ensure:
+        name: cleanup
+        type: shell
+        config:
+          run: cleanup.sh
+"#;
+    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+
+    let has_cleanup = compiled
+        .step_factories
+        .iter()
+        .any(|(key, _)| key.contains("cleanup"));
+    assert!(has_cleanup, "Should have factory for ensure step");
+}
+
+#[test]
+fn parallel_with_error_behavior_on_container() {
+    let yaml = r#"
+workflow:
+  id: parallel-eb-wf
+  version: 1
+  steps:
+    - name: parallel-group
+      error_behavior:
+        type: terminate
+      parallel:
+        - name: task-a
+          type: shell
+          config:
+            run: echo a
+        - name: task-b
+          type: shell
+          config:
+            run: echo b
+"#;
+    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+
+    let container = compiled
+        .definition
+        .steps
+        .iter()
+        .find(|s| s.name.as_deref() == Some("parallel-group"))
+        .unwrap();
+    assert_eq!(container.error_behavior, Some(ErrorBehavior::Terminate));
+}
+
+#[test]
+fn sequential_wiring_with_hooks() {
+    // When step A has on_success hook, the hook should wire to step B.
+    let yaml = r#"
+workflow:
+  id: hook-wiring-wf
+  version: 1
+  steps:
+    - name: step-a
+      type: shell
+      config:
+        run: echo a
+      on_success:
+        name: hook-a
+        type: shell
+        config:
+          run: echo hook
+    - name: step-b
+      type: shell
+      config:
+        run: echo b
+"#;
+    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+
+    let step_a = compiled
+        .definition
+        .steps
+        .iter()
+        .find(|s| s.name.as_deref() == Some("step-a"))
+        .unwrap();
+    let hook_a = compiled
+        .definition
+        .steps
+        .iter()
+        .find(|s| s.name.as_deref() == Some("hook-a"))
+        .unwrap();
+    let step_b = compiled
+        .definition
+        .steps
+        .iter()
+        .find(|s| s.name.as_deref() == Some("step-b"))
+        .unwrap();
+
+    // step-a -> hook-a (via on_success outcome).
+    assert_eq!(step_a.outcomes[0].next_step, hook_a.id);
+    // hook-a -> step-b (sequential wiring).
+    assert_eq!(hook_a.outcomes.len(), 1);
+    assert_eq!(hook_a.outcomes[0].next_step, step_b.id);
+}
+
+#[test]
+fn workflow_description_is_set() {
+    let yaml = r#"
+workflow:
+  id: desc-wf
+  version: 1
+  description: "A test workflow"
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+"#;
+    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    assert_eq!(
+        compiled.definition.description.as_deref(),
+        Some("A test workflow")
+    );
+}
+
+#[test]
+fn missing_config_section_returns_error() {
+    let yaml = r#"
+workflow:
+  id: no-config-wf
+  version: 1
+  steps:
+    - name: bad-step
+      type: shell
+"#;
+    let result = load_workflow_from_str(yaml, &HashMap::new());
+    assert!(result.is_err());
+    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    assert!(
+        err.contains("config"),
+        "Error should mention missing config, got: {err}"
+    );
+}
