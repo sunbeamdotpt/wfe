@@ -245,6 +245,76 @@ SQLite tests use temporary files and run everywhere.
 
 ---
 
+## Self-hosting CI pipeline
+
+WFE includes a self-hosting CI pipeline defined in `workflows.yaml` at the repository root. The pipeline uses WFE's own YAML workflow engine to build, test, and publish WFE itself.
+
+### Pipeline architecture
+
+```
+                         ci (orchestrator)
+                              |
+          +-------------------+--------------------+
+          |                   |                    |
+      preflight            lint               test (fan-out)
+     (tool check)     (fmt + clippy)              |
+                                       +----------+----------+
+                                       |          |          |
+                                   test-unit  test-integration  test-containers
+                                       |     (docker compose)  (lima VM)
+                                       |          |          |
+                                       +----------+----------+
+                                              |
+                                    +---------+---------+
+                                    |         |         |
+                                  cover    package     tag
+                                    |         |         |
+                                    +---------+---------+
+                                              |
+                                    +---------+---------+
+                                    |                   |
+                                 publish            release
+                              (crates.io)        (git tags + notes)
+```
+
+### Running the pipeline
+
+```sh
+# Default — uses current directory as workspace
+cargo run --example run_pipeline -p wfe -- workflows.yaml
+
+# With explicit configuration
+WFE_CONFIG='{"workspace_dir":"/path/to/wfe","registry":"sunbeam","git_remote":"origin","coverage_threshold":85}' \
+  cargo run --example run_pipeline -p wfe -- workflows.yaml
+```
+
+### WFE features demonstrated
+
+The pipeline exercises every major WFE feature:
+
+- **Workflow composition** — the `ci` orchestrator invokes child workflows (`lint`, `test`, `cover`, `package`, `tag`, `publish`, `release`) using the `workflow` step type.
+- **Shell executor** — most steps run bash commands with configurable timeouts.
+- **Deno executor** — the `cover` workflow uses a Deno step to parse coverage JSON; the `release` workflow uses Deno to generate release notes.
+- **YAML anchors/templates** — `_templates` defines `shell_defaults` and `long_running` anchors, reused across steps via `<<: *shell_defaults`.
+- **Structured outputs** — steps emit `##wfe[output key=value]` markers to pass data between steps and workflows.
+- **Variable interpolation** — `((workspace_dir))` syntax passes inputs through workflow composition.
+- **Error handling** — `on_failure` handlers, `error_behavior` with retry policies, and `ensure` blocks for cleanup (e.g., `docker-down`, `lima-down`).
+
+### Preflight tool check
+
+The `preflight` workflow runs first and checks for all required tools: `cargo`, `cargo-nextest`, `cargo-llvm-cov`, `docker`, `limactl`, `buildctl`, and `git`. Essential tools (cargo, nextest, git) cause a hard failure if missing. Optional tools (docker, lima, buildctl, llvm-cov) are reported but do not block the pipeline.
+
+### Graceful infrastructure skipping
+
+Integration and container tests handle missing infrastructure without failing:
+
+- **test-integration**: The `docker-up` step checks if Docker is available. If `docker info` fails, it sets `docker_started=false` and exits cleanly. Subsequent steps (`postgres-tests`, `valkey-tests`, `opensearch-tests`) check this flag and skip if Docker is not running.
+- **test-containers**: The `lima-up` step checks if `limactl` is installed. If missing, it sets `lima_started=false` and exits cleanly. The `buildkit-tests` and `containerd-tests` steps check this flag and skip accordingly.
+
+This means the pipeline runs successfully on any machine with the essential Rust toolchain, reporting which optional tests were skipped rather than failing outright.
+
+---
+
 ## License
 
 [MIT](LICENSE)
