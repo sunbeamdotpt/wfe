@@ -3,6 +3,7 @@ use std::sync::Arc;
 use chrono::Utc;
 use tracing::{debug, error, info, warn};
 
+use super::condition;
 use super::error_handler;
 use super::result_processor;
 use super::step_registry::StepRegistry;
@@ -144,6 +145,41 @@ impl WorkflowExecutor {
                 .find(|s| s.id == step_id)
                 .ok_or(WfeError::StepNotFound(step_id))?;
 
+            // Check step condition before executing.
+            if let Some(ref when) = step.when {
+                match condition::evaluate(when, &workflow.data) {
+                    Ok(true) => { /* condition met, proceed */ }
+                    Ok(false) => {
+                        info!(
+                            workflow_id,
+                            step_id,
+                            step_name = step.name.as_deref().unwrap_or("(unnamed)"),
+                            "Step skipped (condition not met)"
+                        );
+                        workflow.execution_pointers[idx].status = PointerStatus::Skipped;
+                        workflow.execution_pointers[idx].active = false;
+                        workflow.execution_pointers[idx].end_time = Some(Utc::now());
+
+                        // Activate next step via outcomes (same as Complete).
+                        let next_step_id = step.outcomes.first().map(|o| o.next_step);
+                        if let Some(next_id) = next_step_id {
+                            let mut next_pointer =
+                                crate::models::ExecutionPointer::new(next_id);
+                            next_pointer.predecessor_id =
+                                Some(workflow.execution_pointers[idx].id.clone());
+                            next_pointer.scope =
+                                workflow.execution_pointers[idx].scope.clone();
+                            workflow.execution_pointers.push(next_pointer);
+                        }
+
+                        continue;
+                    }
+                    Err(e) => {
+                        return Err(e);
+                    }
+                }
+            }
+
             info!(
                 workflow_id,
                 step_id,
@@ -273,6 +309,7 @@ impl WorkflowExecutor {
                 matches!(
                     p.status,
                     PointerStatus::Complete
+                        | PointerStatus::Skipped
                         | PointerStatus::Compensated
                         | PointerStatus::Cancelled
                         | PointerStatus::Failed
