@@ -1,0 +1,3 @@
+[submodule "wfe-containerd-protos/vendor/containerd"]
+	path = wfe-containerd-protos/vendor/containerd
+	url = https://github.com/containerd/containerd.git
