@@ -28,7 +28,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
         .with_target(false)
         .with_timer(tracing_subscriber::fmt::time::uptime())
-        .with_env_filter("wfe_core=info,wfe=info,run_pipeline=info")
+        .with_env_filter(
+            std::env::var("RUST_LOG")
+                .unwrap_or_else(|_| "wfe_core=info,wfe=info,run_pipeline=info".into())
+        )
         .init();
 
     // Read YAML path from args.
