@@ -38,12 +38,12 @@ redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
 opensearch = "2"
 
 # Internal crates
-wfe-core = { path = "wfe-core" }
-wfe-sqlite = { path = "wfe-sqlite" }
-wfe-postgres = { path = "wfe-postgres" }
-wfe-opensearch = { path = "wfe-opensearch" }
-wfe-valkey = { path = "wfe-valkey" }
-wfe-yaml = { path = "wfe-yaml" }
+wfe-core = { version = "1.0.0", path = "wfe-core" }
+wfe-sqlite = { version = "1.0.0", path = "wfe-sqlite" }
+wfe-postgres = { version = "1.0.0", path = "wfe-postgres" }
+wfe-opensearch = { version = "1.0.0", path = "wfe-opensearch" }
+wfe-valkey = { version = "1.0.0", path = "wfe-valkey" }
+wfe-yaml = { version = "1.0.0", path = "wfe-yaml" }
 
 # YAML
 serde_yaml = "0.9"
