@@ -219,7 +219,7 @@ workflow:
       type: deno
 "#;
     let config = HashMap::new();
-    let result = wfe_yaml::load_workflow_from_str(yaml, &config);
+    let result = wfe_yaml::load_single_workflow_from_str(yaml, &config);
     assert!(result.is_err());
     let msg = result.err().unwrap().to_string();
     assert!(
@@ -242,7 +242,7 @@ workflow:
           FOO: bar
 "#;
     let config = HashMap::new();
-    let result = wfe_yaml::load_workflow_from_str(yaml, &config);
+    let result = wfe_yaml::load_single_workflow_from_str(yaml, &config);
     assert!(result.is_err());
     let msg = result.err().unwrap().to_string();
     assert!(
@@ -264,7 +264,7 @@ workflow:
         script: "output('key', 'val');"
 "#;
     let config = HashMap::new();
-    let compiled = wfe_yaml::load_workflow_from_str(yaml, &config).unwrap();
+    let compiled = wfe_yaml::load_single_workflow_from_str(yaml, &config).unwrap();
     assert!(!compiled.step_factories.is_empty());
     let (key, _factory) = &compiled.step_factories[0];
     assert!(key.contains("deno"), "factory key should contain 'deno', got: {key}");
