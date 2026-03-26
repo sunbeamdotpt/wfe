@@ -2,6 +2,17 @@ use std::collections::HashMap;
 
 use serde::Deserialize;
 
+/// Top-level YAML file structure supporting both single and multi-workflow files.
+#[derive(Debug, Deserialize)]
+pub struct YamlWorkflowFile {
+    /// Single workflow (backward compatible).
+    pub workflow: Option<WorkflowSpec>,
+    /// Multiple workflows in one file.
+    pub workflows: Option<Vec<WorkflowSpec>>,
+}
+
+/// Legacy single-workflow top-level structure. Kept for backward compatibility
+/// with code that deserializes `YamlWorkflow` directly.
 #[derive(Debug, Deserialize)]
 pub struct YamlWorkflow {
     pub workflow: WorkflowSpec,
@@ -16,6 +27,13 @@ pub struct WorkflowSpec {
     #[serde(default)]
     pub error_behavior: Option<YamlErrorBehavior>,
     pub steps: Vec<YamlStep>,
+    /// Typed input schema: { field_name: type_string }.
+    /// Example: `"repo_url": "string"`, `"tags": "list<string>"`.
+    #[serde(default)]
+    pub inputs: HashMap<String, String>,
+    /// Typed output schema: { field_name: type_string }.
+    #[serde(default)]
+    pub outputs: HashMap<String, String>,
     /// Allow unknown top-level keys (e.g. `_templates`) for YAML anchors.
     #[serde(flatten)]
     pub _extra: HashMap<String, serde_yaml::Value>,
@@ -90,6 +108,13 @@ pub struct StepConfig {
     pub containerd_addr: Option<String>,
     /// CLI binary name for containerd steps: "nerdctl" (default) or "docker".
     pub cli: Option<String>,
+    // Workflow (sub-workflow) fields
+    /// Child workflow ID (for `type: workflow` steps).
+    #[serde(rename = "workflow")]
+    pub child_workflow: Option<String>,
+    /// Child workflow version (for `type: workflow` steps).
+    #[serde(rename = "workflow_version")]
+    pub child_version: Option<u32>,
 }
 
 /// YAML-level permission configuration for Deno steps.
