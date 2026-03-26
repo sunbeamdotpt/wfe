@@ -17,7 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         proto_files.len()
     );
 
-    let out_dir = PathBuf::from(std::env::var("OUT_DIR")?);
+    let _out_dir = PathBuf::from(std::env::var("OUT_DIR")?);
 
     // Use tonic-prost-build (the tonic 0.14 way)
     let mut prost_config = prost_build::Config::new();

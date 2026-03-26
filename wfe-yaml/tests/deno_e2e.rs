@@ -15,7 +15,7 @@ use wfe::{WorkflowHostBuilder, run_workflow_sync};
 use wfe_core::test_support::{
     InMemoryLockProvider, InMemoryPersistenceProvider, InMemoryQueueProvider,
 };
-use wfe_yaml::load_workflow_from_str;
+use wfe_yaml::load_single_workflow_from_str;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -30,7 +30,7 @@ async fn run_yaml_workflow_with_data(
     data: serde_json::Value,
 ) -> wfe::models::WorkflowInstance {
     let config = HashMap::new();
-    let compiled = load_workflow_from_str(yaml, &config).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &config).unwrap();
 
     let persistence = Arc::new(InMemoryPersistenceProvider::new());
     let lock = Arc::new(InMemoryLockProvider::new());
@@ -437,7 +437,7 @@ workflow:
         script: "output('x', 1);"
 "#;
     let config = HashMap::new();
-    let compiled = load_workflow_from_str(yaml, &config).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &config).unwrap();
     assert!(!compiled.step_factories.is_empty());
     let (key, _factory) = &compiled.step_factories[0];
     assert!(
@@ -467,7 +467,7 @@ workflow:
           dynamic_import: true
 "#;
     let config = HashMap::new();
-    let compiled = load_workflow_from_str(yaml, &config).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &config).unwrap();
     assert!(!compiled.step_factories.is_empty());
     // Verify the step config was serialized correctly.
     let step = compiled
@@ -497,7 +497,7 @@ workflow:
         timeout: "3s"
 "#;
     let config = HashMap::new();
-    let compiled = load_workflow_from_str(yaml, &config).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &config).unwrap();
     let step = compiled
         .definition
         .steps
@@ -521,7 +521,7 @@ workflow:
         file: "./scripts/run.js"
 "#;
     let config = HashMap::new();
-    let compiled = load_workflow_from_str(yaml, &config).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &config).unwrap();
     let step = compiled
         .definition
         .steps
@@ -543,7 +543,7 @@ workflow:
       type: deno
 "#;
     let config = HashMap::new();
-    let result = load_workflow_from_str(yaml, &config);
+    let result = load_single_workflow_from_str(yaml, &config);
     match result {
         Err(e) => {
             let msg = e.to_string();
@@ -570,7 +570,7 @@ workflow:
           FOO: bar
 "#;
     let config = HashMap::new();
-    let result = load_workflow_from_str(yaml, &config);
+    let result = load_single_workflow_from_str(yaml, &config);
     match result {
         Err(e) => {
             let msg = e.to_string();
@@ -596,7 +596,7 @@ workflow:
         script: "1+1;"
 "#;
     let config = HashMap::new();
-    assert!(load_workflow_from_str(yaml, &config).is_ok());
+    assert!(load_single_workflow_from_str(yaml, &config).is_ok());
 }
 
 #[test]
@@ -612,7 +612,7 @@ workflow:
         file: "./run.js"
 "#;
     let config = HashMap::new();
-    assert!(load_workflow_from_str(yaml, &config).is_ok());
+    assert!(load_single_workflow_from_str(yaml, &config).is_ok());
 }
 
 #[test]
@@ -632,7 +632,7 @@ workflow:
         script: "output('x', 1);"
 "#;
     let config = HashMap::new();
-    let compiled = load_workflow_from_str(yaml, &config).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &config).unwrap();
     let has_shell = compiled.step_factories.iter().any(|(k, _)| k.contains("shell"));
     let has_deno = compiled.step_factories.iter().any(|(k, _)| k.contains("deno"));
     assert!(has_shell, "should have shell factory");
@@ -655,7 +655,7 @@ workflow:
           - "npm:is-number@7"
 "#;
     let config = HashMap::new();
-    let compiled = load_workflow_from_str(yaml, &config).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &config).unwrap();
     let step = compiled
         .definition
         .steps
@@ -685,7 +685,7 @@ workflow:
           BAZ: qux
 "#;
     let config = HashMap::new();
-    let compiled = load_workflow_from_str(yaml, &config).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &config).unwrap();
     let step = compiled
         .definition
         .steps
@@ -744,7 +744,7 @@ workflow:
 "#;
     let config = HashMap::new();
     // This should compile without errors.
-    let compiled = load_workflow_from_str(yaml, &config).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &config).unwrap();
     assert!(compiled.step_factories.len() >= 2);
 }
 
@@ -809,7 +809,7 @@ workflow:
         script: "1;"
 "#;
     let config = HashMap::new();
-    let compiled = load_workflow_from_str(yaml, &config).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &config).unwrap();
     assert_eq!(
         compiled.definition.description.as_deref(),
         Some("A workflow with deno steps")
@@ -834,7 +834,7 @@ workflow:
         interval: "2s"
 "#;
     let config = HashMap::new();
-    let compiled = load_workflow_from_str(yaml, &config).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &config).unwrap();
     let step = compiled
         .definition
         .steps

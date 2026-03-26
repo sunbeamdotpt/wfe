@@ -7,11 +7,11 @@ use wfe::{WorkflowHostBuilder, run_workflow_sync};
 use wfe_core::test_support::{
     InMemoryLockProvider, InMemoryPersistenceProvider, InMemoryQueueProvider,
 };
-use wfe_yaml::load_workflow_from_str;
+use wfe_yaml::load_single_workflow_from_str;
 
 async fn run_yaml_workflow(yaml: &str) -> wfe::models::WorkflowInstance {
     let config = HashMap::new();
-    let compiled = load_workflow_from_str(yaml, &config).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &config).unwrap();
 
     let persistence = Arc::new(InMemoryPersistenceProvider::new());
     let lock = Arc::new(InMemoryLockProvider::new());

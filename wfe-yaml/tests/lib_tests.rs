@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::io::Write;
 
-use wfe_yaml::{load_workflow, load_workflow_from_str};
+use wfe_yaml::{load_workflow, load_single_workflow_from_str};
 
 #[test]
 fn load_workflow_from_file() {
@@ -45,7 +45,7 @@ fn load_workflow_from_nonexistent_file_returns_error() {
 #[test]
 fn load_workflow_from_str_with_invalid_yaml_returns_error() {
     let yaml = "this is not valid yaml: [[[";
-    let result = load_workflow_from_str(yaml, &HashMap::new());
+    let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
     let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
     assert!(
@@ -69,7 +69,7 @@ workflow:
     let mut config = HashMap::new();
     config.insert("message".to_string(), serde_json::json!("hello world"));
 
-    let compiled = load_workflow_from_str(yaml, &config).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &config).unwrap();
     let step = compiled
         .definition
         .steps
@@ -94,7 +94,7 @@ workflow:
       config:
         run: echo ((missing))
 "#;
-    let result = load_workflow_from_str(yaml, &HashMap::new());
+    let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
     let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
     assert!(
