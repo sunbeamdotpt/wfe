@@ -16,9 +16,9 @@ async-trait = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
 regex = { workspace = true }
-buildkit-client = { git = "https://github.com/AprilNEA/buildkit-client.git", branch = "master", default-features = false }
-tonic = "0.12"
-tower = "0.4"
+wfe-buildkit-protos = { path = "../wfe-buildkit-protos" }
+tonic = "0.14"
+tower = { version = "0.4", features = ["util"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 uuid = { version = "1", features = ["v4"] }
 tokio-stream = "0.1"
