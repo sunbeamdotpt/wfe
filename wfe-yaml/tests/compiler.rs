@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use wfe_core::models::error_behavior::ErrorBehavior;
-use wfe_yaml::load_workflow_from_str;
+use wfe_yaml::{load_single_workflow_from_str, load_workflow_from_str};
 
 #[test]
 fn single_step_produces_one_workflow_step() {
@@ -16,7 +16,7 @@ workflow:
       config:
         run: echo hello
 "#;
-    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
     // The definition should have exactly 1 main step.
     let main_steps: Vec<_> = compiled
         .definition
@@ -44,7 +44,7 @@ workflow:
       config:
         run: echo b
 "#;
-    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
 
     let step_a = compiled
         .definition
@@ -82,7 +82,7 @@ workflow:
           config:
             run: echo b
 "#;
-    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
 
     let container = compiled
         .definition
@@ -116,7 +116,7 @@ workflow:
         config:
           run: rollback.sh
 "#;
-    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
 
     let deploy = compiled
         .definition
@@ -156,7 +156,7 @@ workflow:
       error_behavior:
         type: suspend
 "#;
-    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
 
     assert_eq!(
         compiled.definition.default_error_behavior,
@@ -193,7 +193,7 @@ workflow:
       type: shell
       config: *default_config
 "#;
-    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
 
     // Should have 2 main steps + factories.
     let build_step = compiled
@@ -241,7 +241,7 @@ workflow:
         config:
           run: echo "build succeeded"
 "#;
-    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
 
     let build = compiled
         .definition
@@ -279,7 +279,7 @@ workflow:
         config:
           run: cleanup.sh
 "#;
-    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
 
     let deploy = compiled
         .definition
@@ -322,7 +322,7 @@ workflow:
         config:
           run: cleanup.sh
 "#;
-    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
 
     let deploy = compiled
         .definition
@@ -351,7 +351,7 @@ workflow:
       config:
         run: echo hi
 "#;
-    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
     assert_eq!(
         compiled.definition.default_error_behavior,
         ErrorBehavior::Terminate
@@ -372,7 +372,7 @@ workflow:
       config:
         run: echo hi
 "#;
-    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
     assert_eq!(
         compiled.definition.default_error_behavior,
         ErrorBehavior::Compensate
@@ -394,7 +394,7 @@ workflow:
       config:
         run: echo hi
 "#;
-    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
     assert_eq!(
         compiled.definition.default_error_behavior,
         ErrorBehavior::Retry {
@@ -420,7 +420,7 @@ workflow:
       config:
         run: echo hi
 "#;
-    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
     assert_eq!(
         compiled.definition.default_error_behavior,
         ErrorBehavior::Retry {
@@ -447,7 +447,7 @@ workflow:
       config:
         run: echo hi
 "#;
-    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
     assert_eq!(
         compiled.definition.default_error_behavior,
         ErrorBehavior::Retry {
@@ -471,7 +471,7 @@ workflow:
       config:
         run: echo hi
 "#;
-    let result = load_workflow_from_str(yaml, &HashMap::new());
+    let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
     let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
     assert!(err.contains("explode"), "Error should mention the invalid type, got: {err}");
@@ -499,7 +499,7 @@ workflow:
           config:
             run: echo c
 "#;
-    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
 
     let container = compiled
         .definition
@@ -541,7 +541,7 @@ workflow:
           RUST_LOG: debug
         working_dir: /tmp
 "#;
-    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
 
     let step = compiled
         .definition
@@ -571,7 +571,7 @@ workflow:
       config:
         file: my_script.sh
 "#;
-    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
     let step = compiled
         .definition
         .steps
@@ -596,7 +596,7 @@ workflow:
       config:
         run: echo hello
 "#;
-    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
     let step = compiled
         .definition
         .steps
@@ -626,7 +626,7 @@ workflow:
         config:
           run: rollback.sh
 "#;
-    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
 
     // Should have factories for both deploy and rollback.
     let has_deploy = compiled
@@ -658,7 +658,7 @@ workflow:
         config:
           run: echo ok
 "#;
-    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
 
     let has_notify = compiled
         .step_factories
@@ -684,7 +684,7 @@ workflow:
         config:
           run: cleanup.sh
 "#;
-    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
 
     let has_cleanup = compiled
         .step_factories
@@ -713,7 +713,7 @@ workflow:
           config:
             run: echo b
 "#;
-    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
 
     let container = compiled
         .definition
@@ -746,7 +746,7 @@ workflow:
       config:
         run: echo b
 "#;
-    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
 
     let step_a = compiled
         .definition
@@ -787,7 +787,7 @@ workflow:
       config:
         run: echo hi
 "#;
-    let compiled = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
     assert_eq!(
         compiled.definition.description.as_deref(),
         Some("A test workflow")
@@ -804,11 +804,212 @@ workflow:
     - name: bad-step
       type: shell
 "#;
-    let result = load_workflow_from_str(yaml, &HashMap::new());
+    let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
     let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
     assert!(
         err.contains("config"),
         "Error should mention missing config, got: {err}"
     );
+}
+
+// --- Workflow step compilation tests ---
+
+#[test]
+fn workflow_step_compiles_correctly() {
+    let yaml = r#"
+workflow:
+  id: parent-wf
+  version: 1
+  steps:
+    - name: run-child
+      type: workflow
+      config:
+        workflow: child-wf
+        workflow_version: 3
+      outputs:
+        - name: result
+        - name: status
+"#;
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
+
+    let step = compiled
+        .definition
+        .steps
+        .iter()
+        .find(|s| s.name.as_deref() == Some("run-child"))
+        .unwrap();
+
+    assert!(step.step_type.contains("workflow"));
+    assert!(step.step_config.is_some());
+
+    // Verify the serialized config contains the workflow_id and version.
+    let config: serde_json::Value = step.step_config.clone().unwrap();
+    assert_eq!(config["workflow_id"].as_str(), Some("child-wf"));
+    assert_eq!(config["version"].as_u64(), Some(3));
+    assert_eq!(config["output_keys"].as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn workflow_step_version_defaults_to_1() {
+    let yaml = r#"
+workflow:
+  id: parent-wf
+  version: 1
+  steps:
+    - name: run-child
+      type: workflow
+      config:
+        workflow: child-wf
+"#;
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
+
+    let step = compiled
+        .definition
+        .steps
+        .iter()
+        .find(|s| s.name.as_deref() == Some("run-child"))
+        .unwrap();
+
+    let config: serde_json::Value = step.step_config.clone().unwrap();
+    assert_eq!(config["version"].as_u64(), Some(1));
+}
+
+#[test]
+fn workflow_step_factory_is_registered() {
+    let yaml = r#"
+workflow:
+  id: parent-wf
+  version: 1
+  steps:
+    - name: run-child
+      type: workflow
+      config:
+        workflow: child-wf
+"#;
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
+
+    let has_workflow_factory = compiled
+        .step_factories
+        .iter()
+        .any(|(key, _)| key.contains("workflow") && key.contains("run-child"));
+    assert!(
+        has_workflow_factory,
+        "Should have factory for workflow step"
+    );
+}
+
+#[test]
+fn compile_multi_workflow_file() {
+    let yaml = r#"
+workflows:
+  - id: build
+    version: 1
+    steps:
+      - name: compile
+        type: shell
+        config:
+          run: cargo build
+  - id: test
+    version: 1
+    steps:
+      - name: run-tests
+        type: shell
+        config:
+          run: cargo test
+"#;
+    let workflows = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    assert_eq!(workflows.len(), 2);
+    assert_eq!(workflows[0].definition.id, "build");
+    assert_eq!(workflows[1].definition.id, "test");
+}
+
+#[test]
+fn compile_multi_workflow_with_cross_references() {
+    let yaml = r#"
+workflows:
+  - id: pipeline
+    version: 1
+    steps:
+      - name: run-build
+        type: workflow
+        config:
+          workflow: build
+  - id: build
+    version: 1
+    steps:
+      - name: compile
+        type: shell
+        config:
+          run: cargo build
+"#;
+    let workflows = load_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    assert_eq!(workflows.len(), 2);
+
+    // The pipeline workflow should have a workflow step.
+    let pipeline = &workflows[0];
+    let step = pipeline
+        .definition
+        .steps
+        .iter()
+        .find(|s| s.name.as_deref() == Some("run-build"))
+        .unwrap();
+    assert!(step.step_type.contains("workflow"));
+}
+
+#[test]
+fn workflow_step_with_mixed_steps() {
+    let yaml = r#"
+workflow:
+  id: mixed-wf
+  version: 1
+  steps:
+    - name: setup
+      type: shell
+      config:
+        run: echo setup
+    - name: run-child
+      type: workflow
+      config:
+        workflow: child-wf
+    - name: cleanup
+      type: shell
+      config:
+        run: echo cleanup
+"#;
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
+
+    // Should have 3 main steps.
+    let step_names: Vec<_> = compiled
+        .definition
+        .steps
+        .iter()
+        .filter_map(|s| s.name.as_deref())
+        .collect();
+    assert!(step_names.contains(&"setup"));
+    assert!(step_names.contains(&"run-child"));
+    assert!(step_names.contains(&"cleanup"));
+
+    // setup -> run-child -> cleanup wiring.
+    let setup = compiled
+        .definition
+        .steps
+        .iter()
+        .find(|s| s.name.as_deref() == Some("setup"))
+        .unwrap();
+    let run_child = compiled
+        .definition
+        .steps
+        .iter()
+        .find(|s| s.name.as_deref() == Some("run-child"))
+        .unwrap();
+    let cleanup = compiled
+        .definition
+        .steps
+        .iter()
+        .find(|s| s.name.as_deref() == Some("cleanup"))
+        .unwrap();
+
+    assert_eq!(setup.outcomes[0].next_step, run_child.id);
+    assert_eq!(run_child.outcomes[0].next_step, cleanup.id);
 }
