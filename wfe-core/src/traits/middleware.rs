@@ -68,6 +68,7 @@ mod tests {
             step: &step,
             workflow: &instance,
             cancellation_token: tokio_util::sync::CancellationToken::new(),
+            host_context: None,
         };
         mw.pre_step(&ctx).await.unwrap();
     }
@@ -86,6 +87,7 @@ mod tests {
             step: &step,
             workflow: &instance,
             cancellation_token: tokio_util::sync::CancellationToken::new(),
+            host_context: None,
         };
         let result = ExecutionResult::next();
         mw.post_step(&ctx, &result).await.unwrap();
