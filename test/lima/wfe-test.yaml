@@ -1,0 +1,50 @@
+# WFE Test VM — BuildKit + containerd with host-accessible sockets
+#
+# Provides both buildkitd and containerd daemons with Unix sockets
+# forwarded to the host for integration testing.
+#
+# Usage:
+#   limactl start ./test/lima/wfe-test.yaml
+#
+# Sockets (on host after start):
+#   BuildKit:   unix://$HOME/.lima/wfe-test/sock/buildkitd.sock
+#   containerd: unix://$HOME/.lima/wfe-test/sock/containerd.sock
+#
+# Verify:
+#   BUILDKIT_HOST="unix://$HOME/.lima/wfe-test/sock/buildkitd.sock" buildctl debug workers
+#   # containerd accessible via gRPC at unix://$HOME/.lima/wfe-test/sock/containerd.sock
+#
+# Teardown:
+#   limactl stop wfe-test
+#   limactl delete wfe-test
+
+message: |
+  WFE integration test VM is ready.
+
+  BuildKit socket:   unix://{{.Dir}}/sock/buildkitd.sock
+  containerd socket: unix://{{.Dir}}/sock/containerd.sock
+
+  Verify BuildKit:
+    BUILDKIT_HOST="unix://{{.Dir}}/sock/buildkitd.sock" buildctl debug workers
+
+  Run tests:
+    WFE_BUILDKIT_ADDR="unix://{{.Dir}}/sock/buildkitd.sock" \
+    WFE_CONTAINERD_ADDR="unix://{{.Dir}}/sock/containerd.sock" \
+    cargo nextest run -p wfe-buildkit -p wfe-containerd
+
+minimumLimaVersion: 2.0.0
+
+base: template:_images/ubuntu-lts
+
+containerd:
+  system: false
+  user: true
+
+portForwards:
+  # BuildKit daemon socket
+  - guestSocket: "/run/user/{{.UID}}/buildkit-default/buildkitd.sock"
+    hostSocket: "{{.Dir}}/sock/buildkitd.sock"
+
+  # containerd daemon socket (rootless)
+  - guestSocket: "/run/user/{{.UID}}/containerd/containerd.sock"
+    hostSocket: "{{.Dir}}/sock/containerd.sock"
