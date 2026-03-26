@@ -17,4 +17,4 @@ pub use persistence::{
 pub use queue::QueueProvider;
 pub use registry::WorkflowRegistry;
 pub use search::{Page, SearchFilter, SearchIndex, WorkflowSearchResult};
-pub use step::{StepBody, StepExecutionContext, WorkflowData};
+pub use step::{HostContext, StepBody, StepExecutionContext, WorkflowData};

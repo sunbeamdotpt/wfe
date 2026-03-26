@@ -8,6 +8,7 @@ pub mod recur;
 pub mod saga_container;
 pub mod schedule;
 pub mod sequence;
+pub mod sub_workflow;
 pub mod wait_for;
 pub mod while_step;
 
@@ -21,6 +22,7 @@ pub use recur::RecurStep;
 pub use saga_container::SagaContainerStep;
 pub use schedule::ScheduleStep;
 pub use sequence::SequenceStep;
+pub use sub_workflow::SubWorkflowStep;
 pub use wait_for::WaitForStep;
 pub use while_step::WhileStep;
 
@@ -42,6 +44,7 @@ mod test_helpers {
             step,
             workflow,
             cancellation_token: CancellationToken::new(),
+            host_context: None,
         }
     }
 
