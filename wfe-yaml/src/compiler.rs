@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use serde::Serialize;
 use wfe_core::models::error_behavior::ErrorBehavior;
 use wfe_core::models::workflow_definition::{StepOutcome, WorkflowDefinition, WorkflowStep};
 use wfe_core::traits::StepBody;
@@ -13,6 +14,38 @@ use wfe_buildkit::{BuildkitConfig, BuildkitStep};
 #[cfg(feature = "containerd")]
 use wfe_containerd::{ContainerdConfig, ContainerdStep};
 use crate::schema::{WorkflowSpec, YamlErrorBehavior, YamlStep};
+
+/// Configuration for a sub-workflow step.
+#[derive(Debug, Clone, Serialize)]
+pub struct SubWorkflowConfig {
+    pub workflow_id: String,
+    pub version: u32,
+    pub output_keys: Vec<String>,
+}
+
+/// Placeholder step body for sub-workflow steps.
+///
+/// This is a compile-time placeholder. When wfe-core provides a real
+/// `SubWorkflowStep`, it should replace this. The placeholder always
+/// returns `ExecutionResult::Next` so compilation and basic tests work.
+#[derive(Debug, Default)]
+pub struct SubWorkflowPlaceholderStep {
+    pub workflow_id: String,
+    pub version: u32,
+    pub output_keys: Vec<String>,
+}
+
+#[async_trait::async_trait]
+impl StepBody for SubWorkflowPlaceholderStep {
+    async fn run(
+        &mut self,
+        context: &wfe_core::traits::StepExecutionContext<'_>,
+    ) -> wfe_core::Result<wfe_core::models::ExecutionResult> {
+        let _ = context;
+        // Placeholder: a real implementation would start the child workflow.
+        Ok(wfe_core::models::ExecutionResult::next())
+    }
+}
 
 /// Factory type alias for step creation closures.
 pub type StepFactory = Box<dyn Fn() -> Box<dyn StepBody> + Send + Sync>;
@@ -281,6 +314,43 @@ fn build_step_config_and_factory(
             let config_clone = config.clone();
             let factory: StepFactory = Box::new(move || {
                 Box::new(ContainerdStep::new(config_clone.clone())) as Box<dyn StepBody>
+            });
+            Ok((key, value, factory))
+        }
+        "workflow" => {
+            let config = step.config.as_ref().ok_or_else(|| {
+                YamlWorkflowError::Compilation(format!(
+                    "Workflow step '{}' is missing 'config' section",
+                    step.name
+                ))
+            })?;
+            let child_workflow_id = config.child_workflow.as_ref().ok_or_else(|| {
+                YamlWorkflowError::Compilation(format!(
+                    "Workflow step '{}' must have 'config.workflow'",
+                    step.name
+                ))
+            })?;
+            let child_version = config.child_version.unwrap_or(1);
+
+            let sub_config = SubWorkflowConfig {
+                workflow_id: child_workflow_id.clone(),
+                version: child_version,
+                output_keys: step.outputs.iter().map(|o| o.name.clone()).collect(),
+            };
+
+            let key = format!("wfe_yaml::workflow::{}", step.name);
+            let value = serde_json::to_value(&sub_config).map_err(|e| {
+                YamlWorkflowError::Compilation(format!(
+                    "Failed to serialize workflow config: {e}"
+                ))
+            })?;
+            let config_clone = sub_config.clone();
+            let factory: StepFactory = Box::new(move || {
+                Box::new(SubWorkflowPlaceholderStep {
+                    workflow_id: config_clone.workflow_id.clone(),
+                    version: config_clone.version,
+                    output_keys: config_clone.output_keys.clone(),
+                }) as Box<dyn StepBody>
             });
             Ok((key, value, factory))
         }
