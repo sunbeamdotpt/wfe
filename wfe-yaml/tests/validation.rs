@@ -1414,3 +1414,687 @@ fn load_workflow_from_nonexistent_file_returns_io_error() {
         "Expected IO error, got: {err}"
     );
 }
+
+// --- Condition validation tests ---
+
+#[test]
+fn condition_field_exists_in_inputs_ok() {
+    let yaml = r#"
+workflow:
+  id: cond-input-ok
+  version: 1
+  inputs:
+    enabled: bool
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+      when:
+        field: .inputs.enabled
+        equals: true
+"#;
+    let result = load_single_workflow_from_str(yaml, &HashMap::new());
+    assert!(result.is_ok(), "Field path to known input should pass, got: {:?}", result.err());
+}
+
+#[test]
+fn condition_field_exists_in_outputs_ok() {
+    let yaml = r#"
+workflow:
+  id: cond-output-ok
+  version: 1
+  outputs:
+    result: string
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+      outputs:
+        - name: result
+      when:
+        field: .outputs.result
+        equals: success
+"#;
+    let result = load_single_workflow_from_str(yaml, &HashMap::new());
+    assert!(result.is_ok(), "Field path to known output should pass, got: {:?}", result.err());
+}
+
+#[test]
+fn condition_field_missing_input_returns_error() {
+    let yaml = r#"
+workflow:
+  id: cond-bad-input
+  version: 1
+  inputs:
+    name: string
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+      when:
+        field: .inputs.nonexistent
+        equals: foo
+"#;
+    let result = load_single_workflow_from_str(yaml, &HashMap::new());
+    assert!(result.is_err());
+    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    assert!(
+        err.contains("unknown input field") && err.contains("nonexistent"),
+        "Expected unknown input field error, got: {err}"
+    );
+}
+
+#[test]
+fn condition_field_missing_output_returns_error() {
+    let yaml = r#"
+workflow:
+  id: cond-bad-output
+  version: 1
+  outputs:
+    result: string
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+      outputs:
+        - name: result
+      when:
+        field: .outputs.missing
+        equals: bar
+"#;
+    let result = load_single_workflow_from_str(yaml, &HashMap::new());
+    assert!(result.is_err());
+    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    assert!(
+        err.contains("unknown output field") && err.contains("missing"),
+        "Expected unknown output field error, got: {err}"
+    );
+}
+
+#[test]
+fn condition_gt_on_string_returns_type_error() {
+    let yaml = r#"
+workflow:
+  id: cond-type-err
+  version: 1
+  inputs:
+    name: string
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+      when:
+        field: .inputs.name
+        gt: 5
+"#;
+    let result = load_single_workflow_from_str(yaml, &HashMap::new());
+    assert!(result.is_err());
+    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    assert!(
+        err.contains("gt/gte/lt/lte") && err.contains("number/integer"),
+        "Expected type mismatch error, got: {err}"
+    );
+}
+
+#[test]
+fn condition_gt_on_number_passes() {
+    let yaml = r#"
+workflow:
+  id: cond-gt-num
+  version: 1
+  inputs:
+    count: number
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+      when:
+        field: .inputs.count
+        gt: 5
+"#;
+    let result = load_single_workflow_from_str(yaml, &HashMap::new());
+    assert!(result.is_ok(), "gt on number should pass, got: {:?}", result.err());
+}
+
+#[test]
+fn condition_contains_on_bool_returns_type_error() {
+    let yaml = r#"
+workflow:
+  id: cond-contains-bool
+  version: 1
+  inputs:
+    active: bool
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+      when:
+        field: .inputs.active
+        contains: true
+"#;
+    let result = load_single_workflow_from_str(yaml, &HashMap::new());
+    assert!(result.is_err());
+    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    assert!(
+        err.contains("contains") && err.contains("string/list"),
+        "Expected type mismatch error for contains, got: {err}"
+    );
+}
+
+#[test]
+fn condition_contains_on_string_passes() {
+    let yaml = r#"
+workflow:
+  id: cond-contains-str
+  version: 1
+  inputs:
+    name: string
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+      when:
+        field: .inputs.name
+        contains: needle
+"#;
+    let result = load_single_workflow_from_str(yaml, &HashMap::new());
+    assert!(result.is_ok(), "contains on string should pass, got: {:?}", result.err());
+}
+
+#[test]
+fn condition_contains_on_list_passes() {
+    let yaml = r#"
+workflow:
+  id: cond-contains-list
+  version: 1
+  inputs:
+    tags: "list<string>"
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+      when:
+        field: .inputs.tags
+        contains: release
+"#;
+    let result = load_single_workflow_from_str(yaml, &HashMap::new());
+    assert!(result.is_ok(), "contains on list should pass, got: {:?}", result.err());
+}
+
+#[test]
+fn condition_is_null_on_non_optional_returns_error() {
+    let yaml = r#"
+workflow:
+  id: cond-null-nonopt
+  version: 1
+  inputs:
+    name: string
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+      when:
+        field: .inputs.name
+        is_null: true
+"#;
+    let result = load_single_workflow_from_str(yaml, &HashMap::new());
+    assert!(result.is_err());
+    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    assert!(
+        err.contains("is_null/is_not_null") && err.contains("optional"),
+        "Expected type mismatch error for is_null, got: {err}"
+    );
+}
+
+#[test]
+fn condition_is_null_on_optional_passes() {
+    let yaml = r#"
+workflow:
+  id: cond-null-opt
+  version: 1
+  inputs:
+    name: string?
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+      when:
+        field: .inputs.name
+        is_null: true
+"#;
+    let result = load_single_workflow_from_str(yaml, &HashMap::new());
+    assert!(result.is_ok(), "is_null on optional should pass, got: {:?}", result.err());
+}
+
+#[test]
+fn unused_output_field_returns_error() {
+    let yaml = r#"
+workflow:
+  id: unused-output
+  version: 1
+  outputs:
+    result: string
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+"#;
+    let result = load_single_workflow_from_str(yaml, &HashMap::new());
+    assert!(result.is_err());
+    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    assert!(
+        err.contains("never produced") && err.contains("result"),
+        "Expected unused output error, got: {err}"
+    );
+}
+
+#[test]
+fn output_produced_by_step_passes() {
+    let yaml = r#"
+workflow:
+  id: used-output
+  version: 1
+  outputs:
+    result: string
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+      outputs:
+        - name: result
+"#;
+    let result = load_single_workflow_from_str(yaml, &HashMap::new());
+    assert!(result.is_ok(), "Output produced by step should pass, got: {:?}", result.err());
+}
+
+#[test]
+fn no_outputs_schema_no_error() {
+    // When there are no declared outputs, no "unused output" error should fire.
+    let yaml = r#"
+workflow:
+  id: no-outputs
+  version: 1
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+"#;
+    let result = load_single_workflow_from_str(yaml, &HashMap::new());
+    assert!(result.is_ok(), "No outputs schema should not cause error, got: {:?}", result.err());
+}
+
+#[test]
+fn condition_on_schemaless_workflow_skips_field_validation() {
+    // When no inputs/outputs are declared, field paths are not validated.
+    let yaml = r#"
+workflow:
+  id: schemaless
+  version: 1
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+      when:
+        field: .inputs.anything
+        equals: whatever
+"#;
+    let result = load_single_workflow_from_str(yaml, &HashMap::new());
+    assert!(
+        result.is_ok(),
+        "Schemaless workflow should skip field validation, got: {:?}",
+        result.err()
+    );
+}
+
+#[test]
+fn condition_invalid_field_path_segment_returns_error() {
+    let yaml = r#"
+workflow:
+  id: bad-path
+  version: 1
+  inputs:
+    x: string
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+      when:
+        field: .data.x
+        equals: foo
+"#;
+    let result = load_single_workflow_from_str(yaml, &HashMap::new());
+    assert!(result.is_err());
+    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    assert!(
+        err.contains("inputs") && err.contains("outputs"),
+        "Expected error about invalid path segment, got: {err}"
+    );
+}
+
+// --- Task file includes tests ---
+
+#[test]
+fn include_single_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let child_path = dir.path().join("child.yaml");
+    std::fs::write(
+        &child_path,
+        r#"
+workflow:
+  id: child-wf
+  version: 1
+  steps:
+    - name: child-step
+      type: shell
+      config:
+        run: echo child
+"#,
+    )
+    .unwrap();
+
+    let main_yaml = format!(
+        r#"
+include:
+  - child.yaml
+workflow:
+  id: main-wf
+  version: 1
+  steps:
+    - name: main-step
+      type: shell
+      config:
+        run: echo main
+"#
+    );
+
+    let main_path = dir.path().join("main.yaml");
+    std::fs::write(&main_path, &main_yaml).unwrap();
+
+    let result =
+        wfe_yaml::load_workflow_with_includes(&main_yaml, &main_path, &HashMap::new());
+    assert!(result.is_ok(), "Include single file should work, got: {:?}", result.err());
+    let workflows = result.unwrap();
+    assert_eq!(workflows.len(), 2);
+    let ids: Vec<&str> = workflows.iter().map(|w| w.definition.id.as_str()).collect();
+    assert!(ids.contains(&"main-wf"));
+    assert!(ids.contains(&"child-wf"));
+}
+
+#[test]
+fn include_multiple_files() {
+    let dir = tempfile::tempdir().unwrap();
+
+    std::fs::write(
+        dir.path().join("a.yaml"),
+        r#"
+workflow:
+  id: wf-a
+  version: 1
+  steps:
+    - name: a-step
+      type: shell
+      config:
+        run: echo a
+"#,
+    )
+    .unwrap();
+
+    std::fs::write(
+        dir.path().join("b.yaml"),
+        r#"
+workflow:
+  id: wf-b
+  version: 1
+  steps:
+    - name: b-step
+      type: shell
+      config:
+        run: echo b
+"#,
+    )
+    .unwrap();
+
+    let main_yaml = r#"
+include:
+  - a.yaml
+  - b.yaml
+workflow:
+  id: main-wf
+  version: 1
+  steps:
+    - name: main-step
+      type: shell
+      config:
+        run: echo main
+"#;
+
+    let main_path = dir.path().join("main.yaml");
+    std::fs::write(&main_path, main_yaml).unwrap();
+
+    let result =
+        wfe_yaml::load_workflow_with_includes(main_yaml, &main_path, &HashMap::new());
+    assert!(result.is_ok(), "Include multiple files should work, got: {:?}", result.err());
+    let workflows = result.unwrap();
+    assert_eq!(workflows.len(), 3);
+}
+
+#[test]
+fn include_with_override_main_takes_precedence() {
+    let dir = tempfile::tempdir().unwrap();
+
+    // Child defines wf with id "shared"
+    std::fs::write(
+        dir.path().join("child.yaml"),
+        r#"
+workflow:
+  id: shared
+  version: 1
+  steps:
+    - name: child-step
+      type: shell
+      config:
+        run: echo child
+"#,
+    )
+    .unwrap();
+
+    // Main also defines wf with id "shared" — main should win
+    let main_yaml = r#"
+include:
+  - child.yaml
+workflow:
+  id: shared
+  version: 1
+  steps:
+    - name: main-step
+      type: shell
+      config:
+        run: echo main
+"#;
+
+    let main_path = dir.path().join("main.yaml");
+    std::fs::write(&main_path, main_yaml).unwrap();
+
+    let result =
+        wfe_yaml::load_workflow_with_includes(main_yaml, &main_path, &HashMap::new());
+    assert!(result.is_ok(), "Override should work, got: {:?}", result.err());
+    let workflows = result.unwrap();
+    // Only 1 workflow since main takes precedence over included
+    assert_eq!(workflows.len(), 1);
+    assert_eq!(workflows[0].definition.id, "shared");
+    // Verify it's the main's version
+    let step_names: Vec<_> = workflows[0]
+        .definition
+        .steps
+        .iter()
+        .filter_map(|s| s.name.as_deref())
+        .collect();
+    assert!(
+        step_names.contains(&"main-step"),
+        "Main file should take precedence, got steps: {:?}",
+        step_names
+    );
+}
+
+#[test]
+fn include_missing_file_returns_error() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let main_yaml = r#"
+include:
+  - nonexistent.yaml
+workflow:
+  id: main-wf
+  version: 1
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+"#;
+
+    let main_path = dir.path().join("main.yaml");
+    std::fs::write(&main_path, main_yaml).unwrap();
+
+    let result =
+        wfe_yaml::load_workflow_with_includes(main_yaml, &main_path, &HashMap::new());
+    assert!(result.is_err());
+    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    assert!(
+        err.contains("nonexistent") || err.contains("not found") || err.contains("No such file"),
+        "Expected file not found error, got: {err}"
+    );
+}
+
+#[test]
+fn include_cycle_detection() {
+    let dir = tempfile::tempdir().unwrap();
+
+    // A includes B, B includes A
+    let a_yaml = r#"
+include:
+  - b.yaml
+workflow:
+  id: wf-a
+  version: 1
+  steps:
+    - name: a-step
+      type: shell
+      config:
+        run: echo a
+"#;
+
+    let b_yaml = r#"
+include:
+  - a.yaml
+workflow:
+  id: wf-b
+  version: 1
+  steps:
+    - name: b-step
+      type: shell
+      config:
+        run: echo b
+"#;
+
+    std::fs::write(dir.path().join("a.yaml"), a_yaml).unwrap();
+    std::fs::write(dir.path().join("b.yaml"), b_yaml).unwrap();
+
+    let a_path = dir.path().join("a.yaml");
+
+    let result =
+        wfe_yaml::load_workflow_with_includes(a_yaml, &a_path, &HashMap::new());
+    assert!(result.is_err());
+    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    assert!(
+        err.contains("Circular include"),
+        "Expected circular include error, got: {err}"
+    );
+}
+
+#[test]
+fn condition_equals_on_any_type_passes() {
+    let yaml = r#"
+workflow:
+  id: cond-any-type
+  version: 1
+  inputs:
+    name: string
+    count: integer
+    active: bool
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+      when:
+        all:
+          - field: .inputs.name
+            equals: foo
+          - field: .inputs.count
+            equals: 42
+          - field: .inputs.active
+            equals: true
+"#;
+    let result = load_single_workflow_from_str(yaml, &HashMap::new());
+    assert!(result.is_ok(), "equals should work on all types, got: {:?}", result.err());
+}
+
+#[test]
+fn condition_gt_on_integer_passes() {
+    let yaml = r#"
+workflow:
+  id: cond-gt-int
+  version: 1
+  inputs:
+    count: integer
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+      when:
+        field: .inputs.count
+        gte: 10
+"#;
+    let result = load_single_workflow_from_str(yaml, &HashMap::new());
+    assert!(result.is_ok(), "gte on integer should pass, got: {:?}", result.err());
+}
+
+#[test]
+fn condition_on_any_type_field_allows_all_operators() {
+    // 'any' type should pass all operator checks
+    let yaml = r#"
+workflow:
+  id: cond-any-ops
+  version: 1
+  inputs:
+    data: any
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+      when:
+        field: .inputs.data
+        gt: 5
+"#;
+    let result = load_single_workflow_from_str(yaml, &HashMap::new());
+    assert!(result.is_ok(), "any type should allow gt, got: {:?}", result.err());
+}

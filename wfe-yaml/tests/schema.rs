@@ -1,4 +1,4 @@
-use wfe_yaml::schema::{YamlWorkflow, YamlWorkflowFile};
+use wfe_yaml::schema::{YamlCondition, YamlWorkflow, YamlWorkflowFile};
 
 #[test]
 fn parse_minimal_yaml() {
@@ -341,4 +341,212 @@ workflow:
     let parsed: YamlWorkflow = serde_yaml::from_str(yaml).unwrap();
     assert!(parsed.workflow.inputs.is_empty());
     assert!(parsed.workflow.outputs.is_empty());
+}
+
+// --- Condition schema tests ---
+
+#[test]
+fn parse_step_with_simple_when_condition() {
+    let yaml = r#"
+workflow:
+  id: cond-wf
+  version: 1
+  steps:
+    - name: deploy
+      type: shell
+      config:
+        run: deploy.sh
+      when:
+        field: .inputs.enabled
+        equals: true
+"#;
+    let parsed: YamlWorkflow = serde_yaml::from_str(yaml).unwrap();
+    let step = &parsed.workflow.steps[0];
+    assert!(step.when.is_some());
+    match step.when.as_ref().unwrap() {
+        YamlCondition::Comparison(cmp) => {
+            assert_eq!(cmp.field, ".inputs.enabled");
+            assert!(cmp.equals.is_some());
+        }
+        _ => panic!("Expected Comparison variant"),
+    }
+}
+
+#[test]
+fn parse_step_with_nested_combinator_conditions() {
+    let yaml = r#"
+workflow:
+  id: nested-cond-wf
+  version: 1
+  steps:
+    - name: deploy
+      type: shell
+      config:
+        run: deploy.sh
+      when:
+        all:
+          - field: .inputs.count
+            gt: 5
+          - any:
+              - field: .inputs.env
+                equals: prod
+              - field: .inputs.env
+                equals: staging
+"#;
+    let parsed: YamlWorkflow = serde_yaml::from_str(yaml).unwrap();
+    let step = &parsed.workflow.steps[0];
+    assert!(step.when.is_some());
+    match step.when.as_ref().unwrap() {
+        YamlCondition::Combinator(c) => {
+            assert!(c.all.is_some());
+            let children = c.all.as_ref().unwrap();
+            assert_eq!(children.len(), 2);
+        }
+        _ => panic!("Expected Combinator variant"),
+    }
+}
+
+#[test]
+fn parse_step_with_not_condition() {
+    let yaml = r#"
+workflow:
+  id: not-cond-wf
+  version: 1
+  steps:
+    - name: deploy
+      type: shell
+      config:
+        run: deploy.sh
+      when:
+        not:
+          field: .inputs.skip
+          equals: true
+"#;
+    let parsed: YamlWorkflow = serde_yaml::from_str(yaml).unwrap();
+    let step = &parsed.workflow.steps[0];
+    match step.when.as_ref().unwrap() {
+        YamlCondition::Combinator(c) => {
+            assert!(c.not.is_some());
+        }
+        _ => panic!("Expected Combinator with not"),
+    }
+}
+
+#[test]
+fn parse_step_with_none_condition() {
+    let yaml = r#"
+workflow:
+  id: none-cond-wf
+  version: 1
+  steps:
+    - name: deploy
+      type: shell
+      config:
+        run: deploy.sh
+      when:
+        none:
+          - field: .inputs.skip
+            equals: true
+          - field: .inputs.disabled
+            equals: true
+"#;
+    let parsed: YamlWorkflow = serde_yaml::from_str(yaml).unwrap();
+    let step = &parsed.workflow.steps[0];
+    match step.when.as_ref().unwrap() {
+        YamlCondition::Combinator(c) => {
+            assert!(c.none.is_some());
+            assert_eq!(c.none.as_ref().unwrap().len(), 2);
+        }
+        _ => panic!("Expected Combinator with none"),
+    }
+}
+
+#[test]
+fn parse_step_with_one_of_condition() {
+    let yaml = r#"
+workflow:
+  id: one-of-wf
+  version: 1
+  steps:
+    - name: deploy
+      type: shell
+      config:
+        run: deploy.sh
+      when:
+        one_of:
+          - field: .inputs.mode
+            equals: fast
+          - field: .inputs.mode
+            equals: slow
+"#;
+    let parsed: YamlWorkflow = serde_yaml::from_str(yaml).unwrap();
+    let step = &parsed.workflow.steps[0];
+    match step.when.as_ref().unwrap() {
+        YamlCondition::Combinator(c) => {
+            assert!(c.one_of.is_some());
+            assert_eq!(c.one_of.as_ref().unwrap().len(), 2);
+        }
+        _ => panic!("Expected Combinator with one_of"),
+    }
+}
+
+#[test]
+fn parse_comparison_with_each_operator() {
+    // Test that each operator variant deserializes correctly.
+    let operators = vec![
+        ("equals: 42", "equals"),
+        ("not_equals: foo", "not_equals"),
+        ("gt: 10", "gt"),
+        ("gte: 10", "gte"),
+        ("lt: 100", "lt"),
+        ("lte: 100", "lte"),
+        ("contains: needle", "contains"),
+        ("is_null: true", "is_null"),
+        ("is_not_null: true", "is_not_null"),
+    ];
+
+    for (op_yaml, op_name) in operators {
+        let yaml = format!(
+            r#"
+workflow:
+  id: op-{op_name}
+  version: 1
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+      when:
+        field: .inputs.x
+        {op_yaml}
+"#
+        );
+        let parsed: YamlWorkflow = serde_yaml::from_str(&yaml)
+            .unwrap_or_else(|e| panic!("Failed to parse operator {op_name}: {e}"));
+        let step = &parsed.workflow.steps[0];
+        assert!(
+            step.when.is_some(),
+            "Step should have when condition for operator {op_name}"
+        );
+        match step.when.as_ref().unwrap() {
+            YamlCondition::Comparison(_) => {}
+            _ => panic!("Expected Comparison for operator {op_name}"),
+        }
+    }
+}
+
+#[test]
+fn parse_step_without_when_has_none() {
+    let yaml = r#"
+workflow:
+  id: no-when-wf
+  version: 1
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+"#;
+    let parsed: YamlWorkflow = serde_yaml::from_str(yaml).unwrap();
+    assert!(parsed.workflow.steps[0].when.is_none());
 }

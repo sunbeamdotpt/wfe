@@ -1102,3 +1102,204 @@ workflows:
         "SubWorkflowStep must call host_context.start_workflow()"
     );
 }
+
+// --- Condition compilation tests ---
+
+#[test]
+fn compile_simple_condition_into_step_condition() {
+    let yaml = r#"
+workflow:
+  id: cond-compile
+  version: 1
+  steps:
+    - name: deploy
+      type: shell
+      config:
+        run: deploy.sh
+      when:
+        field: .inputs.enabled
+        equals: true
+"#;
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    let step = compiled
+        .definition
+        .steps
+        .iter()
+        .find(|s| s.name.as_deref() == Some("deploy"))
+        .unwrap();
+
+    assert!(step.when.is_some(), "Step should have a when condition");
+    match step.when.as_ref().unwrap() {
+        wfe_core::models::StepCondition::Comparison(cmp) => {
+            assert_eq!(cmp.field, ".inputs.enabled");
+            assert_eq!(cmp.operator, wfe_core::models::ComparisonOp::Equals);
+            assert_eq!(cmp.value, Some(serde_json::json!(true)));
+        }
+        other => panic!("Expected Comparison, got: {other:?}"),
+    }
+}
+
+#[test]
+fn compile_nested_condition() {
+    let yaml = r#"
+workflow:
+  id: nested-cond-compile
+  version: 1
+  steps:
+    - name: deploy
+      type: shell
+      config:
+        run: deploy.sh
+      when:
+        all:
+          - field: .inputs.count
+            gt: 5
+          - not:
+              field: .inputs.skip
+              equals: true
+"#;
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    let step = compiled
+        .definition
+        .steps
+        .iter()
+        .find(|s| s.name.as_deref() == Some("deploy"))
+        .unwrap();
+
+    assert!(step.when.is_some());
+    match step.when.as_ref().unwrap() {
+        wfe_core::models::StepCondition::All(children) => {
+            assert_eq!(children.len(), 2);
+            // First child: comparison
+            match &children[0] {
+                wfe_core::models::StepCondition::Comparison(cmp) => {
+                    assert_eq!(cmp.field, ".inputs.count");
+                    assert_eq!(cmp.operator, wfe_core::models::ComparisonOp::Gt);
+                    assert_eq!(cmp.value, Some(serde_json::json!(5)));
+                }
+                other => panic!("Expected Comparison, got: {other:?}"),
+            }
+            // Second child: not
+            match &children[1] {
+                wfe_core::models::StepCondition::Not(inner) => {
+                    match inner.as_ref() {
+                        wfe_core::models::StepCondition::Comparison(cmp) => {
+                            assert_eq!(cmp.field, ".inputs.skip");
+                            assert_eq!(cmp.operator, wfe_core::models::ComparisonOp::Equals);
+                        }
+                        other => panic!("Expected Comparison inside Not, got: {other:?}"),
+                    }
+                }
+                other => panic!("Expected Not, got: {other:?}"),
+            }
+        }
+        other => panic!("Expected All, got: {other:?}"),
+    }
+}
+
+#[test]
+fn step_without_when_has_none_condition() {
+    let yaml = r#"
+workflow:
+  id: no-when-compile
+  version: 1
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+"#;
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    let step = compiled
+        .definition
+        .steps
+        .iter()
+        .find(|s| s.name.as_deref() == Some("step1"))
+        .unwrap();
+    assert!(step.when.is_none());
+}
+
+#[test]
+fn compile_all_comparison_operators() {
+    use wfe_core::models::ComparisonOp;
+
+    let ops = vec![
+        ("equals: 42", ComparisonOp::Equals),
+        ("not_equals: foo", ComparisonOp::NotEquals),
+        ("gt: 10", ComparisonOp::Gt),
+        ("gte: 10", ComparisonOp::Gte),
+        ("lt: 100", ComparisonOp::Lt),
+        ("lte: 100", ComparisonOp::Lte),
+        ("contains: needle", ComparisonOp::Contains),
+        ("is_null: true", ComparisonOp::IsNull),
+        ("is_not_null: true", ComparisonOp::IsNotNull),
+    ];
+
+    for (op_yaml, expected_op) in ops {
+        let yaml = format!(
+            r#"
+workflow:
+  id: op-test
+  version: 1
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hi
+      when:
+        field: .inputs.x
+        {op_yaml}
+"#
+        );
+        let compiled = load_single_workflow_from_str(&yaml, &HashMap::new())
+            .unwrap_or_else(|e| panic!("Failed to compile with {op_yaml}: {e}"));
+        let step = compiled
+            .definition
+            .steps
+            .iter()
+            .find(|s| s.name.as_deref() == Some("step1"))
+            .unwrap();
+
+        match step.when.as_ref().unwrap() {
+            wfe_core::models::StepCondition::Comparison(cmp) => {
+                assert_eq!(cmp.operator, expected_op, "Operator mismatch for {op_yaml}");
+            }
+            other => panic!("Expected Comparison for {op_yaml}, got: {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn compile_condition_on_parallel_container() {
+    let yaml = r#"
+workflow:
+  id: parallel-cond
+  version: 1
+  steps:
+    - name: parallel-group
+      when:
+        field: .inputs.run_parallel
+        equals: true
+      parallel:
+        - name: task-a
+          type: shell
+          config:
+            run: echo a
+        - name: task-b
+          type: shell
+          config:
+            run: echo b
+"#;
+    let compiled = load_single_workflow_from_str(yaml, &HashMap::new()).unwrap();
+    let container = compiled
+        .definition
+        .steps
+        .iter()
+        .find(|s| s.name.as_deref() == Some("parallel-group"))
+        .unwrap();
+
+    assert!(
+        container.when.is_some(),
+        "Parallel container should have when condition"
+    );
+}
