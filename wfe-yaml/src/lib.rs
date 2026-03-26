@@ -8,6 +8,8 @@ pub mod validation;
 
 use std::collections::HashMap;
 
+use serde::de::Error as _;
+
 use crate::compiler::CompiledWorkflow;
 use crate::error::YamlWorkflowError;
 
@@ -23,6 +25,10 @@ pub fn load_workflow(
 
 /// Load workflows from a YAML string, applying variable interpolation.
 /// Returns a Vec of compiled workflows (supports multi-workflow files).
+///
+/// Supports YAML 1.1 merge keys (`<<: *anchor`) via the `yaml-merge-keys`
+/// crate. serde_yaml 0.9 implements YAML 1.2 which dropped merge keys;
+/// we preprocess the YAML to resolve them before deserialization.
 pub fn load_workflow_from_str(
     yaml: &str,
     config: &HashMap<String, serde_json::Value>,
@@ -30,8 +36,14 @@ pub fn load_workflow_from_str(
     // Interpolate variables.
     let interpolated = interpolation::interpolate(yaml, config)?;
 
-    // Parse YAML as multi-workflow file.
-    let file: schema::YamlWorkflowFile = serde_yaml::from_str(&interpolated)?;
+    // Parse to a generic YAML value first, then resolve merge keys (<<:).
+    // This adds YAML 1.1 merge key support on top of serde_yaml 0.9's YAML 1.2 parser.
+    let raw_value: serde_yaml::Value = serde_yaml::from_str(&interpolated)?;
+    let merged_value = yaml_merge_keys::merge_keys_serde(raw_value)
+        .map_err(|e| YamlWorkflowError::Parse(serde_yaml::Error::custom(format!("merge key resolution failed: {e}"))))?;
+
+    // Deserialize the merge-resolved value into our schema.
+    let file: schema::YamlWorkflowFile = serde_yaml::from_value(merged_value)?;
 
     let specs = resolve_workflow_specs(file)?;
 
