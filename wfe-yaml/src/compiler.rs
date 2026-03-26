@@ -14,7 +14,9 @@ use wfe_buildkit::{BuildkitConfig, BuildkitStep};
 #[cfg(feature = "containerd")]
 use wfe_containerd::{ContainerdConfig, ContainerdStep};
 use wfe_core::primitives::sub_workflow::SubWorkflowStep;
-use crate::schema::{WorkflowSpec, YamlErrorBehavior, YamlStep};
+use wfe_core::models::condition::{ComparisonOp, FieldComparison, StepCondition};
+
+use crate::schema::{WorkflowSpec, YamlCombinator, YamlComparison, YamlCondition, YamlErrorBehavior, YamlStep};
 
 /// Configuration for a sub-workflow step.
 #[derive(Debug, Clone, Serialize)]
@@ -82,6 +84,11 @@ fn compile_steps(
                 compile_steps(parallel_children, definition, factories, next_id)?;
             container.children = child_ids;
 
+            // Compile condition if present.
+            if let Some(ref yaml_cond) = yaml_step.when {
+                container.when = Some(compile_condition(yaml_cond)?);
+            }
+
             definition.steps.push(container);
             main_step_ids.push(container_id);
         } else {
@@ -106,6 +113,11 @@ fn compile_steps(
 
             if let Some(ref eb) = yaml_step.error_behavior {
                 wf_step.error_behavior = Some(map_error_behavior(eb)?);
+            }
+
+            // Compile condition if present.
+            if let Some(ref yaml_cond) = yaml_step.when {
+                wf_step.when = Some(compile_condition(yaml_cond)?);
             }
 
             // Handle on_failure: create compensation step.
@@ -228,6 +240,154 @@ fn compile_steps(
     }
 
     Ok(main_step_ids)
+}
+
+/// Convert a YAML condition tree into a `StepCondition` tree.
+pub fn compile_condition(yaml_cond: &YamlCondition) -> Result<StepCondition, YamlWorkflowError> {
+    match yaml_cond {
+        YamlCondition::Comparison(cmp) => compile_comparison(cmp.as_ref()),
+        YamlCondition::Combinator(combinator) => compile_combinator(combinator),
+    }
+}
+
+fn compile_combinator(c: &YamlCombinator) -> Result<StepCondition, YamlWorkflowError> {
+    // Count how many combinator keys are set to detect ambiguity.
+    let mut count = 0;
+    if c.all.is_some() {
+        count += 1;
+    }
+    if c.any.is_some() {
+        count += 1;
+    }
+    if c.none.is_some() {
+        count += 1;
+    }
+    if c.one_of.is_some() {
+        count += 1;
+    }
+    if c.not.is_some() {
+        count += 1;
+    }
+
+    if count == 0 {
+        return Err(YamlWorkflowError::Compilation(
+            "Condition combinator must have at least one of: all, any, none, one_of, not"
+                .to_string(),
+        ));
+    }
+    if count > 1 {
+        return Err(YamlWorkflowError::Compilation(
+            "Condition combinator must have exactly one of: all, any, none, one_of, not"
+                .to_string(),
+        ));
+    }
+
+    if let Some(ref children) = c.all {
+        let compiled: Result<Vec<_>, _> = children.iter().map(compile_condition).collect();
+        Ok(StepCondition::All(compiled?))
+    } else if let Some(ref children) = c.any {
+        let compiled: Result<Vec<_>, _> = children.iter().map(compile_condition).collect();
+        Ok(StepCondition::Any(compiled?))
+    } else if let Some(ref children) = c.none {
+        let compiled: Result<Vec<_>, _> = children.iter().map(compile_condition).collect();
+        Ok(StepCondition::None(compiled?))
+    } else if let Some(ref children) = c.one_of {
+        let compiled: Result<Vec<_>, _> = children.iter().map(compile_condition).collect();
+        Ok(StepCondition::OneOf(compiled?))
+    } else if let Some(ref inner) = c.not {
+        Ok(StepCondition::Not(Box::new(compile_condition(inner)?)))
+    } else {
+        unreachable!()
+    }
+}
+
+fn compile_comparison(cmp: &YamlComparison) -> Result<StepCondition, YamlWorkflowError> {
+    // Determine which operator is specified. Exactly one must be present.
+    let mut ops: Vec<(ComparisonOp, Option<serde_json::Value>)> = Vec::new();
+
+    if let Some(ref v) = cmp.equals {
+        ops.push((ComparisonOp::Equals, Some(yaml_value_to_json(v))));
+    }
+    if let Some(ref v) = cmp.not_equals {
+        ops.push((ComparisonOp::NotEquals, Some(yaml_value_to_json(v))));
+    }
+    if let Some(ref v) = cmp.gt {
+        ops.push((ComparisonOp::Gt, Some(yaml_value_to_json(v))));
+    }
+    if let Some(ref v) = cmp.gte {
+        ops.push((ComparisonOp::Gte, Some(yaml_value_to_json(v))));
+    }
+    if let Some(ref v) = cmp.lt {
+        ops.push((ComparisonOp::Lt, Some(yaml_value_to_json(v))));
+    }
+    if let Some(ref v) = cmp.lte {
+        ops.push((ComparisonOp::Lte, Some(yaml_value_to_json(v))));
+    }
+    if let Some(ref v) = cmp.contains {
+        ops.push((ComparisonOp::Contains, Some(yaml_value_to_json(v))));
+    }
+    if let Some(true) = cmp.is_null {
+        ops.push((ComparisonOp::IsNull, None));
+    }
+    if let Some(true) = cmp.is_not_null {
+        ops.push((ComparisonOp::IsNotNull, None));
+    }
+
+    if ops.is_empty() {
+        return Err(YamlWorkflowError::Compilation(format!(
+            "Comparison on field '{}' must specify an operator (equals, gt, etc.)",
+            cmp.field
+        )));
+    }
+    if ops.len() > 1 {
+        return Err(YamlWorkflowError::Compilation(format!(
+            "Comparison on field '{}' must specify exactly one operator, found {}",
+            cmp.field,
+            ops.len()
+        )));
+    }
+
+    let (operator, value) = ops.remove(0);
+    Ok(StepCondition::Comparison(FieldComparison {
+        field: cmp.field.clone(),
+        operator,
+        value,
+    }))
+}
+
+/// Convert a serde_yaml::Value to serde_json::Value.
+fn yaml_value_to_json(v: &serde_yaml::Value) -> serde_json::Value {
+    match v {
+        serde_yaml::Value::Null => serde_json::Value::Null,
+        serde_yaml::Value::Bool(b) => serde_json::Value::Bool(*b),
+        serde_yaml::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                serde_json::Value::Number(serde_json::Number::from(i))
+            } else if let Some(u) = n.as_u64() {
+                serde_json::Value::Number(serde_json::Number::from(u))
+            } else if let Some(f) = n.as_f64() {
+                serde_json::Number::from_f64(f)
+                    .map(serde_json::Value::Number)
+                    .unwrap_or(serde_json::Value::Null)
+            } else {
+                serde_json::Value::Null
+            }
+        }
+        serde_yaml::Value::String(s) => serde_json::Value::String(s.clone()),
+        serde_yaml::Value::Sequence(seq) => {
+            serde_json::Value::Array(seq.iter().map(yaml_value_to_json).collect())
+        }
+        serde_yaml::Value::Mapping(map) => {
+            let mut obj = serde_json::Map::new();
+            for (k, val) in map {
+                if let serde_yaml::Value::String(key) = k {
+                    obj.insert(key.clone(), yaml_value_to_json(val));
+                }
+            }
+            serde_json::Value::Object(obj)
+        }
+        serde_yaml::Value::Tagged(tagged) => yaml_value_to_json(&tagged.value),
+    }
 }
 
 fn build_step_config_and_factory(
