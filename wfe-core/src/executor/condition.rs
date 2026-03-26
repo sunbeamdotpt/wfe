@@ -92,11 +92,28 @@ fn resolve_field_path<'a>(
     }
 
     let segments: Vec<&str> = path.split('.').collect();
+
+    // Try resolving the full path first (for nested data like {"outputs": {"x": 1}}).
+    // If the first segment is "outputs"/"inputs" and doesn't exist as a key,
+    // strip it and resolve flat (for workflow data where outputs merge flat).
+    if segments.len() >= 2
+        && (segments[0] == "outputs" || segments[0] == "inputs")
+        && data.get(segments[0]).is_none()
+    {
+        return walk_segments(&segments[1..], data);
+    }
+
+    walk_segments(&segments, data)
+}
+
+fn walk_segments<'a>(
+    segments: &[&str],
+    data: &'a serde_json::Value,
+) -> Result<&'a serde_json::Value, EvalError> {
     let mut current = data;
 
-    for segment in &segments {
+    for segment in segments {
         if let Ok(idx) = segment.parse::<usize>() {
-            // Try array index access.
             match current.as_array() {
                 Some(arr) => {
                     current = arr.get(idx).ok_or(EvalError::FieldNotPresent)?;
@@ -106,7 +123,6 @@ fn resolve_field_path<'a>(
                 }
             }
         } else {
-            // Object field access.
             match current.as_object() {
                 Some(obj) => {
                     current = obj.get(*segment).ok_or(EvalError::FieldNotPresent)?;
