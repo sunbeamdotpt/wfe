@@ -1,3 +1,5 @@
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use tokio::sync::RwLock;
@@ -10,14 +12,59 @@ use wfe_core::models::{
     WorkflowStatus,
 };
 use wfe_core::traits::{
-    DistributedLockProvider, LifecyclePublisher, PersistenceProvider, QueueProvider, SearchIndex,
-    StepBody, WorkflowData,
+    DistributedLockProvider, HostContext, LifecyclePublisher, PersistenceProvider, QueueProvider,
+    SearchIndex, StepBody, WorkflowData,
 };
 use wfe_core::traits::registry::WorkflowRegistry;
 use wfe_core::{Result, WfeError};
 use wfe_core::builder::WorkflowBuilder;
 
 use crate::registry::InMemoryWorkflowRegistry;
+
+/// A lightweight HostContext implementation that delegates to the WorkflowHost's
+/// components. Used by the background consumer task which cannot hold a direct
+/// reference to WorkflowHost (it runs in a spawned tokio task).
+pub(crate) struct HostContextImpl {
+    persistence: Arc<dyn PersistenceProvider>,
+    registry: Arc<RwLock<InMemoryWorkflowRegistry>>,
+    queue_provider: Arc<dyn QueueProvider>,
+}
+
+impl HostContext for HostContextImpl {
+    fn start_workflow(
+        &self,
+        definition_id: &str,
+        version: u32,
+        data: serde_json::Value,
+    ) -> Pin<Box<dyn Future<Output = Result<String>> + Send + '_>> {
+        let def_id = definition_id.to_string();
+        Box::pin(async move {
+            // Look up the definition.
+            let reg = self.registry.read().await;
+            let definition = reg
+                .get_definition(&def_id, Some(version))
+                .ok_or_else(|| WfeError::DefinitionNotFound {
+                    id: def_id.clone(),
+                    version,
+                })?;
+
+            // Create the child workflow instance.
+            let mut instance = WorkflowInstance::new(&def_id, version, data);
+            if !definition.steps.is_empty() {
+                instance.execution_pointers.push(ExecutionPointer::new(0));
+            }
+
+            let id = self.persistence.create_new_workflow(&instance).await?;
+
+            // Queue for execution.
+            self.queue_provider
+                .queue_work(&id, QueueType::Workflow)
+                .await?;
+
+            Ok(id)
+        })
+    }
+}
 
 /// The main orchestrator that ties all workflow engine components together.
 pub struct WorkflowHost {
@@ -49,6 +96,7 @@ impl WorkflowHost {
         sr.register::<sequence::SequenceStep>();
         sr.register::<wait_for::WaitForStep>();
         sr.register::<while_step::WhileStep>();
+        sr.register::<sub_workflow::SubWorkflowStep>();
     }
 
     /// Spawn background polling tasks for processing workflows and events.
@@ -66,6 +114,11 @@ impl WorkflowHost {
         let step_registry = Arc::clone(&self.step_registry);
         let queue = Arc::clone(&self.queue_provider);
         let shutdown = self.shutdown.clone();
+        let host_ctx = Arc::new(HostContextImpl {
+            persistence: Arc::clone(&self.persistence),
+            registry: Arc::clone(&self.registry),
+            queue_provider: Arc::clone(&self.queue_provider),
+        });
 
         tokio::spawn(async move {
             loop {
@@ -94,7 +147,7 @@ impl WorkflowHost {
                                     Some(def) => {
                                         let def_clone = def.clone();
                                         let sr = step_registry.read().await;
-                                        if let Err(e) = executor.execute(&workflow_id, &def_clone, &sr).await {
+                                        if let Err(e) = executor.execute(&workflow_id, &def_clone, &sr, Some(host_ctx.as_ref())).await {
                                             error!(workflow_id = %workflow_id, error = %e, "Workflow execution failed");
                                         }
                                     }
