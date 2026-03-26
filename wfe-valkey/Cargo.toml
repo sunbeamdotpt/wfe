@@ -3,6 +3,8 @@ name = "wfe-valkey"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 description = "Valkey/Redis provider for distributed locking, queues, and lifecycle events in WFE"
 
 [dependencies]
