@@ -1,4 +1,4 @@
-use wfe_yaml::schema::YamlWorkflow;
+use wfe_yaml::schema::{YamlWorkflow, YamlWorkflowFile};
 
 #[test]
 fn parse_minimal_yaml() {
@@ -191,4 +191,154 @@ workflow:
     let parsed: YamlWorkflow = serde_yaml::from_str(yaml).unwrap();
     assert_eq!(parsed.workflow.id, "template-wf");
     assert_eq!(parsed.workflow.steps.len(), 1);
+}
+
+// --- Multi-workflow file tests ---
+
+#[test]
+fn parse_single_workflow_file() {
+    let yaml = r#"
+workflow:
+  id: single
+  version: 1
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hello
+"#;
+    let parsed: YamlWorkflowFile = serde_yaml::from_str(yaml).unwrap();
+    assert!(parsed.workflow.is_some());
+    assert!(parsed.workflows.is_none());
+    assert_eq!(parsed.workflow.unwrap().id, "single");
+}
+
+#[test]
+fn parse_multi_workflow_file() {
+    let yaml = r#"
+workflows:
+  - id: build-wf
+    version: 1
+    steps:
+      - name: build
+        type: shell
+        config:
+          run: cargo build
+  - id: test-wf
+    version: 1
+    steps:
+      - name: test
+        type: shell
+        config:
+          run: cargo test
+"#;
+    let parsed: YamlWorkflowFile = serde_yaml::from_str(yaml).unwrap();
+    assert!(parsed.workflow.is_none());
+    assert!(parsed.workflows.is_some());
+    let workflows = parsed.workflows.unwrap();
+    assert_eq!(workflows.len(), 2);
+    assert_eq!(workflows[0].id, "build-wf");
+    assert_eq!(workflows[1].id, "test-wf");
+}
+
+#[test]
+fn parse_workflow_with_input_output_schemas() {
+    let yaml = r#"
+workflow:
+  id: typed-wf
+  version: 1
+  inputs:
+    repo_url: string
+    tags: "list<string>"
+    verbose: bool?
+  outputs:
+    artifact_path: string
+    exit_code: integer
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hello
+"#;
+    let parsed: YamlWorkflow = serde_yaml::from_str(yaml).unwrap();
+    assert_eq!(parsed.workflow.inputs.len(), 3);
+    assert_eq!(parsed.workflow.inputs.get("repo_url").unwrap(), "string");
+    assert_eq!(
+        parsed.workflow.inputs.get("tags").unwrap(),
+        "list<string>"
+    );
+    assert_eq!(parsed.workflow.inputs.get("verbose").unwrap(), "bool?");
+    assert_eq!(parsed.workflow.outputs.len(), 2);
+    assert_eq!(
+        parsed.workflow.outputs.get("artifact_path").unwrap(),
+        "string"
+    );
+    assert_eq!(
+        parsed.workflow.outputs.get("exit_code").unwrap(),
+        "integer"
+    );
+}
+
+#[test]
+fn parse_step_with_workflow_type() {
+    let yaml = r#"
+workflow:
+  id: parent-wf
+  version: 1
+  steps:
+    - name: run-child
+      type: workflow
+      config:
+        workflow: child-wf
+        workflow_version: 2
+      inputs:
+        - name: repo_url
+          path: data.repo
+      outputs:
+        - name: result
+"#;
+    let parsed: YamlWorkflow = serde_yaml::from_str(yaml).unwrap();
+    let step = &parsed.workflow.steps[0];
+    assert_eq!(step.step_type.as_deref(), Some("workflow"));
+    let config = step.config.as_ref().unwrap();
+    assert_eq!(config.child_workflow.as_deref(), Some("child-wf"));
+    assert_eq!(config.child_version, Some(2));
+    assert_eq!(step.inputs.len(), 1);
+    assert_eq!(step.outputs.len(), 1);
+}
+
+#[test]
+fn parse_workflow_step_version_defaults() {
+    let yaml = r#"
+workflow:
+  id: parent-wf
+  version: 1
+  steps:
+    - name: run-child
+      type: workflow
+      config:
+        workflow: child-wf
+"#;
+    let parsed: YamlWorkflow = serde_yaml::from_str(yaml).unwrap();
+    let config = parsed.workflow.steps[0].config.as_ref().unwrap();
+    assert_eq!(config.child_workflow.as_deref(), Some("child-wf"));
+    // version not specified, should be None in schema (compiler defaults to 1).
+    assert_eq!(config.child_version, None);
+}
+
+#[test]
+fn parse_empty_inputs_outputs_default() {
+    let yaml = r#"
+workflow:
+  id: no-schema-wf
+  version: 1
+  steps:
+    - name: step1
+      type: shell
+      config:
+        run: echo hello
+"#;
+    let parsed: YamlWorkflow = serde_yaml::from_str(yaml).unwrap();
+    assert!(parsed.workflow.inputs.is_empty());
+    assert!(parsed.workflow.outputs.is_empty());
 }
