@@ -2,6 +2,59 @@ use std::collections::HashMap;
 
 use serde::Deserialize;
 
+/// A condition in YAML that determines whether a step executes.
+///
+/// Uses `#[serde(untagged)]` so serde tries each variant in order.
+/// A comparison has a `field:` key; a combinator has `all:/any:/none:/one_of:/not:`.
+/// Comparison is listed first because it is more specific (requires `field`).
+#[derive(Debug, Deserialize, Clone)]
+#[serde(untagged)]
+pub enum YamlCondition {
+    /// Leaf comparison (has a `field:` key).
+    Comparison(Box<YamlComparison>),
+    /// Combinator with sub-conditions.
+    Combinator(YamlCombinator),
+}
+
+/// A combinator condition containing sub-conditions.
+#[derive(Debug, Deserialize, Clone)]
+pub struct YamlCombinator {
+    #[serde(default)]
+    pub all: Option<Vec<YamlCondition>>,
+    #[serde(default)]
+    pub any: Option<Vec<YamlCondition>>,
+    #[serde(default)]
+    pub none: Option<Vec<YamlCondition>>,
+    #[serde(default)]
+    pub one_of: Option<Vec<YamlCondition>>,
+    #[serde(default)]
+    pub not: Option<Box<YamlCondition>>,
+}
+
+/// A leaf comparison condition that compares a field value.
+#[derive(Debug, Deserialize, Clone)]
+pub struct YamlComparison {
+    pub field: String,
+    #[serde(default)]
+    pub equals: Option<serde_yaml::Value>,
+    #[serde(default)]
+    pub not_equals: Option<serde_yaml::Value>,
+    #[serde(default)]
+    pub gt: Option<serde_yaml::Value>,
+    #[serde(default)]
+    pub gte: Option<serde_yaml::Value>,
+    #[serde(default)]
+    pub lt: Option<serde_yaml::Value>,
+    #[serde(default)]
+    pub lte: Option<serde_yaml::Value>,
+    #[serde(default)]
+    pub contains: Option<serde_yaml::Value>,
+    #[serde(default)]
+    pub is_null: Option<bool>,
+    #[serde(default)]
+    pub is_not_null: Option<bool>,
+}
+
 /// Top-level YAML file structure supporting both single and multi-workflow files.
 #[derive(Debug, Deserialize)]
 pub struct YamlWorkflowFile {
@@ -60,6 +113,9 @@ pub struct YamlStep {
     pub on_failure: Option<Box<YamlStep>>,
     #[serde(default)]
     pub ensure: Option<Box<YamlStep>>,
+    /// Optional condition that must be true for this step to execute.
+    #[serde(default)]
+    pub when: Option<YamlCondition>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
