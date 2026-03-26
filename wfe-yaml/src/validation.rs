@@ -1,7 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::error::YamlWorkflowError;
-use crate::schema::{WorkflowSpec, YamlStep};
+use crate::schema::{WorkflowSpec, YamlCombinator, YamlComparison, YamlCondition, YamlStep};
+use crate::types::{parse_type_string, SchemaType};
 
 /// Validate a parsed workflow spec.
 pub fn validate(spec: &WorkflowSpec) -> Result<(), YamlWorkflowError> {
@@ -18,6 +19,15 @@ pub fn validate(spec: &WorkflowSpec) -> Result<(), YamlWorkflowError> {
     if let Some(ref eb) = spec.error_behavior {
         validate_error_behavior_type(&eb.behavior_type)?;
     }
+
+    // Collect known outputs (from step output data refs).
+    let known_outputs: HashSet<String> = collect_step_outputs(&spec.steps);
+
+    // Validate condition fields and types on all steps.
+    validate_step_conditions(&spec.steps, spec, &known_outputs)?;
+
+    // Detect unused declared outputs.
+    detect_unused_outputs(spec, &known_outputs)?;
 
     Ok(())
 }
@@ -357,4 +367,301 @@ fn validate_error_behavior_type(behavior_type: &str) -> Result<(), YamlWorkflowE
             other
         ))),
     }
+}
+
+// --- Condition validation ---
+
+/// Collect all output field names produced by steps (via their `outputs:` list).
+fn collect_step_outputs(steps: &[YamlStep]) -> HashSet<String> {
+    let mut outputs = HashSet::new();
+    for step in steps {
+        for out in &step.outputs {
+            outputs.insert(out.name.clone());
+        }
+        if let Some(ref children) = step.parallel {
+            outputs.extend(collect_step_outputs(children));
+        }
+        if let Some(ref hook) = step.on_success {
+            outputs.extend(collect_step_outputs(std::slice::from_ref(hook.as_ref())));
+        }
+        if let Some(ref hook) = step.on_failure {
+            outputs.extend(collect_step_outputs(std::slice::from_ref(hook.as_ref())));
+        }
+        if let Some(ref hook) = step.ensure {
+            outputs.extend(collect_step_outputs(std::slice::from_ref(hook.as_ref())));
+        }
+    }
+    outputs
+}
+
+/// Walk all steps and validate their `when` conditions.
+fn validate_step_conditions(
+    steps: &[YamlStep],
+    spec: &WorkflowSpec,
+    known_outputs: &HashSet<String>,
+) -> Result<(), YamlWorkflowError> {
+    for step in steps {
+        if let Some(ref cond) = step.when {
+            validate_condition_fields(cond, spec, known_outputs)?;
+            validate_condition_types(cond, spec)?;
+        }
+        if let Some(ref children) = step.parallel {
+            validate_step_conditions(children, spec, known_outputs)?;
+        }
+        if let Some(ref hook) = step.on_success {
+            validate_step_conditions(std::slice::from_ref(hook.as_ref()), spec, known_outputs)?;
+        }
+        if let Some(ref hook) = step.on_failure {
+            validate_step_conditions(std::slice::from_ref(hook.as_ref()), spec, known_outputs)?;
+        }
+        if let Some(ref hook) = step.ensure {
+            validate_step_conditions(std::slice::from_ref(hook.as_ref()), spec, known_outputs)?;
+        }
+    }
+    Ok(())
+}
+
+/// Validate that all field paths in a condition tree resolve to known schema fields.
+pub fn validate_condition_fields(
+    condition: &YamlCondition,
+    spec: &WorkflowSpec,
+    known_outputs: &HashSet<String>,
+) -> Result<(), YamlWorkflowError> {
+    match condition {
+        YamlCondition::Comparison(cmp) => {
+            validate_field_path(&cmp.as_ref().field, spec, known_outputs)?;
+        }
+        YamlCondition::Combinator(c) => {
+            validate_combinator_fields(c, spec, known_outputs)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_combinator_fields(
+    c: &YamlCombinator,
+    spec: &WorkflowSpec,
+    known_outputs: &HashSet<String>,
+) -> Result<(), YamlWorkflowError> {
+    let all_children = c
+        .all
+        .iter()
+        .flatten()
+        .chain(c.any.iter().flatten())
+        .chain(c.none.iter().flatten())
+        .chain(c.one_of.iter().flatten());
+
+    for child in all_children {
+        validate_condition_fields(child, spec, known_outputs)?;
+    }
+    if let Some(ref inner) = c.not {
+        validate_condition_fields(inner, spec, known_outputs)?;
+    }
+    Ok(())
+}
+
+/// Resolve a field path like `.inputs.foo` or `.outputs.bar` against the workflow schema.
+fn validate_field_path(
+    field: &str,
+    spec: &WorkflowSpec,
+    known_outputs: &HashSet<String>,
+) -> Result<(), YamlWorkflowError> {
+    // If the spec has no inputs and no outputs schema, skip field validation
+    // (schema-less workflow).
+    if spec.inputs.is_empty() && spec.outputs.is_empty() {
+        return Ok(());
+    }
+
+    let parts: Vec<&str> = field.split('.').collect();
+
+    // Expect paths like ".inputs.x" or ".outputs.x" (leading dot is optional).
+    let parts = if parts.first() == Some(&"") {
+        &parts[1..] // skip leading empty from "."
+    } else {
+        &parts[..]
+    };
+
+    if parts.len() < 2 {
+        return Err(YamlWorkflowError::Validation(format!(
+            "Condition field path '{field}' must have at least two segments (e.g. '.inputs.name')"
+        )));
+    }
+
+    match parts[0] {
+        "inputs" => {
+            let field_name = parts[1];
+            if !spec.inputs.contains_key(field_name) {
+                return Err(YamlWorkflowError::Validation(format!(
+                    "Condition references unknown input field '{field_name}'. \
+                     Available inputs: [{}]",
+                    spec.inputs
+                        .keys()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )));
+            }
+        }
+        "outputs" => {
+            let field_name = parts[1];
+            // Check both the declared output schema and step-produced outputs.
+            if !spec.outputs.contains_key(field_name) && !known_outputs.contains(field_name) {
+                return Err(YamlWorkflowError::Validation(format!(
+                    "Condition references unknown output field '{field_name}'. \
+                     Available outputs: [{}]",
+                    spec.outputs
+                        .keys()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )));
+            }
+        }
+        other => {
+            return Err(YamlWorkflowError::Validation(format!(
+                "Condition field path '{field}' must start with 'inputs' or 'outputs', got '{other}'"
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate operator type compatibility for condition comparisons.
+pub fn validate_condition_types(
+    condition: &YamlCondition,
+    spec: &WorkflowSpec,
+) -> Result<(), YamlWorkflowError> {
+    match condition {
+        YamlCondition::Comparison(cmp) => {
+            validate_comparison_type(cmp.as_ref(), spec)?;
+        }
+        YamlCondition::Combinator(c) => {
+            let all_children = c
+                .all
+                .iter()
+                .flatten()
+                .chain(c.any.iter().flatten())
+                .chain(c.none.iter().flatten())
+                .chain(c.one_of.iter().flatten());
+
+            for child in all_children {
+                validate_condition_types(child, spec)?;
+            }
+            if let Some(ref inner) = c.not {
+                validate_condition_types(inner, spec)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Check that the operator used in a comparison is compatible with the field type.
+fn validate_comparison_type(
+    cmp: &YamlComparison,
+    spec: &WorkflowSpec,
+) -> Result<(), YamlWorkflowError> {
+    // Resolve the field type from the schema.
+    let field_type = resolve_field_type(&cmp.field, spec);
+    let field_type = match field_type {
+        Some(t) => t,
+        // If we can't resolve the type (no schema), skip type checking.
+        None => return Ok(()),
+    };
+
+    // Check operator compatibility.
+    let has_gt = cmp.gt.is_some();
+    let has_gte = cmp.gte.is_some();
+    let has_lt = cmp.lt.is_some();
+    let has_lte = cmp.lte.is_some();
+    let has_contains = cmp.contains.is_some();
+    let has_is_null = cmp.is_null == Some(true);
+    let has_is_not_null = cmp.is_not_null == Some(true);
+
+    // gt/gte/lt/lte only valid for number/integer types.
+    if (has_gt || has_gte || has_lt || has_lte) && !is_numeric_type(&field_type) {
+        return Err(YamlWorkflowError::Validation(format!(
+            "Comparison operators gt/gte/lt/lte are only valid for number/integer types, \
+             but field '{}' has type '{}'",
+            cmp.field, field_type
+        )));
+    }
+
+    // contains only valid for string/list types.
+    if has_contains && !is_containable_type(&field_type) {
+        return Err(YamlWorkflowError::Validation(format!(
+            "Comparison operator 'contains' is only valid for string/list types, \
+             but field '{}' has type '{}'",
+            cmp.field, field_type
+        )));
+    }
+
+    // is_null/is_not_null only valid for optional types.
+    if (has_is_null || has_is_not_null) && !is_optional_type(&field_type) {
+        return Err(YamlWorkflowError::Validation(format!(
+            "Comparison operators is_null/is_not_null are only valid for optional types, \
+             but field '{}' has type '{}'",
+            cmp.field, field_type
+        )));
+    }
+
+    Ok(())
+}
+
+/// Resolve a field's SchemaType from the workflow spec.
+fn resolve_field_type(field: &str, spec: &WorkflowSpec) -> Option<SchemaType> {
+    let parts: Vec<&str> = field.split('.').collect();
+    let parts = if parts.first() == Some(&"") {
+        &parts[1..]
+    } else {
+        &parts[..]
+    };
+
+    if parts.len() < 2 {
+        return None;
+    }
+
+    let type_str = match parts[0] {
+        "inputs" => spec.inputs.get(parts[1]),
+        "outputs" => spec.outputs.get(parts[1]),
+        _ => None,
+    }?;
+
+    parse_type_string(type_str).ok()
+}
+
+fn is_numeric_type(t: &SchemaType) -> bool {
+    match t {
+        SchemaType::Number | SchemaType::Integer | SchemaType::Any => true,
+        SchemaType::Optional(inner) => is_numeric_type(inner),
+        _ => false,
+    }
+}
+
+fn is_containable_type(t: &SchemaType) -> bool {
+    match t {
+        SchemaType::String | SchemaType::List(_) | SchemaType::Any => true,
+        SchemaType::Optional(inner) => is_containable_type(inner),
+        _ => false,
+    }
+}
+
+fn is_optional_type(t: &SchemaType) -> bool {
+    matches!(t, SchemaType::Optional(_) | SchemaType::Any)
+}
+
+/// Detect output fields declared in `spec.outputs` that no step produces.
+pub fn detect_unused_outputs(
+    spec: &WorkflowSpec,
+    known_outputs: &HashSet<String>,
+) -> Result<(), YamlWorkflowError> {
+    for output_name in spec.outputs.keys() {
+        if !known_outputs.contains(output_name) {
+            return Err(YamlWorkflowError::Validation(format!(
+                "Declared output '{output_name}' is never produced by any step. \
+                 Add an output data ref with name '{output_name}' to a step."
+            )));
+        }
+    }
+    Ok(())
 }
