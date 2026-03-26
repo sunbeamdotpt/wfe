@@ -3,7 +3,7 @@ members = ["wfe-core", "wfe-sqlite", "wfe-postgres", "wfe-opensearch", "wfe-valk
 resolver = "2"
 
 [workspace.package]
-version = "1.0.0"
+version = "1.4.0"
 edition = "2024"
 license = "MIT"
 repository = "https://src.sunbeam.pt/studio/wfe"
@@ -38,14 +38,14 @@ redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
 opensearch = "2"
 
 # Internal crates
-wfe-core = { version = "1.0.0", path = "wfe-core" }
-wfe-sqlite = { version = "1.0.0", path = "wfe-sqlite" }
-wfe-postgres = { version = "1.0.0", path = "wfe-postgres" }
-wfe-opensearch = { version = "1.0.0", path = "wfe-opensearch" }
-wfe-valkey = { version = "1.0.0", path = "wfe-valkey" }
-wfe-yaml = { version = "1.0.0", path = "wfe-yaml" }
-wfe-buildkit = { version = "1.0.0", path = "wfe-buildkit" }
-wfe-containerd = { version = "1.0.0", path = "wfe-containerd" }
+wfe-core = { version = "1.4.0", path = "wfe-core" }
+wfe-sqlite = { version = "1.4.0", path = "wfe-sqlite" }
+wfe-postgres = { version = "1.4.0", path = "wfe-postgres" }
+wfe-opensearch = { version = "1.4.0", path = "wfe-opensearch" }
+wfe-valkey = { version = "1.4.0", path = "wfe-valkey" }
+wfe-yaml = { version = "1.4.0", path = "wfe-yaml" }
+wfe-buildkit = { version = "1.4.0", path = "wfe-buildkit" }
+wfe-containerd = { version = "1.4.0", path = "wfe-containerd" }
 
 # YAML
 serde_yaml = "0.9"
