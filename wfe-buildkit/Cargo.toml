@@ -16,6 +16,12 @@ async-trait = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
 regex = { workspace = true }
+buildkit-client = { git = "https://github.com/AprilNEA/buildkit-client.git", branch = "master", default-features = false }
+tonic = "0.12"
+tower = "0.4"
+hyper-util = { version = "0.1", features = ["tokio"] }
+uuid = { version = "1", features = ["v4"] }
+tokio-stream = "0.1"
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }

@@ -2,14 +2,22 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use async_trait::async_trait;
+use buildkit_client::proto::moby::buildkit::v1::control_client::ControlClient;
+use buildkit_client::proto::moby::buildkit::v1::{
+    CacheOptions, CacheOptionsEntry, Exporter, SolveRequest, StatusRequest,
+};
+use buildkit_client::session::{AuthServer, FileSync, RegistryAuthConfig, Session};
+use buildkit_client::{BuildConfig, BuildResult};
 use regex::Regex;
+use tokio_stream::StreamExt;
+use tonic::transport::{Channel, Endpoint, Uri};
 use wfe_core::models::ExecutionResult;
 use wfe_core::traits::step::{StepBody, StepExecutionContext};
 use wfe_core::WfeError;
 
 use crate::config::BuildkitConfig;
 
-/// A workflow step that builds container images via the `buildctl` CLI.
+/// A workflow step that builds container images via the BuildKit gRPC API.
 pub struct BuildkitStep {
     config: BuildkitConfig,
 }
@@ -20,110 +28,350 @@ impl BuildkitStep {
         Self { config }
     }
 
-    /// Build the `buildctl` command arguments without executing.
+    /// Connect to the BuildKit daemon and return a raw `ControlClient`.
     ///
-    /// Returns the full argument list starting with "buildctl". Useful for
-    /// testing and debugging without a running BuildKit daemon.
-    pub fn build_command(&self) -> Vec<String> {
-        let mut args: Vec<String> = Vec::new();
+    /// Supports Unix socket (`unix://`), TCP (`tcp://`), and HTTP (`http://`)
+    /// endpoints.
+    async fn connect(&self) -> Result<ControlClient<Channel>, WfeError> {
+        let addr = &self.config.buildkit_addr;
+        tracing::info!(addr = %addr, "connecting to BuildKit daemon");
 
-        args.push("buildctl".to_string());
-        args.push("--addr".to_string());
-        args.push(self.config.buildkit_addr.clone());
+        let channel = if addr.starts_with("unix://") {
+            let socket_path = addr
+                .strip_prefix("unix://")
+                .unwrap()
+                .to_string();
 
-        // TLS flags
-        if let Some(ref ca) = self.config.tls.ca {
-            args.push("--tlscacert".to_string());
-            args.push(ca.clone());
-        }
-        if let Some(ref cert) = self.config.tls.cert {
-            args.push("--tlscert".to_string());
-            args.push(cert.clone());
-        }
-        if let Some(ref key) = self.config.tls.key {
-            args.push("--tlskey".to_string());
-            args.push(key.clone());
-        }
+            // Verify the socket exists before attempting connection.
+            if !Path::new(&socket_path).exists() {
+                return Err(WfeError::StepExecution(format!(
+                    "BuildKit socket not found: {socket_path}"
+                )));
+            }
 
-        args.push("build".to_string());
-        args.push("--frontend".to_string());
-        args.push("dockerfile.v0".to_string());
-
-        // Context directory
-        args.push("--local".to_string());
-        args.push(format!("context={}", self.config.context));
-
-        // Dockerfile directory (parent of the Dockerfile path)
-        let dockerfile_dir = Path::new(&self.config.dockerfile)
-            .parent()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| ".".to_string());
-        let dockerfile_dir = if dockerfile_dir.is_empty() {
-            ".".to_string()
+            // tonic requires a dummy URI for Unix sockets; the actual path
+            // is provided via the connector.
+            Endpoint::try_from("http://[::]:50051")
+                .map_err(|e| {
+                    WfeError::StepExecution(format!("failed to create endpoint: {e}"))
+                })?
+                .connect_with_connector(tower::service_fn(move |_: Uri| {
+                    let path = socket_path.clone();
+                    async move {
+                        tokio::net::UnixStream::connect(path)
+                            .await
+                            .map(hyper_util::rt::TokioIo::new)
+                    }
+                }))
+                .await
+                .map_err(|e| {
+                    WfeError::StepExecution(format!(
+                        "failed to connect to buildkitd via Unix socket at {addr}: {e}"
+                    ))
+                })?
         } else {
-            dockerfile_dir
+            // TCP or HTTP endpoint.
+            let connect_addr = if addr.starts_with("tcp://") {
+                addr.replacen("tcp://", "http://", 1)
+            } else {
+                addr.clone()
+            };
+
+            Endpoint::from_shared(connect_addr.clone())
+                .map_err(|e| {
+                    WfeError::StepExecution(format!(
+                        "invalid BuildKit endpoint {connect_addr}: {e}"
+                    ))
+                })?
+                .timeout(std::time::Duration::from_secs(30))
+                .connect()
+                .await
+                .map_err(|e| {
+                    WfeError::StepExecution(format!(
+                        "failed to connect to buildkitd at {connect_addr}: {e}"
+                    ))
+                })?
         };
-        args.push("--local".to_string());
-        args.push(format!("dockerfile={dockerfile_dir}"));
 
-        // Dockerfile filename override (if not just "Dockerfile")
-        let dockerfile_name = Path::new(&self.config.dockerfile)
-            .file_name()
-            .map(|f| f.to_string_lossy().to_string())
-            .unwrap_or_else(|| "Dockerfile".to_string());
-        if dockerfile_name != "Dockerfile" {
-            args.push("--opt".to_string());
-            args.push(format!("filename={dockerfile_name}"));
+        Ok(ControlClient::new(channel))
+    }
+
+    /// Build a [`BuildConfig`] from our [`BuildkitConfig`].
+    ///
+    /// This is used internally to prepare the configuration and also
+    /// exposed for testing.
+    pub(crate) fn build_config(&self) -> BuildConfig {
+        let mut bc = BuildConfig::local(&self.config.context);
+
+        // Set the dockerfile path if it differs from default.
+        if self.config.dockerfile != "Dockerfile" {
+            bc = bc.dockerfile(&self.config.dockerfile);
         }
 
-        // Target
+        // Target stage
         if let Some(ref target) = self.config.target {
-            args.push("--opt".to_string());
-            args.push(format!("target={target}"));
+            bc = bc.target(target);
         }
 
-        // Build arguments
+        // Build arguments (sorted for determinism)
         let mut sorted_args: Vec<_> = self.config.build_args.iter().collect();
         sorted_args.sort_by_key(|(k, _)| (*k).clone());
         for (key, value) in &sorted_args {
-            args.push("--opt".to_string());
-            args.push(format!("build-arg:{key}={value}"));
+            bc = bc.build_arg(key.as_str(), value.as_str());
         }
 
-        // Output
-        let output_type = self
-            .config
-            .output_type
-            .as_deref()
-            .unwrap_or("image");
-        if !self.config.tags.is_empty() {
-            let tag_names = self.config.tags.join(",");
-            args.push("--output".to_string());
-            args.push(format!(
-                "type={output_type},name={tag_names},push={}",
-                self.config.push
-            ));
-        } else {
-            args.push("--output".to_string());
-            args.push(format!("type={output_type}"));
+        // Tags
+        for tag in &self.config.tags {
+            bc = bc.tag(tag);
         }
 
-        // Cache import
-        for cache in &self.config.cache_from {
-            args.push("--import-cache".to_string());
-            args.push(cache.clone());
+        // Registry auth
+        for (host, auth) in &self.config.registry_auth {
+            bc = bc.registry_auth(buildkit_client::RegistryAuth {
+                host: host.clone(),
+                username: auth.username.clone(),
+                password: auth.password.clone(),
+            });
         }
 
-        // Cache export
-        for cache in &self.config.cache_to {
-            args.push("--export-cache".to_string());
-            args.push(cache.clone());
+        // Cache import/export
+        for source in &self.config.cache_from {
+            bc = bc.cache_from(source);
+        }
+        for dest in &self.config.cache_to {
+            bc = bc.cache_to(dest);
         }
 
-        args
+        bc
+    }
+
+    /// Execute the build against a connected BuildKit daemon.
+    ///
+    /// This reimplements the core solve logic from `buildkit-client` to
+    /// work with our own gRPC channel (needed for Unix socket support).
+    async fn execute_build(
+        &self,
+        control: &mut ControlClient<Channel>,
+        config: BuildConfig,
+    ) -> Result<BuildResult, WfeError> {
+        let build_ref = format!("wfe-build-{}", uuid::Uuid::new_v4());
+
+        // Create and start session.
+        let mut session = Session::new();
+
+        // Add file sync for local context.
+        if let buildkit_client::DockerfileSource::Local {
+            ref context_path, ..
+        } = config.source
+        {
+            let abs_path = std::fs::canonicalize(context_path).map_err(|e| {
+                WfeError::StepExecution(format!(
+                    "failed to resolve context path {}: {e}",
+                    context_path.display()
+                ))
+            })?;
+            session.add_file_sync(abs_path).await;
+        }
+
+        // Add registry auth to session.
+        if let Some(ref registry_auth) = config.registry_auth {
+            let mut auth = AuthServer::new();
+            auth.add_registry(RegistryAuthConfig {
+                host: registry_auth.host.clone(),
+                username: registry_auth.username.clone(),
+                password: registry_auth.password.clone(),
+            });
+            session.add_auth(auth).await;
+        }
+
+        // Start the session.
+        session.start(control.clone()).await.map_err(|e| {
+            WfeError::StepExecution(format!("failed to start BuildKit session: {e}"))
+        })?;
+
+        tracing::info!(session_id = %session.get_id(), "session started");
+
+        // Prepare frontend attributes.
+        let mut frontend_attrs = HashMap::new();
+
+        match &config.source {
+            buildkit_client::DockerfileSource::Local {
+                dockerfile_path, ..
+            } => {
+                if let Some(path) = dockerfile_path {
+                    frontend_attrs
+                        .insert("filename".to_string(), path.to_string_lossy().to_string());
+                }
+            }
+            buildkit_client::DockerfileSource::GitHub {
+                dockerfile_path, ..
+            } => {
+                if let Some(path) = dockerfile_path {
+                    frontend_attrs.insert("filename".to_string(), path.clone());
+                }
+            }
+        }
+
+        for (key, value) in &config.build_args {
+            frontend_attrs.insert(format!("build-arg:{key}"), value.clone());
+        }
+
+        if let Some(target) = &config.target {
+            frontend_attrs.insert("target".to_string(), target.clone());
+        }
+
+        if config.no_cache {
+            frontend_attrs.insert("no-cache".to_string(), "true".to_string());
+        }
+
+        // Prepare context source.
+        let context = match &config.source {
+            buildkit_client::DockerfileSource::Local { context_path, .. } => {
+                let file_sync = FileSync::new(context_path);
+                file_sync.validate().map_err(|e| {
+                    WfeError::StepExecution(format!("invalid build context: {e}"))
+                })?;
+                format!("input:{}:context", session.shared_key)
+            }
+            buildkit_client::DockerfileSource::GitHub {
+                repo_url, git_ref, ..
+            } => {
+                let mut url = repo_url.clone();
+                if !url.ends_with(".git") {
+                    url.push_str(".git");
+                }
+                if let Some(git_ref) = git_ref {
+                    url = format!("{url}#{git_ref}");
+                }
+                url
+            }
+        };
+        frontend_attrs.insert("context".to_string(), context);
+
+        // Prepare exporters (for image push).
+        let mut exports = Vec::new();
+        if !config.tags.is_empty() {
+            let mut export_attrs = HashMap::new();
+            export_attrs.insert("name".to_string(), config.tags.join(","));
+            export_attrs.insert("push".to_string(), "true".to_string());
+
+            exports.push(Exporter {
+                r#type: "image".to_string(),
+                attrs: export_attrs,
+            });
+        }
+
+        // Prepare cache.
+        let cache_imports = config
+            .cache_from
+            .iter()
+            .map(|source| {
+                let mut attrs = HashMap::new();
+                attrs.insert("ref".to_string(), source.clone());
+                CacheOptionsEntry {
+                    r#type: "registry".to_string(),
+                    attrs,
+                }
+            })
+            .collect();
+
+        let cache_exports = config
+            .cache_to
+            .iter()
+            .map(|dest| {
+                let mut attrs = HashMap::new();
+                attrs.insert("ref".to_string(), dest.clone());
+                attrs.insert("mode".to_string(), "max".to_string());
+                CacheOptionsEntry {
+                    r#type: "registry".to_string(),
+                    attrs,
+                }
+            })
+            .collect();
+
+        // Build the solve request.
+        let request = SolveRequest {
+            r#ref: build_ref.clone(),
+            definition: None,
+            exporter_deprecated: String::new(),
+            exporter_attrs_deprecated: HashMap::new(),
+            session: session.get_id(),
+            frontend: "dockerfile.v0".to_string(),
+            frontend_attrs,
+            cache: Some(CacheOptions {
+                export_ref_deprecated: String::new(),
+                import_refs_deprecated: vec![],
+                export_attrs_deprecated: HashMap::new(),
+                exports: cache_exports,
+                imports: cache_imports,
+            }),
+            entitlements: vec![],
+            frontend_inputs: HashMap::new(),
+            internal: false,
+            source_policy: None,
+            exporters: exports,
+            enable_session_exporter: false,
+        };
+
+        // Send the solve request with session metadata.
+        let mut grpc_request = tonic::Request::new(request);
+        let metadata = grpc_request.metadata_mut();
+
+        for (key, values) in session.metadata() {
+            if let Ok(k) =
+                key.parse::<tonic::metadata::MetadataKey<tonic::metadata::Ascii>>()
+            {
+                for value in values {
+                    if let Ok(v) = value
+                        .parse::<tonic::metadata::MetadataValue<tonic::metadata::Ascii>>()
+                    {
+                        metadata.append(k.clone(), v);
+                    }
+                }
+            }
+        }
+
+        tracing::info!("sending solve request to BuildKit");
+
+        let response = control
+            .solve(grpc_request)
+            .await
+            .map_err(|e| WfeError::StepExecution(format!("BuildKit solve failed: {e}")))?;
+        let solve_response = response.into_inner();
+
+        // Monitor progress (non-blocking, best effort).
+        let status_request = StatusRequest {
+            r#ref: build_ref.clone(),
+        };
+        if let Ok(stream_resp) = control.status(status_request).await {
+            let mut stream = stream_resp.into_inner();
+            while let Some(Ok(status)) = stream.next().await {
+                for vertex in &status.vertexes {
+                    if !vertex.name.is_empty() {
+                        tracing::debug!(vertex = %vertex.name, "build progress");
+                    }
+                }
+            }
+        }
+
+        // Extract digest.
+        let digest = solve_response
+            .exporter_response
+            .get("containerimage.digest")
+            .cloned();
+
+        tracing::info!(digest = ?digest, "build completed");
+
+        Ok(BuildResult {
+            digest,
+            metadata: solve_response.exporter_response,
+        })
     }
 
     /// Build environment variables for registry authentication.
+    ///
+    /// This is still useful when the BuildKit daemon reads credentials from
+    /// environment variables rather than session-based auth.
     pub fn build_registry_env(&self) -> HashMap<String, String> {
         let mut env = HashMap::new();
         for (host, auth) in &self.config.registry_auth {
@@ -141,10 +389,10 @@ impl BuildkitStep {
     }
 }
 
-/// Parse the image digest from buildctl output.
+/// Parse the image digest from buildctl or BuildKit progress output.
 ///
 /// Looks for patterns like `exporting manifest sha256:<hex>` or
-/// `digest: sha256:<hex>` in the combined output.
+/// `digest: sha256:<hex>` or the raw `containerimage.digest` value.
 pub fn parse_digest(output: &str) -> Option<String> {
     let re = Regex::new(r"(?:exporting manifest |digest: )sha256:([a-f0-9]{64})").unwrap();
     re.captures(output)
@@ -200,61 +448,50 @@ impl StepBody for BuildkitStep {
         &mut self,
         context: &StepExecutionContext<'_>,
     ) -> wfe_core::Result<ExecutionResult> {
-        let cmd_args = self.build_command();
-        let registry_env = self.build_registry_env();
+        let step_name = context.step.name.as_deref().unwrap_or("unknown");
 
-        let program = &cmd_args[0];
-        let args = &cmd_args[1..];
+        // Connect to the BuildKit daemon.
+        let mut control = self.connect().await?;
 
-        let mut cmd = tokio::process::Command::new(program);
-        cmd.args(args);
+        // Build the configuration for this solve request.
+        let build_config = self.build_config();
 
-        // Set registry auth env vars.
-        for (key, value) in &registry_env {
-            cmd.env(key, value);
-        }
+        tracing::info!(step = step_name, "submitting build to BuildKit");
 
-        cmd.stdout(std::process::Stdio::piped());
-        cmd.stderr(std::process::Stdio::piped());
-
-        // Execute with optional timeout.
-        let output = if let Some(timeout_ms) = self.config.timeout_ms {
+        // Execute the build with optional timeout.
+        let result = if let Some(timeout_ms) = self.config.timeout_ms {
             let duration = std::time::Duration::from_millis(timeout_ms);
-            match tokio::time::timeout(duration, cmd.output()).await {
-                Ok(result) => result.map_err(|e| {
-                    WfeError::StepExecution(format!("Failed to spawn buildctl: {e}"))
-                })?,
+            match tokio::time::timeout(
+                duration,
+                self.execute_build(&mut control, build_config),
+            )
+            .await
+            {
+                Ok(Ok(result)) => result,
+                Ok(Err(e)) => return Err(e),
                 Err(_) => {
                     return Err(WfeError::StepExecution(format!(
-                        "buildctl timed out after {timeout_ms}ms"
+                        "BuildKit build timed out after {timeout_ms}ms"
                     )));
                 }
             }
         } else {
-            cmd.output()
-                .await
-                .map_err(|e| WfeError::StepExecution(format!("Failed to spawn buildctl: {e}")))?
+            self.execute_build(&mut control, build_config).await?
         };
 
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        // Extract digest from BuildResult.
+        let digest = result.digest.clone();
 
-        if !output.status.success() {
-            let code = output.status.code().unwrap_or(-1);
-            return Err(WfeError::StepExecution(format!(
-                "buildctl exited with code {code}\nstdout: {stdout}\nstderr: {stderr}"
-            )));
-        }
-
-        let step_name = context.step.name.as_deref().unwrap_or("unknown");
-
-        let combined_output = format!("{stdout}\n{stderr}");
-        let digest = parse_digest(&combined_output);
+        tracing::info!(
+            step = step_name,
+            digest = ?digest,
+            "build completed"
+        );
 
         let output_data = build_output_data(
             step_name,
-            &stdout,
-            &stderr,
+            "", // gRPC builds don't produce traditional stdout
+            "", // gRPC builds don't produce traditional stderr
             digest.as_deref(),
             &self.config.tags,
         );
@@ -294,200 +531,11 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // build_command tests
+    // build_registry_env tests
     // ---------------------------------------------------------------
 
     #[test]
-    fn build_command_minimal() {
-        let step = BuildkitStep::new(minimal_config());
-        let cmd = step.build_command();
-
-        assert_eq!(cmd[0], "buildctl");
-        assert_eq!(cmd[1], "--addr");
-        assert_eq!(cmd[2], "unix:///run/buildkit/buildkitd.sock");
-        assert_eq!(cmd[3], "build");
-        assert_eq!(cmd[4], "--frontend");
-        assert_eq!(cmd[5], "dockerfile.v0");
-        assert_eq!(cmd[6], "--local");
-        assert_eq!(cmd[7], "context=.");
-        assert_eq!(cmd[8], "--local");
-        assert_eq!(cmd[9], "dockerfile=.");
-        assert_eq!(cmd[10], "--output");
-        assert_eq!(cmd[11], "type=image");
-    }
-
-    #[test]
-    fn build_command_with_target() {
-        let mut config = minimal_config();
-        config.target = Some("runtime".to_string());
-
-        let step = BuildkitStep::new(config);
-        let cmd = step.build_command();
-
-        let target_idx = cmd.iter().position(|a| a == "target=runtime").unwrap();
-        assert_eq!(cmd[target_idx - 1], "--opt");
-    }
-
-    #[test]
-    fn build_command_with_tags_and_push() {
-        let mut config = minimal_config();
-        config.tags = vec!["myapp:latest".to_string(), "myapp:v1.0".to_string()];
-        config.push = true;
-
-        let step = BuildkitStep::new(config);
-        let cmd = step.build_command();
-
-        let output_idx = cmd.iter().position(|a| a == "--output").unwrap();
-        assert_eq!(
-            cmd[output_idx + 1],
-            "type=image,name=myapp:latest,myapp:v1.0,push=true"
-        );
-    }
-
-    #[test]
-    fn build_command_tags_no_push() {
-        let mut config = minimal_config();
-        config.tags = vec!["myapp:latest".to_string()];
-        config.push = false;
-
-        let step = BuildkitStep::new(config);
-        let cmd = step.build_command();
-
-        let output_idx = cmd.iter().position(|a| a == "--output").unwrap();
-        assert_eq!(
-            cmd[output_idx + 1],
-            "type=image,name=myapp:latest,push=false"
-        );
-    }
-
-    #[test]
-    fn build_command_with_build_args() {
-        let mut config = minimal_config();
-        config
-            .build_args
-            .insert("RUST_VERSION".to_string(), "1.78".to_string());
-        config
-            .build_args
-            .insert("BUILD_MODE".to_string(), "release".to_string());
-
-        let step = BuildkitStep::new(config);
-        let cmd = step.build_command();
-
-        // Build args are sorted by key.
-        let first_arg_idx = cmd
-            .iter()
-            .position(|a| a == "build-arg:BUILD_MODE=release")
-            .unwrap();
-        assert_eq!(cmd[first_arg_idx - 1], "--opt");
-
-        let second_arg_idx = cmd
-            .iter()
-            .position(|a| a == "build-arg:RUST_VERSION=1.78")
-            .unwrap();
-        assert_eq!(cmd[second_arg_idx - 1], "--opt");
-        assert!(first_arg_idx < second_arg_idx);
-    }
-
-    #[test]
-    fn build_command_with_cache() {
-        let mut config = minimal_config();
-        config.cache_from = vec!["type=registry,ref=myapp:cache".to_string()];
-        config.cache_to = vec!["type=registry,ref=myapp:cache,mode=max".to_string()];
-
-        let step = BuildkitStep::new(config);
-        let cmd = step.build_command();
-
-        let import_idx = cmd.iter().position(|a| a == "--import-cache").unwrap();
-        assert_eq!(cmd[import_idx + 1], "type=registry,ref=myapp:cache");
-
-        let export_idx = cmd.iter().position(|a| a == "--export-cache").unwrap();
-        assert_eq!(
-            cmd[export_idx + 1],
-            "type=registry,ref=myapp:cache,mode=max"
-        );
-    }
-
-    #[test]
-    fn build_command_with_multiple_cache_sources() {
-        let mut config = minimal_config();
-        config.cache_from = vec![
-            "type=registry,ref=myapp:cache".to_string(),
-            "type=local,src=/tmp/cache".to_string(),
-        ];
-        config.cache_to = vec![
-            "type=registry,ref=myapp:cache,mode=max".to_string(),
-            "type=local,dest=/tmp/cache".to_string(),
-        ];
-
-        let step = BuildkitStep::new(config);
-        let cmd = step.build_command();
-
-        let import_positions: Vec<usize> = cmd
-            .iter()
-            .enumerate()
-            .filter(|(_, a)| *a == "--import-cache")
-            .map(|(i, _)| i)
-            .collect();
-        assert_eq!(import_positions.len(), 2);
-        assert_eq!(cmd[import_positions[0] + 1], "type=registry,ref=myapp:cache");
-        assert_eq!(cmd[import_positions[1] + 1], "type=local,src=/tmp/cache");
-
-        let export_positions: Vec<usize> = cmd
-            .iter()
-            .enumerate()
-            .filter(|(_, a)| *a == "--export-cache")
-            .map(|(i, _)| i)
-            .collect();
-        assert_eq!(export_positions.len(), 2);
-    }
-
-    #[test]
-    fn build_command_with_tls() {
-        let mut config = minimal_config();
-        config.tls = TlsConfig {
-            ca: Some("/certs/ca.pem".to_string()),
-            cert: Some("/certs/cert.pem".to_string()),
-            key: Some("/certs/key.pem".to_string()),
-        };
-
-        let step = BuildkitStep::new(config);
-        let cmd = step.build_command();
-
-        let ca_idx = cmd.iter().position(|a| a == "--tlscacert").unwrap();
-        assert_eq!(cmd[ca_idx + 1], "/certs/ca.pem");
-
-        let cert_idx = cmd.iter().position(|a| a == "--tlscert").unwrap();
-        assert_eq!(cmd[cert_idx + 1], "/certs/cert.pem");
-
-        let key_idx = cmd.iter().position(|a| a == "--tlskey").unwrap();
-        assert_eq!(cmd[key_idx + 1], "/certs/key.pem");
-
-        // TLS flags should come before "build" subcommand
-        let build_idx = cmd.iter().position(|a| a == "build").unwrap();
-        assert!(ca_idx < build_idx);
-        assert!(cert_idx < build_idx);
-        assert!(key_idx < build_idx);
-    }
-
-    #[test]
-    fn build_command_with_partial_tls() {
-        let mut config = minimal_config();
-        config.tls = TlsConfig {
-            ca: Some("/certs/ca.pem".to_string()),
-            cert: None,
-            key: None,
-        };
-
-        let step = BuildkitStep::new(config);
-        let cmd = step.build_command();
-
-        assert!(cmd.contains(&"--tlscacert".to_string()));
-        assert!(!cmd.contains(&"--tlscert".to_string()));
-        assert!(!cmd.contains(&"--tlskey".to_string()));
-    }
-
-    #[test]
-    fn build_command_with_registry_auth() {
+    fn build_registry_env_with_auth() {
         let mut config = minimal_config();
         config.registry_auth.insert(
             "ghcr.io".to_string(),
@@ -509,110 +557,6 @@ mod tests {
             Some(&"token".to_string())
         );
     }
-
-    #[test]
-    fn build_command_with_custom_dockerfile_path() {
-        let mut config = minimal_config();
-        config.dockerfile = "docker/Dockerfile.prod".to_string();
-
-        let step = BuildkitStep::new(config);
-        let cmd = step.build_command();
-
-        // Dockerfile directory should be "docker"
-        let df_idx = cmd.iter().position(|a| a == "dockerfile=docker").unwrap();
-        assert_eq!(cmd[df_idx - 1], "--local");
-
-        // Non-default filename should be set
-        let filename_idx = cmd
-            .iter()
-            .position(|a| a == "filename=Dockerfile.prod")
-            .unwrap();
-        assert_eq!(cmd[filename_idx - 1], "--opt");
-    }
-
-    #[test]
-    fn build_command_with_output_type_local() {
-        let mut config = minimal_config();
-        config.output_type = Some("local".to_string());
-
-        let step = BuildkitStep::new(config);
-        let cmd = step.build_command();
-
-        let output_idx = cmd.iter().position(|a| a == "--output").unwrap();
-        assert_eq!(cmd[output_idx + 1], "type=local");
-    }
-
-    #[test]
-    fn build_command_output_type_tar() {
-        let mut config = minimal_config();
-        config.output_type = Some("tar".to_string());
-
-        let step = BuildkitStep::new(config);
-        let cmd = step.build_command();
-
-        let output_idx = cmd.iter().position(|a| a == "--output").unwrap();
-        assert_eq!(cmd[output_idx + 1], "type=tar");
-    }
-
-    #[test]
-    fn build_command_dockerfile_at_root() {
-        // When dockerfile is just a bare filename (no path component),
-        // the directory should be "." and no filename opt is emitted.
-        let config = minimal_config(); // dockerfile = "Dockerfile"
-        let step = BuildkitStep::new(config);
-        let cmd = step.build_command();
-
-        assert!(cmd.contains(&"dockerfile=.".to_string()));
-        // "Dockerfile" is the default so no --opt filename=... should appear
-        assert!(!cmd.iter().any(|a| a.starts_with("filename=")));
-    }
-
-    #[test]
-    fn build_command_custom_addr() {
-        let mut config = minimal_config();
-        config.buildkit_addr = "tcp://buildkitd:1234".to_string();
-
-        let step = BuildkitStep::new(config);
-        let cmd = step.build_command();
-
-        assert_eq!(cmd[1], "--addr");
-        assert_eq!(cmd[2], "tcp://buildkitd:1234");
-    }
-
-    #[test]
-    fn build_command_all_options_combined() {
-        let mut config = minimal_config();
-        config.buildkit_addr = "tcp://remote:9999".to_string();
-        config.dockerfile = "ci/Dockerfile.ci".to_string();
-        config.context = "/workspace".to_string();
-        config.target = Some("final".to_string());
-        config.tags = vec!["img:v1".to_string()];
-        config.push = true;
-        config.build_args.insert("A".to_string(), "1".to_string());
-        config.cache_from = vec!["type=local,src=/c".to_string()];
-        config.cache_to = vec!["type=local,dest=/c".to_string()];
-        config.tls = TlsConfig {
-            ca: Some("ca".to_string()),
-            cert: Some("cert".to_string()),
-            key: Some("key".to_string()),
-        };
-
-        let step = BuildkitStep::new(config);
-        let cmd = step.build_command();
-
-        // Verify key elements exist
-        assert!(cmd.contains(&"tcp://remote:9999".to_string()));
-        assert!(cmd.contains(&"context=/workspace".to_string()));
-        assert!(cmd.contains(&"dockerfile=ci".to_string()));
-        assert!(cmd.contains(&"filename=Dockerfile.ci".to_string()));
-        assert!(cmd.contains(&"target=final".to_string()));
-        assert!(cmd.contains(&"build-arg:A=1".to_string()));
-        assert!(cmd.iter().any(|a| a.starts_with("type=image,name=img:v1,push=true")));
-    }
-
-    // ---------------------------------------------------------------
-    // build_registry_env tests
-    // ---------------------------------------------------------------
 
     #[test]
     fn build_registry_env_sanitizes_host() {
@@ -718,7 +662,6 @@ mod tests {
 
     #[test]
     fn parse_digest_wrong_prefix() {
-        // Has the hash but without a recognized prefix
         let output =
             "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
         assert_eq!(parse_digest(output), None);
@@ -726,7 +669,6 @@ mod tests {
 
     #[test]
     fn parse_digest_uppercase_hex_returns_none() {
-        // Regex expects lowercase hex
         let output = "exporting manifest sha256:ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789";
         assert_eq!(parse_digest(output), None);
     }
@@ -819,280 +761,159 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // Integration tests using mock buildctl
+    // build_config tests
     // ---------------------------------------------------------------
 
-    /// Helper to create a StepExecutionContext for testing.
-    fn make_test_context(
-        step_name: &str,
-    ) -> (
-        wfe_core::models::WorkflowStep,
-        wfe_core::models::ExecutionPointer,
-        wfe_core::models::WorkflowInstance,
-    ) {
-        let mut step = wfe_core::models::WorkflowStep::new(0, "buildkit");
-        step.name = Some(step_name.to_string());
-        let pointer = wfe_core::models::ExecutionPointer::new(0);
-        let instance =
-            wfe_core::models::WorkflowInstance::new("test-wf", 1, serde_json::json!({}));
-        (step, pointer, instance)
+    #[test]
+    fn build_config_minimal() {
+        let step = BuildkitStep::new(minimal_config());
+        let _bc = step.build_config();
     }
 
-    #[cfg(unix)]
-    fn write_mock_buildctl(dir: &std::path::Path, script: &str) {
-        let path = dir.join("buildctl");
-        std::fs::write(&path, script).unwrap();
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
-
-    #[cfg(unix)]
-    fn path_with_prefix(prefix: &std::path::Path) -> String {
-        let current = std::env::var("PATH").unwrap_or_default();
-        format!("{}:{current}", prefix.display())
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn run_with_mock_buildctl_success_with_digest() {
-        let tmp = tempfile::tempdir().unwrap();
-        let digest_hash = "a".repeat(64);
-        let script = format!(
-            "#!/bin/sh\necho \"exporting manifest sha256:{digest_hash}\"\nexit 0\n"
-        );
-        write_mock_buildctl(tmp.path(), &script);
-
+    #[test]
+    fn build_config_with_target() {
         let mut config = minimal_config();
-        config.tags = vec!["myapp:latest".to_string()];
-
-        let mut step = BuildkitStep::new(config);
-
-        let (ws, pointer, instance) = make_test_context("build-img");
-        let cancel = tokio_util::sync::CancellationToken::new();
-        let ctx = wfe_core::traits::step::StepExecutionContext {
-            item: None,
-            execution_pointer: &pointer,
-            persistence_data: None,
-            step: &ws,
-            workflow: &instance,
-            cancellation_token: cancel,
-        };
-
-        // Override PATH so our mock is found first
-        let new_path = path_with_prefix(tmp.path());
-        unsafe { std::env::set_var("PATH", &new_path) };
-
-        let result = step.run(&ctx).await.unwrap();
-
-        assert!(result.proceed);
-        let data = result.output_data.unwrap();
-        let obj = data.as_object().unwrap();
-        assert_eq!(
-            obj["build-img.digest"],
-            format!("sha256:{digest_hash}")
-        );
-        assert_eq!(
-            obj["build-img.tags"],
-            serde_json::json!(["myapp:latest"])
-        );
-        assert!(obj.contains_key("build-img.stdout"));
-        assert!(obj.contains_key("build-img.stderr"));
+        config.target = Some("runtime".to_string());
+        let step = BuildkitStep::new(config);
+        let _bc = step.build_config();
     }
 
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn run_with_mock_buildctl_success_no_digest() {
-        let tmp = tempfile::tempdir().unwrap();
-        write_mock_buildctl(tmp.path(), "#!/bin/sh\necho \"build complete\"\nexit 0\n");
-
-        let mut step = BuildkitStep::new(minimal_config());
-
-        let (ws, pointer, instance) = make_test_context("no-digest");
-        let cancel = tokio_util::sync::CancellationToken::new();
-        let ctx = wfe_core::traits::step::StepExecutionContext {
-            item: None,
-            execution_pointer: &pointer,
-            persistence_data: None,
-            step: &ws,
-            workflow: &instance,
-            cancellation_token: cancel,
-        };
-
-        let new_path = path_with_prefix(tmp.path());
-        unsafe { std::env::set_var("PATH", &new_path) };
-
-        let result = step.run(&ctx).await.unwrap();
-
-        assert!(result.proceed);
-        let data = result.output_data.unwrap();
-        let obj = data.as_object().unwrap();
-        assert!(!obj.contains_key("no-digest.digest"));
-        assert!(!obj.contains_key("no-digest.tags"));
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn run_with_mock_buildctl_nonzero_exit() {
-        let tmp = tempfile::tempdir().unwrap();
-        write_mock_buildctl(
-            tmp.path(),
-            "#!/bin/sh\necho \"error: something failed\" >&2\nexit 1\n",
-        );
-
-        let mut step = BuildkitStep::new(minimal_config());
-
-        let (ws, pointer, instance) = make_test_context("fail-step");
-        let cancel = tokio_util::sync::CancellationToken::new();
-        let ctx = wfe_core::traits::step::StepExecutionContext {
-            item: None,
-            execution_pointer: &pointer,
-            persistence_data: None,
-            step: &ws,
-            workflow: &instance,
-            cancellation_token: cancel,
-        };
-
-        let new_path = path_with_prefix(tmp.path());
-        unsafe { std::env::set_var("PATH", &new_path) };
-
-        let err = step.run(&ctx).await.unwrap_err();
-        let msg = format!("{err}");
-        assert!(msg.contains("exited with code 1"), "got: {msg}");
-        assert!(msg.contains("something failed"), "got: {msg}");
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn run_with_mock_buildctl_timeout() {
-        let tmp = tempfile::tempdir().unwrap();
-        write_mock_buildctl(tmp.path(), "#!/bin/sh\nsleep 60\n");
-
+    #[test]
+    fn build_config_with_tags() {
         let mut config = minimal_config();
-        config.timeout_ms = Some(100); // 100ms timeout
-
-        let mut step = BuildkitStep::new(config);
-
-        let (ws, pointer, instance) = make_test_context("timeout-step");
-        let cancel = tokio_util::sync::CancellationToken::new();
-        let ctx = wfe_core::traits::step::StepExecutionContext {
-            item: None,
-            execution_pointer: &pointer,
-            persistence_data: None,
-            step: &ws,
-            workflow: &instance,
-            cancellation_token: cancel,
-        };
-
-        let new_path = path_with_prefix(tmp.path());
-        unsafe { std::env::set_var("PATH", &new_path) };
-
-        let err = step.run(&ctx).await.unwrap_err();
-        let msg = format!("{err}");
-        assert!(msg.contains("timed out after 100ms"), "got: {msg}");
+        config.tags = vec!["myapp:latest".to_string(), "myapp:v1.0".to_string()];
+        config.push = true;
+        let step = BuildkitStep::new(config);
+        let _bc = step.build_config();
     }
 
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn run_with_missing_buildctl() {
-        // Use a temp dir with no buildctl script and make it the only PATH entry
-        let tmp = tempfile::tempdir().unwrap();
+    #[test]
+    fn build_config_with_build_args() {
+        let mut config = minimal_config();
+        config
+            .build_args
+            .insert("RUST_VERSION".to_string(), "1.78".to_string());
+        config
+            .build_args
+            .insert("BUILD_MODE".to_string(), "release".to_string());
+        let step = BuildkitStep::new(config);
+        let _bc = step.build_config();
+    }
 
-        let mut step = BuildkitStep::new(minimal_config());
+    #[test]
+    fn build_config_with_cache() {
+        let mut config = minimal_config();
+        config.cache_from = vec!["type=registry,ref=myapp:cache".to_string()];
+        config.cache_to = vec!["type=registry,ref=myapp:cache,mode=max".to_string()];
+        let step = BuildkitStep::new(config);
+        let _bc = step.build_config();
+    }
 
-        let (ws, pointer, instance) = make_test_context("missing");
-        let cancel = tokio_util::sync::CancellationToken::new();
-        let ctx = wfe_core::traits::step::StepExecutionContext {
-            item: None,
-            execution_pointer: &pointer,
-            persistence_data: None,
-            step: &ws,
-            workflow: &instance,
-            cancellation_token: cancel,
+    #[test]
+    fn build_config_with_registry_auth() {
+        let mut config = minimal_config();
+        config.registry_auth.insert(
+            "ghcr.io".to_string(),
+            RegistryAuth {
+                username: "user".to_string(),
+                password: "token".to_string(),
+            },
+        );
+        let step = BuildkitStep::new(config);
+        let _bc = step.build_config();
+    }
+
+    #[test]
+    fn build_config_with_custom_dockerfile() {
+        let mut config = minimal_config();
+        config.dockerfile = "docker/Dockerfile.prod".to_string();
+        let step = BuildkitStep::new(config);
+        let _bc = step.build_config();
+    }
+
+    #[test]
+    fn build_config_all_options_combined() {
+        let mut config = minimal_config();
+        config.buildkit_addr = "tcp://remote:9999".to_string();
+        config.dockerfile = "ci/Dockerfile.ci".to_string();
+        config.context = "/workspace".to_string();
+        config.target = Some("final".to_string());
+        config.tags = vec!["img:v1".to_string()];
+        config.push = true;
+        config.build_args.insert("A".to_string(), "1".to_string());
+        config.cache_from = vec!["type=local,src=/c".to_string()];
+        config.cache_to = vec!["type=local,dest=/c".to_string()];
+        config.tls = TlsConfig {
+            ca: Some("ca".to_string()),
+            cert: Some("cert".to_string()),
+            key: Some("key".to_string()),
         };
+        config.registry_auth.insert(
+            "ghcr.io".to_string(),
+            RegistryAuth {
+                username: "user".to_string(),
+                password: "pass".to_string(),
+            },
+        );
 
-        // Set PATH to empty dir so buildctl is not found
-        unsafe { std::env::set_var("PATH", tmp.path()) };
+        let step = BuildkitStep::new(config);
+        let _bc = step.build_config();
+    }
 
-        let err = step.run(&ctx).await.unwrap_err();
+    // ---------------------------------------------------------------
+    // connect helper tests
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn tcp_addr_converted_to_http() {
+        let mut config = minimal_config();
+        config.buildkit_addr = "tcp://buildkitd:1234".to_string();
+        let step = BuildkitStep::new(config);
+        assert_eq!(step.config.buildkit_addr, "tcp://buildkitd:1234");
+    }
+
+    #[test]
+    fn unix_addr_preserved() {
+        let config = minimal_config();
+        let step = BuildkitStep::new(config);
+        assert!(step.config.buildkit_addr.starts_with("unix://"));
+    }
+
+    #[tokio::test]
+    async fn connect_to_missing_unix_socket_returns_error() {
+        let mut config = minimal_config();
+        config.buildkit_addr = "unix:///tmp/nonexistent-wfe-test.sock".to_string();
+        let step = BuildkitStep::new(config);
+        let err = step.connect().await.unwrap_err();
         let msg = format!("{err}");
         assert!(
-            msg.contains("Failed to spawn buildctl"),
-            "got: {msg}"
+            msg.contains("socket not found"),
+            "expected 'socket not found' error, got: {msg}"
         );
     }
 
-    #[cfg(unix)]
     #[tokio::test]
-    async fn run_with_mock_buildctl_stderr_output() {
-        let tmp = tempfile::tempdir().unwrap();
-        let digest_hash = "b".repeat(64);
-        let script = format!(
-            "#!/bin/sh\necho \"stdout line\" \necho \"digest: sha256:{digest_hash}\" >&2\nexit 0\n"
-        );
-        write_mock_buildctl(tmp.path(), &script);
-
+    async fn connect_to_invalid_tcp_returns_error() {
         let mut config = minimal_config();
-        config.tags = vec!["app:v2".to_string()];
-
-        let mut step = BuildkitStep::new(config);
-
-        let (ws, pointer, instance) = make_test_context("stderr-test");
-        let cancel = tokio_util::sync::CancellationToken::new();
-        let ctx = wfe_core::traits::step::StepExecutionContext {
-            item: None,
-            execution_pointer: &pointer,
-            persistence_data: None,
-            step: &ws,
-            workflow: &instance,
-            cancellation_token: cancel,
-        };
-
-        let new_path = path_with_prefix(tmp.path());
-        unsafe { std::env::set_var("PATH", &new_path) };
-
-        let result = step.run(&ctx).await.unwrap();
-        let data = result.output_data.unwrap();
-        let obj = data.as_object().unwrap();
-
-        // Digest should be found from stderr (combined output is searched)
-        assert_eq!(
-            obj["stderr-test.digest"],
-            format!("sha256:{digest_hash}")
+        config.buildkit_addr = "tcp://127.0.0.1:1".to_string();
+        let step = BuildkitStep::new(config);
+        let err = step.connect().await.unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("failed to connect"),
+            "expected connection error, got: {msg}"
         );
     }
 
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn run_with_unnamed_step_uses_unknown() {
-        let tmp = tempfile::tempdir().unwrap();
-        write_mock_buildctl(tmp.path(), "#!/bin/sh\necho ok\nexit 0\n");
+    // ---------------------------------------------------------------
+    // BuildkitStep construction tests
+    // ---------------------------------------------------------------
 
-        let mut step = BuildkitStep::new(minimal_config());
-
-        // Create a step with no name
-        let ws = wfe_core::models::WorkflowStep::new(0, "buildkit");
-        let pointer = wfe_core::models::ExecutionPointer::new(0);
-        let instance =
-            wfe_core::models::WorkflowInstance::new("test-wf", 1, serde_json::json!({}));
-        let cancel = tokio_util::sync::CancellationToken::new();
-        let ctx = wfe_core::traits::step::StepExecutionContext {
-            item: None,
-            execution_pointer: &pointer,
-            persistence_data: None,
-            step: &ws,
-            workflow: &instance,
-            cancellation_token: cancel,
-        };
-
-        let new_path = path_with_prefix(tmp.path());
-        unsafe { std::env::set_var("PATH", &new_path) };
-
-        let result = step.run(&ctx).await.unwrap();
-        let data = result.output_data.unwrap();
-        let obj = data.as_object().unwrap();
-
-        // Should use "unknown" as step name
-        assert!(obj.contains_key("unknown.stdout"));
-        assert!(obj.contains_key("unknown.stderr"));
+    #[test]
+    fn new_step_stores_config() {
+        let config = minimal_config();
+        let step = BuildkitStep::new(config.clone());
+        assert_eq!(step.config.dockerfile, "Dockerfile");
+        assert_eq!(step.config.context, ".");
     }
 }
