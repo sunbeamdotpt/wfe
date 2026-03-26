@@ -9,12 +9,19 @@ description = "containerd container runner executor for WFE"
 
 [dependencies]
 wfe-core = { workspace = true }
+wfe-containerd-protos = { path = "../wfe-containerd-protos" }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 async-trait = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
+tonic = "0.14"
+tower = "0.5"
+hyper-util = { version = "0.1", features = ["tokio"] }
+prost-types = "0.14"
+uuid = { version = "1", features = ["v4"] }
+libc = "0.2"
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }
