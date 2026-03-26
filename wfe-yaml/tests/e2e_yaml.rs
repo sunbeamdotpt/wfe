@@ -91,7 +91,7 @@ workflow:
             assert_eq!(greeting.as_str(), Some("hello"));
         }
         if let Some(count) = data.get("count") {
-            assert_eq!(count.as_str(), Some("42"));
+            assert_eq!(count.as_i64(), Some(42)); // auto-converted from string "42"
         }
     }
 }

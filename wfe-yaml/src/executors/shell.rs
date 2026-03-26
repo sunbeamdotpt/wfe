@@ -92,8 +92,21 @@ impl StepBody for ShellStep {
                 && let Some(eq_pos) = rest.find('=')
             {
                 let name = rest[..eq_pos].trim().to_string();
-                let value = rest[eq_pos + 1..].to_string();
-                outputs.insert(name, serde_json::Value::String(value));
+                let raw_value = rest[eq_pos + 1..].to_string();
+                // Auto-convert typed values from string annotations
+                let value = match raw_value.as_str() {
+                    "true" => serde_json::Value::Bool(true),
+                    "false" => serde_json::Value::Bool(false),
+                    "null" => serde_json::Value::Null,
+                    s if s.parse::<i64>().is_ok() => {
+                        serde_json::Value::Number(s.parse::<i64>().unwrap().into())
+                    }
+                    s if s.parse::<f64>().is_ok() => {
+                        serde_json::json!(s.parse::<f64>().unwrap())
+                    }
+                    _ => serde_json::Value::String(raw_value),
+                };
+                outputs.insert(name, value);
             }
         }
 
