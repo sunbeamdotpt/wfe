@@ -1,11 +1,35 @@
 use std::collections::HashMap;
+use std::path::Path;
 
 use async_trait::async_trait;
+use tonic::transport::{Channel, Endpoint, Uri};
 use wfe_core::WfeError;
 use wfe_core::models::ExecutionResult;
 use wfe_core::traits::step::{StepBody, StepExecutionContext};
 
+use wfe_containerd_protos::containerd::services::containers::v1::{
+    containers_client::ContainersClient, Container, CreateContainerRequest,
+    DeleteContainerRequest, container::Runtime,
+};
+use wfe_containerd_protos::containerd::services::images::v1::{
+    images_client::ImagesClient, GetImageRequest,
+};
+use wfe_containerd_protos::containerd::services::snapshots::v1::{
+    snapshots_client::SnapshotsClient, MountsRequest, PrepareSnapshotRequest,
+};
+use wfe_containerd_protos::containerd::services::tasks::v1::{
+    tasks_client::TasksClient, CreateTaskRequest, DeleteTaskRequest, StartRequest,
+    WaitRequest,
+};
+use wfe_containerd_protos::containerd::services::version::v1::version_client::VersionClient;
+
 use crate::config::ContainerdConfig;
+
+/// Default containerd namespace.
+const DEFAULT_NAMESPACE: &str = "default";
+
+/// Default snapshotter for rootless containerd.
+const DEFAULT_SNAPSHOTTER: &str = "overlayfs";
 
 pub struct ContainerdStep {
     config: ContainerdConfig,
@@ -16,100 +40,218 @@ impl ContainerdStep {
         Self { config }
     }
 
-    /// Build the pull command arguments using the configured CLI binary.
-    pub fn build_pull_command(&self) -> Vec<String> {
-        let mut args = vec![
-            self.config.cli.clone(),
-            "--address".to_string(),
-            self.config.containerd_addr.clone(),
-        ];
+    /// Connect to the containerd daemon and return a raw tonic `Channel`.
+    ///
+    /// Supports Unix socket paths (bare `/path` or `unix:///path`) and
+    /// TCP/HTTP endpoints.
+    async fn connect(addr: &str) -> Result<Channel, WfeError> {
+        let channel = if addr.starts_with('/') || addr.starts_with("unix://") {
+            let socket_path = addr
+                .strip_prefix("unix://")
+                .unwrap_or(addr)
+                .to_string();
 
-        self.append_tls_flags(&mut args);
+            if !Path::new(&socket_path).exists() {
+                return Err(WfeError::StepExecution(format!(
+                    "containerd socket not found: {socket_path}"
+                )));
+            }
 
-        args.push("pull".to_string());
-        args.push(self.config.image.clone());
+            Endpoint::try_from("http://[::]:50051")
+                .map_err(|e| {
+                    WfeError::StepExecution(format!("failed to create endpoint: {e}"))
+                })?
+                .connect_with_connector(tower::service_fn(move |_: Uri| {
+                    let path = socket_path.clone();
+                    async move {
+                        tokio::net::UnixStream::connect(path)
+                            .await
+                            .map(hyper_util::rt::TokioIo::new)
+                    }
+                }))
+                .await
+                .map_err(|e| {
+                    WfeError::StepExecution(format!(
+                        "failed to connect to containerd via Unix socket at {addr}: {e}"
+                    ))
+                })?
+        } else {
+            let connect_addr = if addr.starts_with("tcp://") {
+                addr.replacen("tcp://", "http://", 1)
+            } else {
+                addr.to_string()
+            };
 
-        args
+            Endpoint::from_shared(connect_addr.clone())
+                .map_err(|e| {
+                    WfeError::StepExecution(format!(
+                        "invalid containerd endpoint {connect_addr}: {e}"
+                    ))
+                })?
+                .timeout(std::time::Duration::from_secs(30))
+                .connect()
+                .await
+                .map_err(|e| {
+                    WfeError::StepExecution(format!(
+                        "failed to connect to containerd at {connect_addr}: {e}"
+                    ))
+                })?
+        };
+
+        Ok(channel)
     }
 
-    /// Build the nerdctl run command arguments.
-    pub fn build_run_command(&self) -> Vec<String> {
-        self.build_run_command_with_extra_env(&HashMap::new())
+    /// Check whether an image exists in containerd's image store.
+    ///
+    /// Image pulling via raw containerd gRPC is complex (content store +
+    /// snapshots + transfer). For now we only verify the image exists and
+    /// return an error if it does not. Images must be pre-pulled via
+    /// `ctr image pull` or `nerdctl pull`.
+    ///
+    /// TODO: implement full image pull via TransferService or content ingest.
+    async fn ensure_image(
+        channel: &Channel,
+        image: &str,
+        namespace: &str,
+    ) -> Result<(), WfeError> {
+        let mut client = ImagesClient::new(channel.clone());
+
+        let mut req = tonic::Request::new(GetImageRequest {
+            name: image.to_string(),
+        });
+        req.metadata_mut().insert(
+            "containerd-namespace",
+            namespace.parse().unwrap(),
+        );
+
+        match client.get(req).await {
+            Ok(_) => Ok(()),
+            Err(status) => Err(WfeError::StepExecution(format!(
+                "image '{image}' not found in containerd (namespace={namespace}). \
+                 Pre-pull it with: ctr -n {namespace} image pull {image}  \
+                 (gRPC status: {status})"
+            ))),
+        }
     }
 
-    /// Build the run command arguments with extra environment variables
-    /// injected from workflow data, using the configured CLI binary.
-    pub fn build_run_command_with_extra_env(
+    /// Build a minimal OCI runtime spec as a `prost_types::Any`.
+    ///
+    /// The spec is serialized as JSON and wrapped in a protobuf Any with
+    /// the containerd OCI spec type URL.
+    pub(crate) fn build_oci_spec(
         &self,
-        workflow_env: &HashMap<String, String>,
-    ) -> Vec<String> {
-        let mut args = vec![
-            self.config.cli.clone(),
-            "--address".to_string(),
-            self.config.containerd_addr.clone(),
+        merged_env: &HashMap<String, String>,
+    ) -> prost_types::Any {
+        // Build the args array for the process.
+        let args: Vec<String> = if let Some(ref run) = self.config.run {
+            vec!["sh".to_string(), "-c".to_string(), run.clone()]
+        } else if let Some(ref command) = self.config.command {
+            command.clone()
+        } else {
+            vec![]
+        };
+
+        // Build env in KEY=VALUE form.
+        let env: Vec<String> = merged_env
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect();
+
+        // Build mounts.
+        let mut mounts = vec![
+            serde_json::json!({
+                "destination": "/proc",
+                "type": "proc",
+                "source": "proc",
+                "options": ["nosuid", "noexec", "nodev"]
+            }),
+            serde_json::json!({
+                "destination": "/dev",
+                "type": "tmpfs",
+                "source": "tmpfs",
+                "options": ["nosuid", "strictatime", "mode=755", "size=65536k"]
+            }),
+            serde_json::json!({
+                "destination": "/sys",
+                "type": "sysfs",
+                "source": "sysfs",
+                "options": ["nosuid", "noexec", "nodev", "ro"]
+            }),
         ];
-
-        self.append_tls_flags(&mut args);
-
-        args.push("run".to_string());
-        args.push("--rm".to_string());
-
-        args.push("--net".to_string());
-        args.push(self.config.network.clone());
-
-        args.push("--user".to_string());
-        args.push(self.config.user.clone());
-
-        if let Some(ref memory) = self.config.memory {
-            args.push("--memory".to_string());
-            args.push(memory.clone());
-        }
-
-        if let Some(ref cpu) = self.config.cpu {
-            args.push("--cpus".to_string());
-            args.push(cpu.clone());
-        }
-
-        if let Some(ref working_dir) = self.config.working_dir {
-            args.push("-w".to_string());
-            args.push(working_dir.clone());
-        }
-
-        // Inject workflow data env vars first, then config env vars (config overrides).
-        for (key, value) in workflow_env {
-            args.push("-e".to_string());
-            args.push(format!("{key}={value}"));
-        }
-
-        for (key, value) in &self.config.env {
-            args.push("-e".to_string());
-            args.push(format!("{key}={value}"));
-        }
 
         for vol in &self.config.volumes {
-            args.push("-v".to_string());
+            let mut opts = vec!["rbind".to_string()];
             if vol.readonly {
-                args.push(format!("{}:{}:ro", vol.source, vol.target));
-            } else {
-                args.push(format!("{}:{}", vol.source, vol.target));
+                opts.push("ro".to_string());
             }
+            mounts.push(serde_json::json!({
+                "destination": vol.target,
+                "type": "bind",
+                "source": vol.source,
+                "options": opts,
+            }));
         }
 
-        args.push(self.config.image.clone());
+        // Parse user / group.
+        let (uid, gid) = parse_user_spec(&self.config.user);
 
-        // Add command or run
-        if let Some(ref run) = self.config.run {
-            args.push("sh".to_string());
-            args.push("-c".to_string());
-            args.push(run.clone());
-        } else if let Some(ref command) = self.config.command {
-            args.extend(command.iter().cloned());
+        let mut process = serde_json::json!({
+            "terminal": false,
+            "user": {
+                "uid": uid,
+                "gid": gid,
+            },
+            "args": args,
+            "env": env,
+            "cwd": self.config.working_dir.as_deref().unwrap_or("/"),
+        });
+
+        // Add capabilities (minimal set).
+        process["capabilities"] = serde_json::json!({
+            "bounding": [],
+            "effective": [],
+            "inheritable": [],
+            "permitted": [],
+            "ambient": [],
+        });
+
+        let spec = serde_json::json!({
+            "ociVersion": "1.0.2",
+            "process": process,
+            "root": {
+                "path": "rootfs",
+                "readonly": false,
+            },
+            "mounts": mounts,
+            "linux": {
+                "namespaces": [
+                    { "type": "pid" },
+                    { "type": "ipc" },
+                    { "type": "uts" },
+                    { "type": "mount" },
+                ],
+            },
+        });
+
+        let json_bytes = serde_json::to_vec(&spec).expect("OCI spec serialization cannot fail");
+
+        prost_types::Any {
+            type_url: "types.containerd.io/opencontainers/runtime-spec/1/Spec".to_string(),
+            value: json_bytes,
         }
-
-        args
     }
 
-    /// Parse ##wfe[output key=value] lines from stdout.
+    /// Inject a `containerd-namespace` header into a tonic request.
+    fn with_namespace<T>(req: T, namespace: &str) -> tonic::Request<T> {
+        let mut request = tonic::Request::new(req);
+        request.metadata_mut().insert(
+            "containerd-namespace",
+            namespace.parse().unwrap(),
+        );
+        request
+    }
+
+    /// Parse `##wfe[output key=value]` lines from stdout.
     pub fn parse_outputs(stdout: &str) -> HashMap<String, String> {
         let mut outputs = HashMap::new();
         for line in stdout.lines() {
@@ -151,130 +293,66 @@ impl ContainerdStep {
         );
         serde_json::Value::Object(outputs)
     }
+}
 
-    /// Build login commands for each configured registry auth entry.
-    /// Returns a list of (registry, args) tuples.
-    pub fn build_login_commands(&self) -> Vec<(String, Vec<String>)> {
-        let mut commands = Vec::new();
-        for (registry, auth) in &self.config.registry_auth {
-            let mut args = vec![
-                self.config.cli.clone(),
-                "--address".to_string(),
-                self.config.containerd_addr.clone(),
-            ];
-            self.append_tls_flags(&mut args);
-            args.push("login".to_string());
-            args.push("-u".to_string());
-            args.push(auth.username.clone());
-            args.push("-p".to_string());
-            args.push(auth.password.clone());
-            args.push(registry.clone());
-            commands.push((registry.clone(), args));
-        }
-        commands
-    }
-
-    fn append_tls_flags(&self, args: &mut Vec<String>) {
-        if let Some(ref ca) = self.config.tls.ca {
-            args.push("--tlscacert".to_string());
-            args.push(ca.clone());
-        }
-        if let Some(ref cert) = self.config.tls.cert {
-            args.push("--tlscert".to_string());
-            args.push(cert.clone());
-        }
-        if let Some(ref key) = self.config.tls.key {
-            args.push("--tlskey".to_string());
-            args.push(key.clone());
-        }
-    }
-
-    /// Run registry login commands for each configured registry auth entry.
-    async fn run_registry_logins(&self) -> Result<(), WfeError> {
-        for (registry, auth) in &self.config.registry_auth {
-            let mut cmd = tokio::process::Command::new(&self.config.cli);
-            cmd.arg("--address")
-                .arg(&self.config.containerd_addr);
-
-            self.append_tls_flags_to_command(&mut cmd);
-
-            cmd.arg("login")
-                .arg("-u")
-                .arg(&auth.username)
-                .arg("-p")
-                .arg(&auth.password)
-                .arg(registry);
-
-            cmd.stdout(std::process::Stdio::piped());
-            cmd.stderr(std::process::Stdio::piped());
-
-            let cli = &self.config.cli;
-            let output = cmd
-                .output()
-                .await
-                .map_err(|e| WfeError::StepExecution(format!("Failed to run {cli} login for {registry}: {e}")))?;
-
-            if !output.status.success() {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                return Err(WfeError::StepExecution(format!(
-                    "{cli} login failed for {registry}: {stderr}"
-                )));
-            }
-        }
-        Ok(())
-    }
-
-    fn append_tls_flags_to_command(&self, cmd: &mut tokio::process::Command) {
-        if let Some(ref ca) = self.config.tls.ca {
-            cmd.arg("--tlscacert").arg(ca);
-        }
-        if let Some(ref cert) = self.config.tls.cert {
-            cmd.arg("--tlscert").arg(cert);
-        }
-        if let Some(ref key) = self.config.tls.key {
-            cmd.arg("--tlskey").arg(key);
-        }
+/// Parse a "uid:gid" string into (u32, u32). Falls back to (65534, 65534).
+fn parse_user_spec(user: &str) -> (u32, u32) {
+    let parts: Vec<&str> = user.split(':').collect();
+    if parts.len() == 2 {
+        let uid = parts[0].parse().unwrap_or(65534);
+        let gid = parts[1].parse().unwrap_or(65534);
+        (uid, gid)
+    } else {
+        (65534, 65534)
     }
 }
 
 #[async_trait]
 impl StepBody for ContainerdStep {
-    async fn run(&mut self, context: &StepExecutionContext<'_>) -> wfe_core::Result<ExecutionResult> {
-        // Run registry logins if configured.
-        if !self.config.registry_auth.is_empty() {
-            self.run_registry_logins().await?;
-        }
+    async fn run(
+        &mut self,
+        context: &StepExecutionContext<'_>,
+    ) -> wfe_core::Result<ExecutionResult> {
+        let step_name = context.step.name.as_deref().unwrap_or("unknown");
+        let namespace = DEFAULT_NAMESPACE;
 
-        // Pull image if needed.
-        let should_pull = match self.config.pull.as_str() {
-            "always" => true,
-            "never" => false,
-            // "if-not-present" — always attempt pull, nerdctl handles caching
-            _ => true,
-        };
+        // 1. Connect to containerd.
+        let addr = &self.config.containerd_addr;
+        tracing::info!(addr = %addr, "connecting to containerd daemon");
+        let channel = Self::connect(addr).await?;
 
-        if should_pull {
-            let pull_args = self.build_pull_command();
-            let mut pull_cmd = tokio::process::Command::new(&pull_args[0]);
-            pull_cmd.args(&pull_args[1..]);
-            pull_cmd.stdout(std::process::Stdio::piped());
-            pull_cmd.stderr(std::process::Stdio::piped());
-
-            let pull_output = pull_cmd
-                .output()
-                .await
-                .map_err(|e| WfeError::StepExecution(format!("Failed to pull image: {e}")))?;
-
-            if !pull_output.status.success() {
-                let stderr = String::from_utf8_lossy(&pull_output.stderr);
-                return Err(WfeError::StepExecution(format!(
-                    "Image pull failed: {stderr}"
-                )));
+        // Verify connectivity.
+        {
+            let mut version_client = VersionClient::new(channel.clone());
+            let req = Self::with_namespace((), namespace);
+            match version_client.version(req).await {
+                Ok(resp) => {
+                    let v = resp.into_inner();
+                    tracing::info!(
+                        version = %v.version,
+                        revision = %v.revision,
+                        "connected to containerd"
+                    );
+                }
+                Err(e) => {
+                    return Err(WfeError::StepExecution(format!(
+                        "containerd version check failed: {e}"
+                    )));
+                }
             }
         }
 
-        // Build workflow env vars (same pattern as shell executor).
-        let mut workflow_env = HashMap::new();
+        // 2. Ensure image exists (based on pull policy).
+        let should_check = !matches!(self.config.pull.as_str(), "never");
+        if should_check {
+            Self::ensure_image(&channel, &self.config.image, namespace).await?;
+        }
+
+        // Generate a unique container ID.
+        let container_id = format!("wfe-{}", uuid::Uuid::new_v4());
+
+        // 3. Merge environment variables.
+        let mut merged_env: HashMap<String, String> = HashMap::new();
         if let Some(data_obj) = context.workflow.data.as_object() {
             for (key, value) in data_obj {
                 let env_key = key.to_uppercase();
@@ -282,51 +360,229 @@ impl StepBody for ContainerdStep {
                     serde_json::Value::String(s) => s.clone(),
                     other => other.to_string(),
                 };
-                workflow_env.insert(env_key, env_val);
+                merged_env.insert(env_key, env_val);
             }
         }
+        // Config env overrides workflow data.
+        for (key, value) in &self.config.env {
+            merged_env.insert(key.clone(), value.clone());
+        }
 
-        // Build and spawn the run command.
-        let run_args = self.build_run_command_with_extra_env(&workflow_env);
-        let mut cmd = tokio::process::Command::new(&run_args[0]);
-        cmd.args(&run_args[1..]);
-        cmd.stdout(std::process::Stdio::piped());
-        cmd.stderr(std::process::Stdio::piped());
+        // 4. Build OCI spec.
+        let oci_spec = self.build_oci_spec(&merged_env);
 
-        // Execute with optional timeout.
-        let cli = &self.config.cli;
-        let output = if let Some(timeout_ms) = self.config.timeout_ms {
-            let duration = std::time::Duration::from_millis(timeout_ms);
-            match tokio::time::timeout(duration, cmd.output()).await {
-                Ok(result) => result.map_err(|e| {
-                    WfeError::StepExecution(format!("Failed to spawn {cli} run: {e}"))
-                })?,
+        // 5. Create container.
+        tracing::info!(container_id = %container_id, image = %self.config.image, "creating container");
+        let mut containers_client = ContainersClient::new(channel.clone());
+        let create_req = Self::with_namespace(
+            CreateContainerRequest {
+                container: Some(Container {
+                    id: container_id.clone(),
+                    image: self.config.image.clone(),
+                    runtime: Some(Runtime {
+                        name: "io.containerd.runc.v2".to_string(),
+                        options: None,
+                    }),
+                    spec: Some(oci_spec),
+                    snapshotter: DEFAULT_SNAPSHOTTER.to_string(),
+                    snapshot_key: container_id.clone(),
+                    labels: HashMap::new(),
+                    created_at: None,
+                    updated_at: None,
+                    extensions: HashMap::new(),
+                    sandbox: String::new(),
+                }),
+            },
+            namespace,
+        );
+
+        containers_client.create(create_req).await.map_err(|e| {
+            WfeError::StepExecution(format!("failed to create container: {e}"))
+        })?;
+
+        // 6. Prepare snapshot to get rootfs mounts.
+        let mut snapshots_client = SnapshotsClient::new(channel.clone());
+
+        // Get the image's chain ID to use as parent for the snapshot.
+        // We try to get mounts from the snapshot (already committed by image unpack).
+        // If snapshot already exists, use Mounts; otherwise Prepare from the image's
+        // snapshot key (same as container_id for our flow).
+        let mounts = {
+            // First try: see if the snapshot was already prepared.
+            let mounts_req = Self::with_namespace(
+                MountsRequest {
+                    snapshotter: DEFAULT_SNAPSHOTTER.to_string(),
+                    key: container_id.clone(),
+                },
+                namespace,
+            );
+
+            match snapshots_client.mounts(mounts_req).await {
+                Ok(resp) => resp.into_inner().mounts,
                 Err(_) => {
+                    // Try to prepare a fresh snapshot.
+                    let prepare_req = Self::with_namespace(
+                        PrepareSnapshotRequest {
+                            snapshotter: DEFAULT_SNAPSHOTTER.to_string(),
+                            key: container_id.clone(),
+                            parent: String::new(),
+                            labels: HashMap::new(),
+                        },
+                        namespace,
+                    );
+                    snapshots_client
+                        .prepare(prepare_req)
+                        .await
+                        .map_err(|e| {
+                            WfeError::StepExecution(format!(
+                                "failed to prepare snapshot: {e}"
+                            ))
+                        })?
+                        .into_inner()
+                        .mounts
+                }
+            }
+        };
+
+        // 7. Create FIFO paths for stdout/stderr capture.
+        let tmp_dir = std::env::temp_dir().join(format!("wfe-io-{container_id}"));
+        std::fs::create_dir_all(&tmp_dir).map_err(|e| {
+            WfeError::StepExecution(format!("failed to create IO temp dir: {e}"))
+        })?;
+
+        let stdout_path = tmp_dir.join("stdout");
+        let stderr_path = tmp_dir.join("stderr");
+
+        // Create named pipes (FIFOs) for the task I/O.
+        for path in [&stdout_path, &stderr_path] {
+            // Remove if exists from a previous run.
+            let _ = std::fs::remove_file(path);
+            nix_mkfifo(path).map_err(|e| {
+                WfeError::StepExecution(format!("failed to create FIFO {}: {e}", path.display()))
+            })?;
+        }
+
+        let stdout_str = stdout_path.to_string_lossy().to_string();
+        let stderr_str = stderr_path.to_string_lossy().to_string();
+
+        // 8. Create and start task.
+        let mut tasks_client = TasksClient::new(channel.clone());
+
+        let create_task_req = Self::with_namespace(
+            CreateTaskRequest {
+                container_id: container_id.clone(),
+                rootfs: mounts,
+                stdin: String::new(),
+                stdout: stdout_str.clone(),
+                stderr: stderr_str.clone(),
+                terminal: false,
+                checkpoint: None,
+                options: None,
+                runtime_path: String::new(),
+            },
+            namespace,
+        );
+
+        tasks_client.create(create_task_req).await.map_err(|e| {
+            WfeError::StepExecution(format!("failed to create task: {e}"))
+        })?;
+
+        // Spawn readers for FIFOs before starting the task (FIFOs block on open
+        // until both ends connect).
+        let stdout_reader = {
+            let path = stdout_path.clone();
+            tokio::spawn(async move { read_fifo(&path).await })
+        };
+        let stderr_reader = {
+            let path = stderr_path.clone();
+            tokio::spawn(async move { read_fifo(&path).await })
+        };
+
+        // Start the task.
+        let start_req = Self::with_namespace(
+            StartRequest {
+                container_id: container_id.clone(),
+                exec_id: String::new(),
+            },
+            namespace,
+        );
+
+        tasks_client.start(start_req).await.map_err(|e| {
+            WfeError::StepExecution(format!("failed to start task: {e}"))
+        })?;
+
+        tracing::info!(container_id = %container_id, "task started");
+
+        // 9. Wait for task completion (with optional timeout).
+        let wait_req = Self::with_namespace(
+            WaitRequest {
+                container_id: container_id.clone(),
+                exec_id: String::new(),
+            },
+            namespace,
+        );
+
+        let wait_result = if let Some(timeout_ms) = self.config.timeout_ms {
+            let duration = std::time::Duration::from_millis(timeout_ms);
+            match tokio::time::timeout(duration, tasks_client.wait(wait_req)).await {
+                Ok(result) => result,
+                Err(_) => {
+                    // Attempt cleanup before returning timeout error.
+                    let _ = Self::cleanup(
+                        &channel,
+                        &container_id,
+                        namespace,
+                    )
+                    .await;
+                    let _ = std::fs::remove_dir_all(&tmp_dir);
                     return Err(WfeError::StepExecution(format!(
-                        "Container execution timed out after {timeout_ms}ms"
+                        "container execution timed out after {timeout_ms}ms"
                     )));
                 }
             }
         } else {
-            cmd.output()
-                .await
-                .map_err(|e| WfeError::StepExecution(format!("Failed to spawn {cli} run: {e}")))?
+            tasks_client.wait(wait_req).await
         };
 
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        let exit_code = output.status.code().unwrap_or(-1);
+        let exit_status = match wait_result {
+            Ok(resp) => resp.into_inner().exit_status,
+            Err(e) => {
+                let _ = Self::cleanup(&channel, &container_id, namespace).await;
+                let _ = std::fs::remove_dir_all(&tmp_dir);
+                return Err(WfeError::StepExecution(format!(
+                    "failed waiting for task: {e}"
+                )));
+            }
+        };
 
-        if !output.status.success() {
+        // 10. Read captured output.
+        let stdout_content = stdout_reader
+            .await
+            .unwrap_or_else(|_| Ok(String::new()))
+            .unwrap_or_default();
+        let stderr_content = stderr_reader
+            .await
+            .unwrap_or_else(|_| Ok(String::new()))
+            .unwrap_or_default();
+
+        // 11. Cleanup: delete task, then container.
+        if let Err(e) = Self::cleanup(&channel, &container_id, namespace).await {
+            tracing::warn!(container_id = %container_id, error = %e, "cleanup failed");
+        }
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+
+        // 12. Check exit status.
+        let exit_code = exit_status as i32;
+        if exit_code != 0 {
             return Err(WfeError::StepExecution(format!(
-                "Container exited with code {exit_code}\nstdout: {stdout}\nstderr: {stderr}"
+                "container exited with code {exit_code}\nstdout: {stdout_content}\nstderr: {stderr_content}"
             )));
         }
 
-        // Parse ##wfe[output key=value] lines from stdout.
-        let parsed = Self::parse_outputs(&stdout);
-        let step_name = context.step.name.as_deref().unwrap_or("unknown");
-        let output_data = Self::build_output_data(step_name, &stdout, &stderr, exit_code, &parsed);
+        // 13. Parse outputs and build result.
+        let parsed = Self::parse_outputs(&stdout_content);
+        let output_data =
+            Self::build_output_data(step_name, &stdout_content, &stderr_content, exit_code, &parsed);
 
         Ok(ExecutionResult {
             proceed: true,
@@ -336,10 +592,79 @@ impl StepBody for ContainerdStep {
     }
 }
 
+impl ContainerdStep {
+    /// Delete the task and container, best-effort.
+    async fn cleanup(
+        channel: &Channel,
+        container_id: &str,
+        namespace: &str,
+    ) -> Result<(), WfeError> {
+        let mut tasks_client = TasksClient::new(channel.clone());
+        let mut containers_client = ContainersClient::new(channel.clone());
+
+        // Delete task (ignore errors — it may already be gone).
+        let del_task_req = Self::with_namespace(
+            DeleteTaskRequest {
+                container_id: container_id.to_string(),
+            },
+            namespace,
+        );
+        let _ = tasks_client.delete(del_task_req).await;
+
+        // Delete container.
+        let del_container_req = Self::with_namespace(
+            DeleteContainerRequest {
+                id: container_id.to_string(),
+            },
+            namespace,
+        );
+        containers_client
+            .delete(del_container_req)
+            .await
+            .map_err(|e| {
+                WfeError::StepExecution(format!("failed to delete container: {e}"))
+            })?;
+
+        Ok(())
+    }
+}
+
+/// Create a named pipe (FIFO) at the given path. This is a thin wrapper
+/// around the `mkfifo` libc call, avoiding an extra dependency.
+fn nix_mkfifo(path: &Path) -> std::io::Result<()> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    let c_path = CString::new(path.as_os_str().as_bytes())
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+
+    // SAFETY: c_path is a valid null-terminated C string and 0o622 is a
+    // standard FIFO permission mode.
+    let ret = unsafe { libc::mkfifo(c_path.as_ptr(), 0o622) };
+    if ret != 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+/// Read the entire contents of a FIFO into a String. This opens the FIFO
+/// in read mode (which blocks until a writer opens the other end) and reads
+/// until EOF.
+async fn read_fifo(path: &Path) -> Result<String, std::io::Error> {
+    use tokio::io::AsyncReadExt;
+
+    let file = tokio::fs::File::open(path).await?;
+    let mut reader = tokio::io::BufReader::new(file);
+    let mut buf = String::new();
+    reader.read_to_string(&mut buf).await?;
+    Ok(buf)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{RegistryAuth, TlsConfig, VolumeMountConfig};
+    use crate::config::{TlsConfig, VolumeMountConfig};
     use pretty_assertions::assert_eq;
 
     fn minimal_config() -> ContainerdConfig {
@@ -361,451 +686,6 @@ mod tests {
             registry_auth: HashMap::new(),
             timeout_ms: None,
         }
-    }
-
-    // ── build_run_command ───────────────────────────────────────────────
-
-    #[test]
-    fn build_run_command_minimal() {
-        let step = ContainerdStep::new(minimal_config());
-        let args = step.build_run_command();
-
-        assert_eq!(args[0], "nerdctl");
-        assert_eq!(args[1], "--address");
-        assert_eq!(args[2], "/run/containerd/containerd.sock");
-        assert_eq!(args[3], "run");
-        assert_eq!(args[4], "--rm");
-        assert_eq!(args[5], "--net");
-        assert_eq!(args[6], "none");
-        assert_eq!(args[7], "--user");
-        assert_eq!(args[8], "65534:65534");
-        assert_eq!(args[9], "alpine:3.18");
-        assert_eq!(args[10], "sh");
-        assert_eq!(args[11], "-c");
-        assert_eq!(args[12], "echo hello");
-    }
-
-    #[test]
-    fn build_run_command_with_command_array() {
-        let mut config = minimal_config();
-        config.run = None;
-        config.command = Some(vec!["echo".to_string(), "hello".to_string(), "world".to_string()]);
-
-        let step = ContainerdStep::new(config);
-        let args = step.build_run_command();
-
-        let len = args.len();
-        assert_eq!(args[len - 3], "echo");
-        assert_eq!(args[len - 2], "hello");
-        assert_eq!(args[len - 1], "world");
-        // Should NOT contain sh -c
-        assert!(!args.contains(&"sh".to_string()) || args.iter().position(|a| a == "sh").is_none());
-    }
-
-    #[test]
-    fn build_run_command_no_command_no_run() {
-        let mut config = minimal_config();
-        config.run = None;
-        config.command = None;
-
-        let step = ContainerdStep::new(config);
-        let args = step.build_run_command();
-
-        // Should end with the image name, no trailing command
-        assert_eq!(args.last().unwrap(), "alpine:3.18");
-    }
-
-    #[test]
-    fn build_run_command_with_env() {
-        let mut config = minimal_config();
-        config.env = HashMap::from([
-            ("FOO".to_string(), "bar".to_string()),
-            ("BAZ".to_string(), "qux".to_string()),
-        ]);
-
-        let step = ContainerdStep::new(config);
-        let args = step.build_run_command();
-
-        let mut env_pairs: Vec<String> = Vec::new();
-        let mut i = 0;
-        while i < args.len() {
-            if args[i] == "-e" {
-                env_pairs.push(args[i + 1].clone());
-                i += 2;
-            } else {
-                i += 1;
-            }
-        }
-        env_pairs.sort();
-        assert!(env_pairs.contains(&"BAZ=qux".to_string()));
-        assert!(env_pairs.contains(&"FOO=bar".to_string()));
-    }
-
-    #[test]
-    fn build_run_command_with_volumes() {
-        let mut config = minimal_config();
-        config.volumes = vec![VolumeMountConfig {
-            source: "/host/data".to_string(),
-            target: "/container/data".to_string(),
-            readonly: false,
-        }];
-
-        let step = ContainerdStep::new(config);
-        let args = step.build_run_command();
-
-        assert!(args.contains(&"-v".to_string()));
-        assert!(args.contains(&"/host/data:/container/data".to_string()));
-    }
-
-    #[test]
-    fn build_run_command_with_volumes_readonly() {
-        let mut config = minimal_config();
-        config.volumes = vec![VolumeMountConfig {
-            source: "/host/data".to_string(),
-            target: "/container/data".to_string(),
-            readonly: true,
-        }];
-
-        let step = ContainerdStep::new(config);
-        let args = step.build_run_command();
-
-        assert!(args.contains(&"-v".to_string()));
-        assert!(args.contains(&"/host/data:/container/data:ro".to_string()));
-    }
-
-    #[test]
-    fn build_run_command_with_multiple_volumes() {
-        let mut config = minimal_config();
-        config.volumes = vec![
-            VolumeMountConfig {
-                source: "/a".to_string(),
-                target: "/b".to_string(),
-                readonly: false,
-            },
-            VolumeMountConfig {
-                source: "/c".to_string(),
-                target: "/d".to_string(),
-                readonly: true,
-            },
-        ];
-
-        let step = ContainerdStep::new(config);
-        let args = step.build_run_command();
-
-        assert!(args.contains(&"/a:/b".to_string()));
-        assert!(args.contains(&"/c:/d:ro".to_string()));
-    }
-
-    #[test]
-    fn build_run_command_with_resource_limits() {
-        let mut config = minimal_config();
-        config.memory = Some("512m".to_string());
-        config.cpu = Some("1.5".to_string());
-
-        let step = ContainerdStep::new(config);
-        let args = step.build_run_command();
-
-        let mem_idx = args.iter().position(|a| a == "--memory").unwrap();
-        assert_eq!(args[mem_idx + 1], "512m");
-
-        let cpu_idx = args.iter().position(|a| a == "--cpus").unwrap();
-        assert_eq!(args[cpu_idx + 1], "1.5");
-    }
-
-    #[test]
-    fn build_run_command_memory_only() {
-        let mut config = minimal_config();
-        config.memory = Some("1g".to_string());
-
-        let step = ContainerdStep::new(config);
-        let args = step.build_run_command();
-
-        assert!(args.contains(&"--memory".to_string()));
-        assert!(!args.contains(&"--cpus".to_string()));
-    }
-
-    #[test]
-    fn build_run_command_cpu_only() {
-        let mut config = minimal_config();
-        config.cpu = Some("2.0".to_string());
-
-        let step = ContainerdStep::new(config);
-        let args = step.build_run_command();
-
-        assert!(args.contains(&"--cpus".to_string()));
-        assert!(!args.contains(&"--memory".to_string()));
-    }
-
-    #[test]
-    fn build_run_command_with_network_host() {
-        let mut config = minimal_config();
-        config.network = "host".to_string();
-
-        let step = ContainerdStep::new(config);
-        let args = step.build_run_command();
-
-        let net_idx = args.iter().position(|a| a == "--net").unwrap();
-        assert_eq!(args[net_idx + 1], "host");
-    }
-
-    #[test]
-    fn build_run_command_with_network_bridge() {
-        let mut config = minimal_config();
-        config.network = "bridge".to_string();
-
-        let step = ContainerdStep::new(config);
-        let args = step.build_run_command();
-
-        let net_idx = args.iter().position(|a| a == "--net").unwrap();
-        assert_eq!(args[net_idx + 1], "bridge");
-    }
-
-    #[test]
-    fn build_run_command_with_working_dir() {
-        let mut config = minimal_config();
-        config.working_dir = Some("/app".to_string());
-
-        let step = ContainerdStep::new(config);
-        let args = step.build_run_command();
-
-        let w_idx = args.iter().position(|a| a == "-w").unwrap();
-        assert_eq!(args[w_idx + 1], "/app");
-    }
-
-    #[test]
-    fn build_run_command_without_working_dir() {
-        let config = minimal_config();
-        let step = ContainerdStep::new(config);
-        let args = step.build_run_command();
-
-        assert!(!args.contains(&"-w".to_string()));
-    }
-
-    #[test]
-    fn build_run_command_with_user() {
-        let mut config = minimal_config();
-        config.user = "1000:1000".to_string();
-
-        let step = ContainerdStep::new(config);
-        let args = step.build_run_command();
-
-        let user_idx = args.iter().position(|a| a == "--user").unwrap();
-        assert_eq!(args[user_idx + 1], "1000:1000");
-    }
-
-    #[test]
-    fn build_run_command_root_user() {
-        let mut config = minimal_config();
-        config.user = "0:0".to_string();
-
-        let step = ContainerdStep::new(config);
-        let args = step.build_run_command();
-
-        let user_idx = args.iter().position(|a| a == "--user").unwrap();
-        assert_eq!(args[user_idx + 1], "0:0");
-    }
-
-    #[test]
-    fn build_run_command_with_tls() {
-        let mut config = minimal_config();
-        config.tls = TlsConfig {
-            ca: Some("/ca.pem".to_string()),
-            cert: Some("/cert.pem".to_string()),
-            key: Some("/key.pem".to_string()),
-        };
-
-        let step = ContainerdStep::new(config);
-        let args = step.build_run_command();
-
-        let ca_idx = args.iter().position(|a| a == "--tlscacert").unwrap();
-        assert_eq!(args[ca_idx + 1], "/ca.pem");
-
-        let cert_idx = args.iter().position(|a| a == "--tlscert").unwrap();
-        assert_eq!(args[cert_idx + 1], "/cert.pem");
-
-        let key_idx = args.iter().position(|a| a == "--tlskey").unwrap();
-        assert_eq!(args[key_idx + 1], "/key.pem");
-    }
-
-    #[test]
-    fn build_run_command_with_partial_tls() {
-        let mut config = minimal_config();
-        config.tls = TlsConfig {
-            ca: Some("/ca.pem".to_string()),
-            cert: None,
-            key: None,
-        };
-
-        let step = ContainerdStep::new(config);
-        let args = step.build_run_command();
-
-        assert!(args.contains(&"--tlscacert".to_string()));
-        assert!(!args.contains(&"--tlscert".to_string()));
-        assert!(!args.contains(&"--tlskey".to_string()));
-    }
-
-    #[test]
-    fn build_run_command_no_tls() {
-        let config = minimal_config();
-        let step = ContainerdStep::new(config);
-        let args = step.build_run_command();
-
-        assert!(!args.contains(&"--tlscacert".to_string()));
-        assert!(!args.contains(&"--tlscert".to_string()));
-        assert!(!args.contains(&"--tlskey".to_string()));
-    }
-
-    #[test]
-    fn build_run_command_with_custom_address() {
-        let mut config = minimal_config();
-        config.containerd_addr = "/custom/sock".to_string();
-
-        let step = ContainerdStep::new(config);
-        let args = step.build_run_command();
-
-        assert_eq!(args[1], "--address");
-        assert_eq!(args[2], "/custom/sock");
-    }
-
-    #[test]
-    fn build_run_command_with_all_flags() {
-        let mut config = minimal_config();
-        config.network = "host".to_string();
-        config.user = "1000:1000".to_string();
-        config.memory = Some("256m".to_string());
-        config.cpu = Some("0.5".to_string());
-        config.working_dir = Some("/workspace".to_string());
-        config.env = HashMap::from([("KEY".to_string(), "val".to_string())]);
-        config.volumes = vec![VolumeMountConfig {
-            source: "/src".to_string(),
-            target: "/dst".to_string(),
-            readonly: true,
-        }];
-        config.tls = TlsConfig {
-            ca: Some("/ca.pem".to_string()),
-            cert: Some("/cert.pem".to_string()),
-            key: Some("/key.pem".to_string()),
-        };
-
-        let step = ContainerdStep::new(config);
-        let args = step.build_run_command();
-
-        // Verify all flags are present
-        assert!(args.contains(&"--net".to_string()));
-        assert!(args.contains(&"host".to_string()));
-        assert!(args.contains(&"--user".to_string()));
-        assert!(args.contains(&"1000:1000".to_string()));
-        assert!(args.contains(&"--memory".to_string()));
-        assert!(args.contains(&"256m".to_string()));
-        assert!(args.contains(&"--cpus".to_string()));
-        assert!(args.contains(&"0.5".to_string()));
-        assert!(args.contains(&"-w".to_string()));
-        assert!(args.contains(&"/workspace".to_string()));
-        assert!(args.contains(&"-e".to_string()));
-        assert!(args.contains(&"KEY=val".to_string()));
-        assert!(args.contains(&"-v".to_string()));
-        assert!(args.contains(&"/src:/dst:ro".to_string()));
-        assert!(args.contains(&"--tlscacert".to_string()));
-        assert!(args.contains(&"--tlscert".to_string()));
-        assert!(args.contains(&"--tlskey".to_string()));
-    }
-
-    // ── build_run_command_with_extra_env ────────────────────────────────
-
-    #[test]
-    fn build_run_command_with_extra_env_merges() {
-        let mut config = minimal_config();
-        config.env = HashMap::from([("CONFIG_VAR".to_string(), "from_config".to_string())]);
-
-        let step = ContainerdStep::new(config);
-        let workflow_env = HashMap::from([("WF_VAR".to_string(), "from_workflow".to_string())]);
-        let args = step.build_run_command_with_extra_env(&workflow_env);
-
-        let mut env_pairs: Vec<String> = Vec::new();
-        let mut i = 0;
-        while i < args.len() {
-            if args[i] == "-e" {
-                env_pairs.push(args[i + 1].clone());
-                i += 2;
-            } else {
-                i += 1;
-            }
-        }
-
-        assert!(env_pairs.contains(&"CONFIG_VAR=from_config".to_string()));
-        assert!(env_pairs.contains(&"WF_VAR=from_workflow".to_string()));
-    }
-
-    #[test]
-    fn build_run_command_with_extra_env_empty() {
-        let config = minimal_config();
-        let step = ContainerdStep::new(config);
-        let args_no_extra = step.build_run_command_with_extra_env(&HashMap::new());
-        let args_default = step.build_run_command();
-
-        assert_eq!(args_no_extra, args_default);
-    }
-
-    // ── build_pull_command ──────────────────────────────────────────────
-
-    #[test]
-    fn build_pull_command_basic() {
-        let step = ContainerdStep::new(minimal_config());
-        let args = step.build_pull_command();
-
-        assert_eq!(args[0], "nerdctl");
-        assert_eq!(args[1], "--address");
-        assert_eq!(args[2], "/run/containerd/containerd.sock");
-        assert_eq!(args[3], "pull");
-        assert_eq!(args[4], "alpine:3.18");
-    }
-
-    #[test]
-    fn build_pull_command_with_tls() {
-        let mut config = minimal_config();
-        config.tls = TlsConfig {
-            ca: Some("/ca.pem".to_string()),
-            cert: None,
-            key: None,
-        };
-
-        let step = ContainerdStep::new(config);
-        let args = step.build_pull_command();
-
-        let ca_idx = args.iter().position(|a| a == "--tlscacert").unwrap();
-        assert_eq!(args[ca_idx + 1], "/ca.pem");
-        assert!(args.iter().position(|a| a == "--tlscert").is_none());
-        assert!(args.iter().position(|a| a == "--tlskey").is_none());
-    }
-
-    #[test]
-    fn build_pull_command_with_full_tls() {
-        let mut config = minimal_config();
-        config.tls = TlsConfig {
-            ca: Some("/ca.pem".to_string()),
-            cert: Some("/cert.pem".to_string()),
-            key: Some("/key.pem".to_string()),
-        };
-
-        let step = ContainerdStep::new(config);
-        let args = step.build_pull_command();
-
-        assert!(args.contains(&"--tlscacert".to_string()));
-        assert!(args.contains(&"--tlscert".to_string()));
-        assert!(args.contains(&"--tlskey".to_string()));
-        // pull should still be present after tls flags
-        assert!(args.contains(&"pull".to_string()));
-    }
-
-    #[test]
-    fn build_pull_command_custom_address() {
-        let mut config = minimal_config();
-        config.containerd_addr = "/var/run/custom.sock".to_string();
-
-        let step = ContainerdStep::new(config);
-        let args = step.build_pull_command();
-
-        assert_eq!(args[2], "/var/run/custom.sock");
     }
 
     // ── parse_outputs ──────────────────────────────────────────────────
@@ -945,97 +825,202 @@ mod tests {
         assert_eq!(obj.get("s.exit_code").unwrap(), -1);
     }
 
-    // ── build_login_commands ───────────────────────────────────────────
+    // ── parse_user_spec ────────────────────────────────────────────────
 
     #[test]
-    fn build_login_commands_empty_registry_auth() {
-        let config = minimal_config();
-        let step = ContainerdStep::new(config);
-        let commands = step.build_login_commands();
-        assert!(commands.is_empty());
+    fn parse_user_spec_normal() {
+        assert_eq!(parse_user_spec("1000:1000"), (1000, 1000));
     }
 
     #[test]
-    fn build_login_commands_single_registry() {
-        let mut config = minimal_config();
-        config.registry_auth = HashMap::from([(
-            "registry.example.com".to_string(),
-            RegistryAuth {
-                username: "user".to_string(),
-                password: "pass".to_string(),
-            },
-        )]);
-
-        let step = ContainerdStep::new(config);
-        let commands = step.build_login_commands();
-
-        assert_eq!(commands.len(), 1);
-        let (registry, args) = &commands[0];
-        assert_eq!(registry, "registry.example.com");
-        assert_eq!(args[0], "nerdctl");
-        assert_eq!(args[1], "--address");
-        assert_eq!(args[2], "/run/containerd/containerd.sock");
-        assert!(args.contains(&"login".to_string()));
-        assert!(args.contains(&"-u".to_string()));
-        assert!(args.contains(&"user".to_string()));
-        assert!(args.contains(&"-p".to_string()));
-        assert!(args.contains(&"pass".to_string()));
-        assert!(args.contains(&"registry.example.com".to_string()));
+    fn parse_user_spec_root() {
+        assert_eq!(parse_user_spec("0:0"), (0, 0));
     }
 
     #[test]
-    fn build_login_commands_multiple_registries() {
+    fn parse_user_spec_default() {
+        assert_eq!(parse_user_spec("65534:65534"), (65534, 65534));
+    }
+
+    #[test]
+    fn parse_user_spec_invalid_falls_back() {
+        assert_eq!(parse_user_spec("abc"), (65534, 65534));
+    }
+
+    // ── build_oci_spec ─────────────────────────────────────────────────
+
+    #[test]
+    fn build_oci_spec_minimal() {
+        let step = ContainerdStep::new(minimal_config());
+        let env = HashMap::new();
+        let spec = step.build_oci_spec(&env);
+
+        assert_eq!(
+            spec.type_url,
+            "types.containerd.io/opencontainers/runtime-spec/1/Spec"
+        );
+        assert!(!spec.value.is_empty());
+
+        // Deserialize and verify.
+        let parsed: serde_json::Value = serde_json::from_slice(&spec.value).unwrap();
+        assert_eq!(parsed["ociVersion"], "1.0.2");
+        assert_eq!(parsed["process"]["args"][0], "sh");
+        assert_eq!(parsed["process"]["args"][1], "-c");
+        assert_eq!(parsed["process"]["args"][2], "echo hello");
+        assert_eq!(parsed["process"]["user"]["uid"], 65534);
+        assert_eq!(parsed["process"]["user"]["gid"], 65534);
+        assert_eq!(parsed["process"]["cwd"], "/");
+    }
+
+    #[test]
+    fn build_oci_spec_with_command() {
         let mut config = minimal_config();
-        config.registry_auth = HashMap::from([
-            (
-                "reg1.io".to_string(),
-                RegistryAuth {
-                    username: "u1".to_string(),
-                    password: "p1".to_string(),
-                },
-            ),
-            (
-                "reg2.io".to_string(),
-                RegistryAuth {
-                    username: "u2".to_string(),
-                    password: "p2".to_string(),
-                },
-            ),
+        config.run = None;
+        config.command = Some(vec!["echo".to_string(), "hello".to_string(), "world".to_string()]);
+        let step = ContainerdStep::new(config);
+        let spec = step.build_oci_spec(&HashMap::new());
+
+        let parsed: serde_json::Value = serde_json::from_slice(&spec.value).unwrap();
+        assert_eq!(parsed["process"]["args"][0], "echo");
+        assert_eq!(parsed["process"]["args"][1], "hello");
+        assert_eq!(parsed["process"]["args"][2], "world");
+    }
+
+    #[test]
+    fn build_oci_spec_with_env() {
+        let step = ContainerdStep::new(minimal_config());
+        let env = HashMap::from([
+            ("FOO".to_string(), "bar".to_string()),
+            ("BAZ".to_string(), "qux".to_string()),
         ]);
+        let spec = step.build_oci_spec(&env);
 
-        let step = ContainerdStep::new(config);
-        let commands = step.build_login_commands();
+        let parsed: serde_json::Value = serde_json::from_slice(&spec.value).unwrap();
+        let env_arr: Vec<String> = parsed["process"]["env"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect();
 
-        assert_eq!(commands.len(), 2);
-        let registries: Vec<&String> = commands.iter().map(|(r, _)| r).collect();
-        assert!(registries.contains(&&"reg1.io".to_string()));
-        assert!(registries.contains(&&"reg2.io".to_string()));
+        assert!(env_arr.contains(&"FOO=bar".to_string()));
+        assert!(env_arr.contains(&"BAZ=qux".to_string()));
     }
 
     #[test]
-    fn build_login_commands_with_tls() {
+    fn build_oci_spec_with_working_dir() {
         let mut config = minimal_config();
-        config.tls = TlsConfig {
-            ca: Some("/ca.pem".to_string()),
-            cert: Some("/cert.pem".to_string()),
-            key: None,
-        };
-        config.registry_auth = HashMap::from([(
-            "secure.io".to_string(),
-            RegistryAuth {
-                username: "admin".to_string(),
-                password: "secret".to_string(),
-            },
-        )]);
-
+        config.working_dir = Some("/app".to_string());
         let step = ContainerdStep::new(config);
-        let commands = step.build_login_commands();
+        let spec = step.build_oci_spec(&HashMap::new());
 
-        assert_eq!(commands.len(), 1);
-        let (_, args) = &commands[0];
-        assert!(args.contains(&"--tlscacert".to_string()));
-        assert!(args.contains(&"--tlscert".to_string()));
-        assert!(!args.contains(&"--tlskey".to_string()));
+        let parsed: serde_json::Value = serde_json::from_slice(&spec.value).unwrap();
+        assert_eq!(parsed["process"]["cwd"], "/app");
+    }
+
+    #[test]
+    fn build_oci_spec_with_user() {
+        let mut config = minimal_config();
+        config.user = "1000:2000".to_string();
+        let step = ContainerdStep::new(config);
+        let spec = step.build_oci_spec(&HashMap::new());
+
+        let parsed: serde_json::Value = serde_json::from_slice(&spec.value).unwrap();
+        assert_eq!(parsed["process"]["user"]["uid"], 1000);
+        assert_eq!(parsed["process"]["user"]["gid"], 2000);
+    }
+
+    #[test]
+    fn build_oci_spec_with_volumes() {
+        let mut config = minimal_config();
+        config.volumes = vec![
+            VolumeMountConfig {
+                source: "/host/data".to_string(),
+                target: "/container/data".to_string(),
+                readonly: false,
+            },
+            VolumeMountConfig {
+                source: "/host/config".to_string(),
+                target: "/etc/config".to_string(),
+                readonly: true,
+            },
+        ];
+        let step = ContainerdStep::new(config);
+        let spec = step.build_oci_spec(&HashMap::new());
+
+        let parsed: serde_json::Value = serde_json::from_slice(&spec.value).unwrap();
+        let mounts = parsed["mounts"].as_array().unwrap();
+        // 3 default + 2 user = 5
+        assert_eq!(mounts.len(), 5);
+
+        let bind_mounts: Vec<&serde_json::Value> = mounts
+            .iter()
+            .filter(|m| m["type"] == "bind")
+            .collect();
+        assert_eq!(bind_mounts.len(), 2);
+
+        let ro_mount = bind_mounts
+            .iter()
+            .find(|m| m["destination"] == "/etc/config")
+            .unwrap();
+        let opts: Vec<String> = ro_mount["options"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect();
+        assert!(opts.contains(&"ro".to_string()));
+    }
+
+    #[test]
+    fn build_oci_spec_no_command_no_run() {
+        let mut config = minimal_config();
+        config.run = None;
+        config.command = None;
+        let step = ContainerdStep::new(config);
+        let spec = step.build_oci_spec(&HashMap::new());
+
+        let parsed: serde_json::Value = serde_json::from_slice(&spec.value).unwrap();
+        assert!(parsed["process"]["args"].as_array().unwrap().is_empty());
+    }
+
+    // ── connect ────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn connect_to_missing_unix_socket_returns_error() {
+        let err = ContainerdStep::connect("/tmp/nonexistent-wfe-containerd-test.sock")
+            .await
+            .unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("socket not found"),
+            "expected 'socket not found' error, got: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn connect_to_missing_unix_socket_with_scheme_returns_error() {
+        let err =
+            ContainerdStep::connect("unix:///tmp/nonexistent-wfe-containerd-test.sock")
+                .await
+                .unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("socket not found"),
+            "expected 'socket not found' error, got: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn connect_to_invalid_tcp_returns_error() {
+        let err = ContainerdStep::connect("tcp://127.0.0.1:1")
+            .await
+            .unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("failed to connect"),
+            "expected connection error, got: {msg}"
+        );
     }
 
     // ── ContainerdStep::new ────────────────────────────────────────────
@@ -1043,9 +1028,70 @@ mod tests {
     #[test]
     fn new_creates_step_with_config() {
         let config = minimal_config();
-        let step = ContainerdStep::new(config.clone());
-        // Verify it stored the config by checking a generated command
-        let args = step.build_run_command();
-        assert!(args.contains(&config.image));
+        let step = ContainerdStep::new(config);
+        assert_eq!(step.config.image, "alpine:3.18");
+        assert_eq!(step.config.containerd_addr, "/run/containerd/containerd.sock");
+    }
+
+    // ── nix_mkfifo ─────────────────────────────────────────────────────
+
+    #[test]
+    fn mkfifo_creates_and_removes_fifo() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fifo_path = tmp.path().join("test.fifo");
+        nix_mkfifo(&fifo_path).unwrap();
+        assert!(fifo_path.exists());
+        std::fs::remove_file(&fifo_path).unwrap();
+    }
+
+    #[test]
+    fn mkfifo_invalid_path_returns_error() {
+        let result = nix_mkfifo(Path::new("/nonexistent-dir/fifo"));
+        assert!(result.is_err());
+    }
+}
+
+/// Integration tests that require a live containerd daemon.
+#[cfg(test)]
+mod e2e_tests {
+    use super::*;
+
+    /// Returns the containerd socket address if available, or None.
+    fn containerd_addr() -> Option<String> {
+        let addr = std::env::var("WFE_CONTAINERD_ADDR").unwrap_or_else(|_| {
+            format!(
+                "unix://{}/.lima/wfe-test/sock/containerd.sock",
+                std::env::var("HOME").unwrap_or_else(|_| "/root".to_string())
+            )
+        });
+
+        let socket_path = addr
+            .strip_prefix("unix://")
+            .unwrap_or(addr.as_str());
+
+        if Path::new(socket_path).exists() {
+            Some(addr)
+        } else {
+            None
+        }
+    }
+
+    #[tokio::test]
+    async fn e2e_version_check() {
+        let Some(addr) = containerd_addr() else {
+            eprintln!("SKIP: containerd socket not available");
+            return;
+        };
+
+        let channel = ContainerdStep::connect(&addr).await.unwrap();
+        let mut client = VersionClient::new(channel);
+
+        let req = ContainerdStep::with_namespace((), DEFAULT_NAMESPACE);
+        let resp = client.version(req).await.unwrap();
+        let version = resp.into_inner();
+
+        assert!(!version.version.is_empty(), "version should not be empty");
+        assert!(!version.revision.is_empty(), "revision should not be empty");
+        eprintln!("containerd version={} revision={}", version.version, version.revision);
     }
 }
