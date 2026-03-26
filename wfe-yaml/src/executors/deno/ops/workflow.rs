@@ -44,9 +44,29 @@ pub fn op_log(state: &mut OpState, #[string] msg: String) {
     tracing::info!(step = %name, "{}", msg);
 }
 
+/// Reads a file from the filesystem and returns its contents as a string.
+/// Permission-checked against the read allowlist.
+#[op2]
+#[string]
+pub async fn op_read_file(
+    state: std::rc::Rc<std::cell::RefCell<OpState>>,
+    #[string] path: String,
+) -> Result<String, deno_error::JsErrorBox> {
+    // Check read permission
+    {
+        let s = state.borrow();
+        let checker = s.borrow::<super::super::permissions::PermissionChecker>();
+        checker.check_read(&path)
+            .map_err(|e| deno_error::JsErrorBox::new("PermissionError", e.to_string()))?;
+    }
+    tokio::fs::read_to_string(&path)
+        .await
+        .map_err(|e| deno_error::JsErrorBox::generic(format!("Failed to read file '{path}': {e}")))
+}
+
 deno_core::extension!(
     wfe_ops,
-    ops = [op_inputs, op_output, op_log, super::http::op_fetch],
+    ops = [op_inputs, op_output, op_log, op_read_file, super::http::op_fetch],
     esm_entry_point = "ext:wfe/bootstrap.js",
     esm = ["ext:wfe/bootstrap.js" = "src/executors/deno/js/bootstrap.js"],
 );
