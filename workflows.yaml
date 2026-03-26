@@ -1,0 +1,741 @@
+# workflows.yaml — WFE self-hosting CI pipeline
+#
+# Demonstrates every WFE feature. Idempotent — safe to run repeatedly.
+#
+# Usage:
+#   cargo run --example run_pipeline -p wfe -- workflows.yaml
+#
+# With config:
+#   WFE_CONFIG='{"workspace_dir":"/path/to/wfe","registry":"sunbeam","git_remote":"origin","coverage_threshold":85}' \
+#     cargo run --example run_pipeline -p wfe -- workflows.yaml
+#
+# TODO: Support multi-file merging — individual task files (e.g., lint.yaml,
+# test.yaml, publish.yaml) that compose into a single pipeline definition.
+
+# ─── Shared Templates ───────────────────────────────────────────────
+# The _templates key is ignored by the workflow parser (extra keys are
+# skipped). Anchors are resolved by serde_yaml before parsing.
+
+_templates:
+  shell_defaults: &shell_defaults
+    type: shell
+    config:
+      shell: bash
+      timeout: 5m
+
+  long_running: &long_running
+    type: shell
+    config:
+      shell: bash
+      timeout: 30m
+
+# ─── Workflow: preflight ───────────────────────────────────────────────
+
+workflows:
+  - id: preflight
+    version: 1
+    inputs:
+      workspace_dir: string
+    outputs:
+      cargo_ok: bool
+      nextest_ok: bool
+      llvm_cov_ok: bool
+      docker_ok: bool
+      lima_ok: bool
+      buildctl_ok: bool
+      git_ok: bool
+    steps:
+      - name: check-tools
+        type: shell
+        config:
+          shell: bash
+          timeout: 1m
+          run: |
+            CARGO_OK=false; NEXTEST_OK=false; LLVM_COV_OK=false
+            DOCKER_OK=false; LIMA_OK=false; BUILDCTL_OK=false; GIT_OK=false
+
+            command -v cargo >/dev/null 2>&1 && CARGO_OK=true
+            command -v cargo-nextest >/dev/null 2>&1 && NEXTEST_OK=true
+            command -v cargo-llvm-cov >/dev/null 2>&1 && LLVM_COV_OK=true
+            command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1 && DOCKER_OK=true
+            command -v limactl >/dev/null 2>&1 && LIMA_OK=true
+            command -v buildctl >/dev/null 2>&1 && BUILDCTL_OK=true
+            command -v git >/dev/null 2>&1 && GIT_OK=true
+
+            echo "Tool availability:"
+            echo "  cargo:        $CARGO_OK"
+            echo "  nextest:      $NEXTEST_OK"
+            echo "  llvm-cov:     $LLVM_COV_OK"
+            echo "  docker:       $DOCKER_OK"
+            echo "  lima:         $LIMA_OK"
+            echo "  buildctl:     $BUILDCTL_OK"
+            echo "  git:          $GIT_OK"
+
+            echo "##wfe[output cargo_ok=$CARGO_OK]"
+            echo "##wfe[output nextest_ok=$NEXTEST_OK]"
+            echo "##wfe[output llvm_cov_ok=$LLVM_COV_OK]"
+            echo "##wfe[output docker_ok=$DOCKER_OK]"
+            echo "##wfe[output lima_ok=$LIMA_OK]"
+            echo "##wfe[output buildctl_ok=$BUILDCTL_OK]"
+            echo "##wfe[output git_ok=$GIT_OK]"
+
+            # Fail if essential tools are missing
+            if [ "$CARGO_OK" = "false" ] || [ "$NEXTEST_OK" = "false" ] || [ "$GIT_OK" = "false" ]; then
+              echo "ERROR: Essential tools missing (cargo, nextest, or git)"
+              exit 1
+            fi
+
+  # ─── Workflow: lint ──────────────────────────────────────────────────
+
+  - id: lint
+    version: 1
+    inputs:
+      workspace_dir: string
+    outputs:
+      fmt_ok: bool
+      clippy_ok: bool
+    steps:
+      - name: fmt-check
+        <<: *shell_defaults
+        config:
+          run: |
+            cd "$WORKSPACE_DIR"
+            cargo fmt --all -- --check
+            echo "##wfe[output fmt_ok=true]"
+
+      - name: clippy
+        <<: *shell_defaults
+        config:
+          run: |
+            cd "$WORKSPACE_DIR"
+            cargo clippy --workspace -- -D warnings
+            echo "##wfe[output clippy_ok=true]"
+
+  # ─── Workflow: test-unit ─────────────────────────────────────────
+
+  - id: test-unit
+    version: 1
+    inputs:
+      workspace_dir: string
+    outputs:
+      tests_passed: integer
+      deno_tests_passed: integer
+    steps:
+      - name: core-tests
+        <<: *long_running
+        config:
+          run: |
+            cd "$WORKSPACE_DIR"
+            cargo nextest run -P ci
+            echo "##wfe[output tests_passed=true]"
+
+      - name: deno-tests
+        <<: *long_running
+        config:
+          run: |
+            cd "$WORKSPACE_DIR"
+            cargo nextest run -p wfe-yaml --features deno -P ci
+            echo "##wfe[output deno_tests_passed=true]"
+
+      - name: feature-tests
+        <<: *shell_defaults
+        config:
+          run: |
+            cd "$WORKSPACE_DIR"
+            cargo nextest run -p wfe-yaml --features buildkit,containerd -P ci
+
+  # ─── Workflow: test-integration ──────────────────────────────────
+
+  - id: test-integration
+    version: 1
+    inputs:
+      workspace_dir: string
+    outputs:
+      postgres_ok: bool
+      valkey_ok: bool
+      opensearch_ok: bool
+    steps:
+      - name: docker-up
+        <<: *long_running
+        config:
+          run: |
+            # Docker runs inside a lima VM. Start it if needed.
+            if ! command -v limactl >/dev/null 2>&1; then
+              echo "limactl not available — skipping integration tests"
+              echo "##wfe[output docker_started=false]"
+              exit 0
+            fi
+
+            # Start the docker lima VM if not running
+            if ! limactl list 2>/dev/null | grep -q "docker.*Running"; then
+              echo "Starting docker lima VM..."
+              limactl start docker 2>&1 || {
+                echo "Failed to start docker VM — skipping integration tests"
+                echo "##wfe[output docker_started=false]"
+                exit 0
+              }
+            fi
+
+            # Wait for Docker daemon to be ready
+            for i in $(seq 1 30); do
+              if docker info >/dev/null 2>&1; then
+                break
+              fi
+              echo "Waiting for Docker daemon... ($i/30)"
+              sleep 2
+            done
+
+            if ! docker info >/dev/null 2>&1; then
+              echo "Docker daemon not ready after 60s — skipping"
+              echo "##wfe[output docker_started=false]"
+              exit 0
+            fi
+
+            cd "$WORKSPACE_DIR"
+            docker compose up -d --wait
+            echo "##wfe[output docker_started=true]"
+        on_failure:
+          name: docker-up-failed
+          type: shell
+          config:
+            run: echo "Failed to start Docker services"
+
+      - name: postgres-tests
+        <<: *shell_defaults
+        config:
+          run: |
+            if [ "$DOCKER_STARTED" = "false" ]; then
+              echo "Skipping (Docker not available)"
+              exit 0
+            fi
+            cd "$WORKSPACE_DIR"
+            cargo nextest run -p wfe-postgres -P ci
+            echo "##wfe[output postgres_ok=true]"
+
+      - name: valkey-tests
+        <<: *shell_defaults
+        config:
+          run: |
+            if [ "$DOCKER_STARTED" = "false" ]; then
+              echo "Skipping (Docker not available)"
+              exit 0
+            fi
+            cd "$WORKSPACE_DIR"
+            cargo nextest run -p wfe-valkey -P ci
+            echo "##wfe[output valkey_ok=true]"
+
+      - name: opensearch-tests
+        <<: *shell_defaults
+        config:
+          run: |
+            if [ "$DOCKER_STARTED" = "false" ]; then
+              echo "Skipping (Docker not available)"
+              exit 0
+            fi
+            cd "$WORKSPACE_DIR"
+            cargo nextest run -p wfe-opensearch -P ci
+            echo "##wfe[output opensearch_ok=true]"
+
+    ensure:
+      - name: docker-down
+        <<: *shell_defaults
+        config:
+          run: |
+            if docker info >/dev/null 2>&1; then
+              cd "$WORKSPACE_DIR"
+              docker compose down 2>/dev/null || true
+            fi
+
+  # ─── Workflow: test-containers ───────────────────────────────────
+
+  - id: test-containers
+    version: 1
+    inputs:
+      workspace_dir: string
+    outputs:
+      buildkit_ok: bool
+      containerd_ok: bool
+    steps:
+      - name: lima-up
+        <<: *long_running
+        config:
+          run: |
+            if ! command -v limactl >/dev/null 2>&1; then
+              echo "limactl not available — skipping container tests"
+              echo "##wfe[output lima_started=false]"
+              exit 0
+            fi
+
+            # Start the wfe-test VM if not running
+            if ! limactl list 2>/dev/null | grep -q "wfe-test.*Running"; then
+              echo "Starting wfe-test lima VM..."
+              limactl start --name=wfe-test "$WORKSPACE_DIR/test/lima/wfe-test.yaml" 2>&1 || {
+                echo "Failed to start wfe-test VM — skipping container tests"
+                echo "##wfe[output lima_started=false]"
+                exit 0
+              }
+            fi
+
+            # Wait for sockets to be available
+            for i in $(seq 1 30); do
+              if [ -S "$HOME/.lima/wfe-test/sock/buildkitd.sock" ]; then
+                break
+              fi
+              echo "Waiting for buildkitd socket... ($i/30)"
+              sleep 2
+            done
+
+            echo "##wfe[output lima_started=true]"
+
+      - name: buildkit-tests
+        <<: *shell_defaults
+        config:
+          run: |
+            if [ "$LIMA_STARTED" = "false" ]; then
+              echo "Skipping (Lima not available)"
+              exit 0
+            fi
+            cd "$WORKSPACE_DIR"
+            export WFE_BUILDKIT_ADDR="unix://$HOME/.lima/wfe-test/sock/buildkitd.sock"
+            cargo nextest run -p wfe-buildkit -P ci
+            echo "##wfe[output buildkit_ok=true]"
+
+      - name: containerd-tests
+        <<: *shell_defaults
+        config:
+          run: |
+            if [ "$LIMA_STARTED" = "false" ]; then
+              echo "Skipping (Lima not available)"
+              exit 0
+            fi
+            cd "$WORKSPACE_DIR"
+            export WFE_CONTAINERD_ADDR="unix://$HOME/.lima/wfe-test/sock/containerd.sock"
+            cargo nextest run -p wfe-containerd -P ci
+            echo "##wfe[output containerd_ok=true]"
+
+    ensure:
+      - name: lima-down
+        <<: *shell_defaults
+        config:
+          run: |
+            limactl stop wfe-test 2>/dev/null || true
+
+  # ─── Workflow: test (orchestrator) ───────────────────────────────
+
+  - id: test
+    version: 1
+    inputs:
+      workspace_dir: string
+    outputs:
+      all_passed: bool
+    steps:
+      - name: run-unit
+        type: workflow
+        config:
+          workflow: test-unit
+          version: 1
+          inputs:
+            workspace_dir: ((workspace_dir))
+          outputs:
+            - tests_passed
+            - deno_tests_passed
+
+      - name: run-integration
+        type: workflow
+        config:
+          workflow: test-integration
+          version: 1
+          inputs:
+            workspace_dir: ((workspace_dir))
+          outputs:
+            - postgres_ok
+            - valkey_ok
+            - opensearch_ok
+
+      - name: run-containers
+        type: workflow
+        config:
+          workflow: test-containers
+          version: 1
+          inputs:
+            workspace_dir: ((workspace_dir))
+          outputs:
+            - buildkit_ok
+            - containerd_ok
+
+  # ─── Workflow: cover ─────────────────────────────────────────────
+
+  - id: cover
+    version: 1
+    inputs:
+      workspace_dir: string
+      threshold: number?
+    outputs:
+      line_coverage: number
+      meets_threshold: bool
+    steps:
+      - name: run-coverage
+        <<: *shell_defaults
+        config:
+          run: |
+            cd "$WORKSPACE_DIR"
+            cargo llvm-cov nextest -P cover --json > /tmp/wfe-coverage.json 2>&1
+            echo "##wfe[output coverage_json=/tmp/wfe-coverage.json]"
+
+      - name: assert-threshold
+        type: deno
+        config:
+          script: |
+            const data = inputs();
+            const threshold = data.threshold || 85;
+
+            // Read the coverage JSON
+            const text = await Deno.readTextFile("/tmp/wfe-coverage.json");
+            const report = JSON.parse(text);
+
+            const totals = report.data[0].totals;
+            const lineCov = (totals.lines.covered / totals.lines.count * 100).toFixed(1);
+
+            log(`Line coverage: ${lineCov}% (threshold: ${threshold}%)`);
+
+            output("line_coverage", parseFloat(lineCov));
+            output("meets_threshold", parseFloat(lineCov) >= threshold);
+
+            if (parseFloat(lineCov) < threshold) {
+              throw new Error(`Coverage ${lineCov}% is below threshold ${threshold}%`);
+            }
+          permissions:
+            read: ["/tmp"]
+
+  # ─── Workflow: package ───────────────────────────────────────────
+
+  - id: package
+    version: 1
+    inputs:
+      workspace_dir: string
+    outputs:
+      packages_ok: bool
+    steps:
+      - name: package-all
+        <<: *shell_defaults
+        config:
+          run: |
+            cd "$WORKSPACE_DIR"
+            for crate in wfe-core wfe-sqlite wfe-postgres wfe-opensearch wfe-valkey \
+                         wfe-buildkit-protos wfe-containerd-protos wfe-buildkit wfe-containerd \
+                         wfe wfe-yaml; do
+              echo "Packaging $crate..."
+              cargo package -p "$crate" --no-verify --allow-dirty 2>&1 || exit 1
+            done
+            echo "##wfe[output packages_ok=true]"
+
+  # ─── Workflow: tag ───────────────────────────────────────────────
+
+  - id: tag
+    version: 1
+    inputs:
+      workspace_dir: string
+    outputs:
+      version: string
+      tag_created: bool
+      tag_already_existed: bool
+    steps:
+      - name: read-version
+        type: deno
+        config:
+          script: |
+            const data = inputs();
+            const cargoToml = await Deno.readTextFile(data.workspace_dir + "/Cargo.toml");
+            const match = cargoToml.match(/^version\s*=\s*"([^"]+)"/m);
+            if (!match) throw new Error("Could not parse version from Cargo.toml");
+            const version = match[1];
+            log(`Detected version: ${version}`);
+            output("version", version);
+          permissions:
+            read: ["((workspace_dir))"]
+
+      - name: check-tag-exists
+        <<: *shell_defaults
+        config:
+          run: |
+            VERSION=$(echo "$VERSION" | tr -d '[:space:]')
+            TAG="v${VERSION}"
+            if git tag -l "$TAG" | grep -q "$TAG"; then
+              echo "Tag $TAG already exists — skipping"
+              echo "##wfe[output tag_already_existed=true]"
+              echo "##wfe[output tag_created=false]"
+            else
+              echo "Tag $TAG does not exist — will create"
+              echo "##wfe[output tag_already_existed=false]"
+            fi
+
+      - name: create-tag
+        <<: *shell_defaults
+        config:
+          run: |
+            if [ "$TAG_ALREADY_EXISTED" = "true" ]; then
+              echo "Skipping tag creation (already exists)"
+              echo "##wfe[output tag_created=false]"
+              exit 0
+            fi
+            VERSION=$(echo "$VERSION" | tr -d '[:space:]')
+            TAG="v${VERSION}"
+            git tag -a "$TAG" -m "$TAG"
+            echo "##wfe[output tag_created=true]"
+
+  # ─── Workflow: publish ───────────────────────────────────────────
+
+  - id: publish
+    version: 1
+    inputs:
+      workspace_dir: string
+      registry: string?
+    outputs:
+      published_crates: list<string>
+      all_published: bool
+    steps:
+      - name: publish-protos
+        <<: *shell_defaults
+        config:
+          run: |
+            cd "$WORKSPACE_DIR"
+            REGISTRY="${REGISTRY:-sunbeam}"
+            PUBLISHED=""
+            for crate in wfe-buildkit-protos wfe-containerd-protos; do
+              echo "Publishing $crate..."
+              if cargo publish -p "$crate" --registry "$REGISTRY" 2>&1; then
+                PUBLISHED="$PUBLISHED $crate"
+              else
+                echo "Already published or failed: $crate (continuing)"
+              fi
+            done
+            echo "##wfe[output published_protos=$PUBLISHED]"
+        error_behavior:
+          type: retry
+          interval: 10s
+          max_retries: 2
+
+      - name: publish-core
+        <<: *shell_defaults
+        config:
+          run: |
+            cd "$WORKSPACE_DIR"
+            REGISTRY="${REGISTRY:-sunbeam}"
+            cargo publish -p wfe-core --registry "$REGISTRY" 2>&1 || echo "Already published"
+            echo "##wfe[output core_published=true]"
+        error_behavior:
+          type: retry
+          interval: 10s
+          max_retries: 2
+
+      - name: publish-providers
+        <<: *shell_defaults
+        config:
+          run: |
+            cd "$WORKSPACE_DIR"
+            REGISTRY="${REGISTRY:-sunbeam}"
+            for crate in wfe-sqlite wfe-postgres wfe-opensearch wfe-valkey; do
+              echo "Publishing $crate..."
+              cargo publish -p "$crate" --registry "$REGISTRY" 2>&1 || echo "Already published: $crate"
+            done
+            echo "##wfe[output providers_published=true]"
+        error_behavior:
+          type: retry
+          interval: 10s
+          max_retries: 2
+
+      - name: publish-executors
+        <<: *shell_defaults
+        config:
+          run: |
+            cd "$WORKSPACE_DIR"
+            REGISTRY="${REGISTRY:-sunbeam}"
+            for crate in wfe-buildkit wfe-containerd; do
+              echo "Publishing $crate..."
+              cargo publish -p "$crate" --registry "$REGISTRY" 2>&1 || echo "Already published: $crate"
+            done
+            echo "##wfe[output executors_published=true]"
+
+      - name: publish-framework
+        <<: *shell_defaults
+        config:
+          run: |
+            cd "$WORKSPACE_DIR"
+            REGISTRY="${REGISTRY:-sunbeam}"
+            for crate in wfe wfe-yaml; do
+              echo "Publishing $crate..."
+              cargo publish -p "$crate" --registry "$REGISTRY" 2>&1 || echo "Already published: $crate"
+            done
+            echo "##wfe[output all_published=true]"
+
+    on_failure:
+      - name: log-partial-publish
+        <<: *shell_defaults
+        config:
+          run: |
+            echo "WARNING: Publish partially failed. Check logs above."
+            echo "##wfe[output all_published=false]"
+
+  # ─── Workflow: release ───────────────────────────────────────────
+
+  - id: release
+    version: 1
+    inputs:
+      workspace_dir: string
+      version: string
+      git_remote: string?
+    outputs:
+      pushed: bool
+      notes: string
+    steps:
+      - name: push-tags
+        <<: *shell_defaults
+        config:
+          run: |
+            REMOTE="${GIT_REMOTE:-origin}"
+            git push "$REMOTE" --tags
+            echo "##wfe[output pushed=true]"
+
+      - name: generate-notes
+        type: deno
+        config:
+          script: |
+            const data = inputs();
+            const version = data.version;
+
+            // Get commits since last tag
+            const cmd = new Deno.Command("git", {
+              args: ["log", "--oneline", "--no-merges", "HEAD~20..HEAD"],
+              stdout: "piped",
+            });
+            const { stdout } = await cmd.output();
+            const raw = new TextDecoder().decode(stdout);
+
+            const lines = raw.trim().split("\n").filter(l => l.length > 0);
+
+            let notes = `# WFE v${version}\n\n`;
+
+            const feats = lines.filter(l => l.includes("feat"));
+            const fixes = lines.filter(l => l.includes("fix"));
+            const tests = lines.filter(l => l.includes("test"));
+            const others = lines.filter(l => !l.includes("feat") && !l.includes("fix") && !l.includes("test"));
+
+            if (feats.length) notes += `## Features\n${feats.map(l => `- ${l}`).join("\n")}\n\n`;
+            if (fixes.length) notes += `## Fixes\n${fixes.map(l => `- ${l}`).join("\n")}\n\n`;
+            if (tests.length) notes += `## Tests\n${tests.map(l => `- ${l}`).join("\n")}\n\n`;
+            if (others.length) notes += `## Other\n${others.map(l => `- ${l}`).join("\n")}\n\n`;
+
+            log(notes);
+            output("notes", notes);
+          permissions:
+            run: true
+
+  # ─── Workflow: ci (top-level orchestrator) ───────────────────────
+
+  - id: ci
+    version: 1
+    inputs:
+      workspace_dir: string
+      registry: string?
+      git_remote: string?
+      coverage_threshold: number?
+    outputs:
+      version: string
+      all_tests_passed: bool
+      coverage: number
+      published: bool
+      released: bool
+    steps:
+      - name: run-preflight
+        type: workflow
+        config:
+          workflow: preflight
+          version: 1
+          inputs:
+            workspace_dir: ((workspace_dir))
+          outputs:
+            - cargo_ok
+            - nextest_ok
+            - llvm_cov_ok
+            - docker_ok
+            - lima_ok
+            - buildctl_ok
+            - git_ok
+
+      - name: run-lint
+        type: workflow
+        config:
+          workflow: lint
+          version: 1
+          inputs:
+            workspace_dir: ((workspace_dir))
+          outputs:
+            - fmt_ok
+            - clippy_ok
+
+      - name: run-tests
+        type: workflow
+        config:
+          workflow: test
+          version: 1
+          inputs:
+            workspace_dir: ((workspace_dir))
+          outputs:
+            - all_passed
+
+      - name: run-coverage
+        type: workflow
+        config:
+          workflow: cover
+          version: 1
+          inputs:
+            workspace_dir: ((workspace_dir))
+            threshold: ((coverage_threshold))
+          outputs:
+            - line_coverage
+            - meets_threshold
+
+      - name: run-package
+        type: workflow
+        config:
+          workflow: package
+          version: 1
+          inputs:
+            workspace_dir: ((workspace_dir))
+          outputs:
+            - packages_ok
+
+      - name: run-tag
+        type: workflow
+        config:
+          workflow: tag
+          version: 1
+          inputs:
+            workspace_dir: ((workspace_dir))
+          outputs:
+            - version
+            - tag_created
+
+      - name: run-publish
+        type: workflow
+        config:
+          workflow: publish
+          version: 1
+          inputs:
+            workspace_dir: ((workspace_dir))
+            registry: ((registry))
+          outputs:
+            - all_published
+
+      - name: run-release
+        type: workflow
+        config:
+          workflow: release
+          version: 1
+          inputs:
+            workspace_dir: ((workspace_dir))
+            version: ((version))
+            git_remote: ((git_remote))
+          outputs:
+            - pushed
+            - notes
