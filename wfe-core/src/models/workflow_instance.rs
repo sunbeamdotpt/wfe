@@ -45,6 +45,7 @@ impl WorkflowInstance {
                 matches!(
                     p.status,
                     PointerStatus::Complete
+                        | PointerStatus::Skipped
                         | PointerStatus::Compensated
                         | PointerStatus::Cancelled
                         | PointerStatus::Failed

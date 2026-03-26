@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+use super::condition::StepCondition;
 use super::error_behavior::ErrorBehavior;
 
 /// A compiled workflow definition ready for execution.
@@ -46,6 +47,9 @@ pub struct WorkflowStep {
     /// Serializable configuration for primitive steps (e.g. event_name, duration).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub step_config: Option<serde_json::Value>,
+    /// Optional condition that must evaluate to true for this step to execute.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub when: Option<StepCondition>,
 }
 
 impl WorkflowStep {
@@ -62,6 +66,7 @@ impl WorkflowStep {
             do_compensate: false,
             saga: false,
             step_config: None,
+            when: None,
         }
     }
 }
