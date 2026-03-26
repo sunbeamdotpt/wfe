@@ -1,8 +1,6 @@
 use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let buildkit_root = PathBuf::from("vendor/buildkit");
-
     // Use Go-style import paths so protoc sees each file only once
     let proto_dir = PathBuf::from("proto");
     let go_prefix = "github.com/moby/buildkit";
