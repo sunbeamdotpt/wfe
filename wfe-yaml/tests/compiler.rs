@@ -1013,3 +1013,92 @@ workflow:
     assert_eq!(setup.outcomes[0].next_step, run_child.id);
     assert_eq!(run_child.outcomes[0].next_step, cleanup.id);
 }
+
+/// Regression test: SubWorkflowStep must actually wait for child completion,
+/// not return next() immediately. The compiled factory must produce a real
+/// SubWorkflowStep (from wfe-core), not a placeholder.
+#[tokio::test]
+async fn workflow_step_factory_produces_real_sub_workflow_step() {
+    use wfe_core::models::{ExecutionPointer, WorkflowInstance, WorkflowStep as WfStep};
+    use wfe_core::traits::step::{HostContext, StepExecutionContext};
+    use std::pin::Pin;
+    use std::future::Future;
+    use std::sync::Mutex;
+
+    let yaml = r#"
+workflows:
+  - id: child
+    version: 1
+    steps:
+      - name: do-work
+        type: shell
+        config:
+          run: echo done
+
+  - id: parent
+    version: 1
+    steps:
+      - name: run-child
+        type: workflow
+        config:
+          workflow: child
+"#;
+    let config = HashMap::new();
+    let workflows = load_workflow_from_str(yaml, &config).unwrap();
+
+    // Find the parent workflow's factory for the "run-child" step
+    let parent = workflows.iter().find(|w| w.definition.id == "parent").unwrap();
+    let factory_key = parent.step_factories.iter()
+        .find(|(k, _)| k.contains("run-child"))
+        .map(|(k, _)| k.clone())
+        .expect("run-child factory should exist");
+
+    // Create a step from the factory
+    let factory = &parent.step_factories.iter()
+        .find(|(k, _)| *k == factory_key)
+        .unwrap().1;
+    let mut step = factory();
+
+    // Mock host context that records the start_workflow call
+    struct MockHost { called: Mutex<bool> }
+    impl HostContext for MockHost {
+        fn start_workflow(&self, _def: &str, _ver: u32, _data: serde_json::Value)
+            -> Pin<Box<dyn Future<Output = wfe_core::Result<String>> + Send + '_>>
+        {
+            *self.called.lock().unwrap() = true;
+            Box::pin(async { Ok("child-instance-id".to_string()) })
+        }
+    }
+
+    let host = MockHost { called: Mutex::new(false) };
+    let pointer = ExecutionPointer::new(0);
+    let wf_step = WfStep::new(0, &factory_key);
+    let workflow = WorkflowInstance::new("parent", 1, serde_json::json!({}));
+    let ctx = StepExecutionContext {
+        item: None,
+        execution_pointer: &pointer,
+        persistence_data: None,
+        step: &wf_step,
+        workflow: &workflow,
+        cancellation_token: tokio_util::sync::CancellationToken::new(),
+        host_context: Some(&host),
+    };
+
+    let result = step.run(&ctx).await.unwrap();
+
+    // THE KEY ASSERTION: must NOT proceed immediately.
+    // It must return wait_for_event so the parent waits for the child.
+    assert!(
+        !result.proceed,
+        "SubWorkflowStep must NOT proceed immediately — it should wait for child completion"
+    );
+    assert_eq!(
+        result.event_name.as_deref(),
+        Some("wfe.workflow.completed"),
+        "SubWorkflowStep must wait for wfe.workflow.completed event"
+    );
+    assert!(
+        *host.called.lock().unwrap(),
+        "SubWorkflowStep must call host_context.start_workflow()"
+    );
+}

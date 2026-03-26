@@ -13,6 +13,7 @@ use crate::executors::deno::{DenoConfig, DenoPermissions, DenoStep};
 use wfe_buildkit::{BuildkitConfig, BuildkitStep};
 #[cfg(feature = "containerd")]
 use wfe_containerd::{ContainerdConfig, ContainerdStep};
+use wfe_core::primitives::sub_workflow::SubWorkflowStep;
 use crate::schema::{WorkflowSpec, YamlErrorBehavior, YamlStep};
 
 /// Configuration for a sub-workflow step.
@@ -21,30 +22,6 @@ pub struct SubWorkflowConfig {
     pub workflow_id: String,
     pub version: u32,
     pub output_keys: Vec<String>,
-}
-
-/// Placeholder step body for sub-workflow steps.
-///
-/// This is a compile-time placeholder. When wfe-core provides a real
-/// `SubWorkflowStep`, it should replace this. The placeholder always
-/// returns `ExecutionResult::Next` so compilation and basic tests work.
-#[derive(Debug, Default)]
-pub struct SubWorkflowPlaceholderStep {
-    pub workflow_id: String,
-    pub version: u32,
-    pub output_keys: Vec<String>,
-}
-
-#[async_trait::async_trait]
-impl StepBody for SubWorkflowPlaceholderStep {
-    async fn run(
-        &mut self,
-        context: &wfe_core::traits::StepExecutionContext<'_>,
-    ) -> wfe_core::Result<wfe_core::models::ExecutionResult> {
-        let _ = context;
-        // Placeholder: a real implementation would start the child workflow.
-        Ok(wfe_core::models::ExecutionResult::next())
-    }
 }
 
 /// Factory type alias for step creation closures.
@@ -346,10 +323,13 @@ fn build_step_config_and_factory(
             })?;
             let config_clone = sub_config.clone();
             let factory: StepFactory = Box::new(move || {
-                Box::new(SubWorkflowPlaceholderStep {
+                Box::new(SubWorkflowStep {
                     workflow_id: config_clone.workflow_id.clone(),
                     version: config_clone.version,
                     output_keys: config_clone.output_keys.clone(),
+                    inputs: serde_json::Value::Null,
+                    input_schema: None,
+                    output_schema: None,
                 }) as Box<dyn StepBody>
             });
             Ok((key, value, factory))

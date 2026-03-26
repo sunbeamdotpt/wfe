@@ -41,6 +41,7 @@ fn make_context<'a>(
         step,
         workflow,
         cancellation_token: tokio_util::sync::CancellationToken::new(),
+        host_context: None,
     }
 }
 
