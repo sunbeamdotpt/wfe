@@ -110,8 +110,15 @@ impl StepBody for SubWorkflowStep {
             )
         })?;
 
+        // Use inputs if set, otherwise pass an empty object so the child
+        // workflow has a valid JSON object for storing step outputs.
+        let child_data = if self.inputs.is_null() {
+            serde_json::json!({})
+        } else {
+            self.inputs.clone()
+        };
         let child_instance_id = host
-            .start_workflow(&self.workflow_id, self.version, self.inputs.clone())
+            .start_workflow(&self.workflow_id, self.version, child_data)
             .await?;
 
         Ok(ExecutionResult::wait_for_event(
