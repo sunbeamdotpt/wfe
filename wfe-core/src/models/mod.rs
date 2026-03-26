@@ -1,3 +1,4 @@
+pub mod condition;
 pub mod error_behavior;
 pub mod event;
 pub mod execution_error;
@@ -12,6 +13,7 @@ pub mod status;
 pub mod workflow_definition;
 pub mod workflow_instance;
 
+pub use condition::{ComparisonOp, FieldComparison, StepCondition};
 pub use error_behavior::ErrorBehavior;
 pub use event::{Event, EventSubscription};
 pub use execution_error::ExecutionError;
