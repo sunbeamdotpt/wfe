@@ -1,5 +1,5 @@
 [workspace]
-members = ["wfe-core", "wfe-sqlite", "wfe-postgres", "wfe-opensearch", "wfe-valkey", "wfe", "wfe-yaml"]
+members = ["wfe-core", "wfe-sqlite", "wfe-postgres", "wfe-opensearch", "wfe-valkey", "wfe", "wfe-yaml", "wfe-buildkit", "wfe-containerd"]
 resolver = "2"
 
 [workspace.package]
@@ -44,6 +44,8 @@ wfe-postgres = { version = "1.0.0", path = "wfe-postgres" }
 wfe-opensearch = { version = "1.0.0", path = "wfe-opensearch" }
 wfe-valkey = { version = "1.0.0", path = "wfe-valkey" }
 wfe-yaml = { version = "1.0.0", path = "wfe-yaml" }
+wfe-buildkit = { version = "1.0.0", path = "wfe-buildkit" }
+wfe-containerd = { version = "1.0.0", path = "wfe-containerd" }
 
 # YAML
 serde_yaml = "0.9"

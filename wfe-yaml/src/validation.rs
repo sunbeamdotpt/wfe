@@ -89,6 +89,90 @@ fn validate_steps(
             }
         }
 
+        // BuildKit steps must have config with dockerfile and context.
+        if let Some(ref step_type) = step.step_type
+            && step_type == "buildkit"
+        {
+            let config = step.config.as_ref().ok_or_else(|| {
+                YamlWorkflowError::Validation(format!(
+                    "BuildKit step '{}' must have a 'config' section",
+                    step.name
+                ))
+            })?;
+            if config.dockerfile.is_none() {
+                return Err(YamlWorkflowError::Validation(format!(
+                    "BuildKit step '{}' must have 'config.dockerfile'",
+                    step.name
+                )));
+            }
+            if config.context.is_none() {
+                return Err(YamlWorkflowError::Validation(format!(
+                    "BuildKit step '{}' must have 'config.context'",
+                    step.name
+                )));
+            }
+            if config.push.unwrap_or(false) && config.tags.is_empty() {
+                return Err(YamlWorkflowError::Validation(format!(
+                    "BuildKit step '{}' has push=true but no tags specified",
+                    step.name
+                )));
+            }
+        }
+
+        // Containerd steps must have config with image and exactly one of run or command.
+        if let Some(ref step_type) = step.step_type
+            && step_type == "containerd"
+        {
+            let config = step.config.as_ref().ok_or_else(|| {
+                YamlWorkflowError::Validation(format!(
+                    "Containerd step '{}' must have a 'config' section",
+                    step.name
+                ))
+            })?;
+            if config.image.is_none() {
+                return Err(YamlWorkflowError::Validation(format!(
+                    "Containerd step '{}' must have 'config.image'",
+                    step.name
+                )));
+            }
+            let has_run = config.run.is_some();
+            let has_command = config.command.is_some();
+            if !has_run && !has_command {
+                return Err(YamlWorkflowError::Validation(format!(
+                    "Containerd step '{}' must have 'config.run' or 'config.command'",
+                    step.name
+                )));
+            }
+            if has_run && has_command {
+                return Err(YamlWorkflowError::Validation(format!(
+                    "Containerd step '{}' cannot have both 'config.run' and 'config.command'",
+                    step.name
+                )));
+            }
+            if let Some(ref network) = config.network {
+                match network.as_str() {
+                    "none" | "host" | "bridge" => {}
+                    other => {
+                        return Err(YamlWorkflowError::Validation(format!(
+                            "Containerd step '{}' has invalid network '{}'. Must be none, host, or bridge",
+                            step.name, other
+                        )));
+                    }
+                }
+            }
+            if let Some(ref pull) = config.pull {
+                match pull.as_str() {
+                    "always" | "if-not-present" | "never" => {}
+                    other => {
+                        return Err(YamlWorkflowError::Validation(format!(
+                            "Containerd step '{}' has invalid pull policy '{}'. Must be always, if-not-present, or never",
+                            step.name, other
+                        )));
+                    }
+                }
+            }
+        }
+
         // Validate step-level error behavior.
         if let Some(ref eb) = step.error_behavior {
             validate_error_behavior_type(&eb.behavior_type)?;

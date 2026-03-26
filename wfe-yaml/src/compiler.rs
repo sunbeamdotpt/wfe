@@ -8,6 +8,10 @@ use crate::error::YamlWorkflowError;
 use crate::executors::shell::{ShellConfig, ShellStep};
 #[cfg(feature = "deno")]
 use crate::executors::deno::{DenoConfig, DenoPermissions, DenoStep};
+#[cfg(feature = "buildkit")]
+use wfe_buildkit::{BuildkitConfig, BuildkitStep};
+#[cfg(feature = "containerd")]
+use wfe_containerd::{ContainerdConfig, ContainerdStep};
 use crate::schema::{WorkflowSpec, YamlErrorBehavior, YamlStep};
 
 /// Factory type alias for step creation closures.
@@ -250,6 +254,36 @@ fn build_step_config_and_factory(
             });
             Ok((key, value, factory))
         }
+        #[cfg(feature = "buildkit")]
+        "buildkit" => {
+            let config = build_buildkit_config(step)?;
+            let key = format!("wfe_yaml::buildkit::{}", step.name);
+            let value = serde_json::to_value(&config).map_err(|e| {
+                YamlWorkflowError::Compilation(format!(
+                    "Failed to serialize buildkit config: {e}"
+                ))
+            })?;
+            let config_clone = config.clone();
+            let factory: StepFactory = Box::new(move || {
+                Box::new(BuildkitStep::new(config_clone.clone())) as Box<dyn StepBody>
+            });
+            Ok((key, value, factory))
+        }
+        #[cfg(feature = "containerd")]
+        "containerd" => {
+            let config = build_containerd_config(step)?;
+            let key = format!("wfe_yaml::containerd::{}", step.name);
+            let value = serde_json::to_value(&config).map_err(|e| {
+                YamlWorkflowError::Compilation(format!(
+                    "Failed to serialize containerd config: {e}"
+                ))
+            })?;
+            let config_clone = config.clone();
+            let factory: StepFactory = Box::new(move || {
+                Box::new(ContainerdStep::new(config_clone.clone())) as Box<dyn StepBody>
+            });
+            Ok((key, value, factory))
+        }
         other => Err(YamlWorkflowError::Compilation(format!(
             "Unknown step type: '{other}'"
         ))),
@@ -344,6 +378,162 @@ fn parse_duration_ms(s: &str) -> Option<u64> {
     } else {
         s.parse::<u64>().ok()
     }
+}
+
+#[cfg(feature = "buildkit")]
+fn build_buildkit_config(
+    step: &YamlStep,
+) -> Result<BuildkitConfig, YamlWorkflowError> {
+    let config = step.config.as_ref().ok_or_else(|| {
+        YamlWorkflowError::Compilation(format!(
+            "BuildKit step '{}' is missing 'config' section",
+            step.name
+        ))
+    })?;
+
+    let dockerfile = config.dockerfile.clone().ok_or_else(|| {
+        YamlWorkflowError::Compilation(format!(
+            "BuildKit step '{}' must have 'config.dockerfile'",
+            step.name
+        ))
+    })?;
+
+    let context = config.context.clone().ok_or_else(|| {
+        YamlWorkflowError::Compilation(format!(
+            "BuildKit step '{}' must have 'config.context'",
+            step.name
+        ))
+    })?;
+
+    let timeout_ms = config.timeout.as_ref().and_then(|t| parse_duration_ms(t));
+
+    let tls = config
+        .tls
+        .as_ref()
+        .map(|t| wfe_buildkit::TlsConfig {
+            ca: t.ca.clone(),
+            cert: t.cert.clone(),
+            key: t.key.clone(),
+        })
+        .unwrap_or_default();
+
+    let registry_auth = config
+        .registry_auth
+        .as_ref()
+        .map(|ra| {
+            ra.iter()
+                .map(|(k, v)| {
+                    (
+                        k.clone(),
+                        wfe_buildkit::RegistryAuth {
+                            username: v.username.clone(),
+                            password: v.password.clone(),
+                        },
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Ok(BuildkitConfig {
+        dockerfile,
+        context,
+        target: config.target.clone(),
+        tags: config.tags.clone(),
+        build_args: config.build_args.clone(),
+        cache_from: config.cache_from.clone(),
+        cache_to: config.cache_to.clone(),
+        push: config.push.unwrap_or(false),
+        output_type: None,
+        buildkit_addr: config
+            .buildkit_addr
+            .clone()
+            .unwrap_or_else(|| "unix:///run/buildkit/buildkitd.sock".to_string()),
+        tls,
+        registry_auth,
+        timeout_ms,
+    })
+}
+
+#[cfg(feature = "containerd")]
+fn build_containerd_config(
+    step: &YamlStep,
+) -> Result<ContainerdConfig, YamlWorkflowError> {
+    let config = step.config.as_ref().ok_or_else(|| {
+        YamlWorkflowError::Compilation(format!(
+            "Containerd step '{}' is missing 'config' section",
+            step.name
+        ))
+    })?;
+
+    let image = config.image.clone().ok_or_else(|| {
+        YamlWorkflowError::Compilation(format!(
+            "Containerd step '{}' must have 'config.image'",
+            step.name
+        ))
+    })?;
+
+    let timeout_ms = config.timeout.as_ref().and_then(|t| parse_duration_ms(t));
+
+    let tls = config
+        .tls
+        .as_ref()
+        .map(|t| wfe_containerd::TlsConfig {
+            ca: t.ca.clone(),
+            cert: t.cert.clone(),
+            key: t.key.clone(),
+        })
+        .unwrap_or_default();
+
+    let registry_auth = config
+        .registry_auth
+        .as_ref()
+        .map(|ra| {
+            ra.iter()
+                .map(|(k, v)| {
+                    (
+                        k.clone(),
+                        wfe_containerd::RegistryAuth {
+                            username: v.username.clone(),
+                            password: v.password.clone(),
+                        },
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let volumes = config
+        .volumes
+        .iter()
+        .map(|v| wfe_containerd::VolumeMountConfig {
+            source: v.source.clone(),
+            target: v.target.clone(),
+            readonly: v.readonly,
+        })
+        .collect();
+
+    Ok(ContainerdConfig {
+        image,
+        command: config.command.clone(),
+        run: config.run.clone(),
+        env: config.env.clone(),
+        volumes,
+        working_dir: config.working_dir.clone(),
+        user: config.user.clone().unwrap_or_else(|| "65534:65534".to_string()),
+        network: config.network.clone().unwrap_or_else(|| "none".to_string()),
+        memory: config.memory.clone(),
+        cpu: config.cpu.clone(),
+        pull: config.pull.clone().unwrap_or_else(|| "if-not-present".to_string()),
+        containerd_addr: config
+            .containerd_addr
+            .clone()
+            .unwrap_or_else(|| "/run/containerd/containerd.sock".to_string()),
+        cli: config.cli.clone().unwrap_or_else(|| "nerdctl".to_string()),
+        tls,
+        registry_auth,
+        timeout_ms,
+    })
 }
 
 fn map_error_behavior(eb: &YamlErrorBehavior) -> Result<ErrorBehavior, YamlWorkflowError> {

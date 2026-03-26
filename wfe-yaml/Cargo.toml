@@ -7,6 +7,8 @@ description = "YAML workflow definitions for WFE"
 [features]
 default = []
 deno = ["deno_core", "deno_error", "url", "reqwest"]
+buildkit = ["wfe-buildkit"]
+containerd = ["wfe-containerd"]
 
 [dependencies]
 wfe-core = { workspace = true }
@@ -22,6 +24,8 @@ deno_core = { workspace = true, optional = true }
 deno_error = { workspace = true, optional = true }
 url = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
+wfe-buildkit = { workspace = true, optional = true }
+wfe-containerd = { workspace = true, optional = true }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }

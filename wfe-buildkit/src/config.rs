@@ -175,4 +175,184 @@ mod tests {
         assert_eq!(auth.username, deserialized.username);
         assert_eq!(auth.password, deserialized.password);
     }
+
+    #[test]
+    fn serde_custom_addr() {
+        let json = r#"{
+            "dockerfile": "Dockerfile",
+            "context": ".",
+            "buildkit_addr": "tcp://remote:1234"
+        }"#;
+        let config: BuildkitConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.buildkit_addr, "tcp://remote:1234");
+    }
+
+    #[test]
+    fn serde_with_timeout() {
+        let json = r#"{
+            "dockerfile": "Dockerfile",
+            "context": ".",
+            "timeout_ms": 60000
+        }"#;
+        let config: BuildkitConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.timeout_ms, Some(60000));
+    }
+
+    #[test]
+    fn serde_with_tags_and_push() {
+        let json = r#"{
+            "dockerfile": "Dockerfile",
+            "context": ".",
+            "tags": ["myapp:latest", "myapp:v1.0"],
+            "push": true
+        }"#;
+        let config: BuildkitConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.tags, vec!["myapp:latest", "myapp:v1.0"]);
+        assert!(config.push);
+    }
+
+    #[test]
+    fn serde_with_build_args() {
+        let json = r#"{
+            "dockerfile": "Dockerfile",
+            "context": ".",
+            "build_args": {"VERSION": "1.0", "DEBUG": "false"}
+        }"#;
+        let config: BuildkitConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.build_args.len(), 2);
+        assert_eq!(config.build_args["VERSION"], "1.0");
+        assert_eq!(config.build_args["DEBUG"], "false");
+    }
+
+    #[test]
+    fn serde_with_cache_config() {
+        let json = r#"{
+            "dockerfile": "Dockerfile",
+            "context": ".",
+            "cache_from": ["type=registry,ref=cache:latest"],
+            "cache_to": ["type=registry,ref=cache:latest,mode=max"]
+        }"#;
+        let config: BuildkitConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.cache_from.len(), 1);
+        assert_eq!(config.cache_to.len(), 1);
+    }
+
+    #[test]
+    fn serde_with_output_type() {
+        let json = r#"{
+            "dockerfile": "Dockerfile",
+            "context": ".",
+            "output_type": "tar"
+        }"#;
+        let config: BuildkitConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.output_type, Some("tar".to_string()));
+    }
+
+    #[test]
+    fn serde_with_registry_auth() {
+        let json = r#"{
+            "dockerfile": "Dockerfile",
+            "context": ".",
+            "registry_auth": {
+                "ghcr.io": {"username": "bot", "password": "tok"},
+                "docker.io": {"username": "u", "password": "p"}
+            }
+        }"#;
+        let config: BuildkitConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.registry_auth.len(), 2);
+        assert_eq!(config.registry_auth["ghcr.io"].username, "bot");
+        assert_eq!(config.registry_auth["docker.io"].password, "p");
+    }
+
+    #[test]
+    fn serde_with_tls() {
+        let json = r#"{
+            "dockerfile": "Dockerfile",
+            "context": ".",
+            "tls": {
+                "ca": "/certs/ca.pem",
+                "cert": "/certs/cert.pem",
+                "key": "/certs/key.pem"
+            }
+        }"#;
+        let config: BuildkitConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.tls.ca, Some("/certs/ca.pem".to_string()));
+        assert_eq!(config.tls.cert, Some("/certs/cert.pem".to_string()));
+        assert_eq!(config.tls.key, Some("/certs/key.pem".to_string()));
+    }
+
+    #[test]
+    fn serde_partial_tls() {
+        let json = r#"{
+            "dockerfile": "Dockerfile",
+            "context": ".",
+            "tls": {"ca": "/certs/ca.pem"}
+        }"#;
+        let config: BuildkitConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.tls.ca, Some("/certs/ca.pem".to_string()));
+        assert_eq!(config.tls.cert, None);
+        assert_eq!(config.tls.key, None);
+    }
+
+    #[test]
+    fn serde_empty_tls_object() {
+        let json = r#"{
+            "dockerfile": "Dockerfile",
+            "context": ".",
+            "tls": {}
+        }"#;
+        let config: BuildkitConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.tls.ca, None);
+        assert_eq!(config.tls.cert, None);
+        assert_eq!(config.tls.key, None);
+    }
+
+    #[test]
+    fn tls_config_clone() {
+        let tls = TlsConfig {
+            ca: Some("ca".to_string()),
+            cert: Some("cert".to_string()),
+            key: Some("key".to_string()),
+        };
+        let cloned = tls.clone();
+        assert_eq!(tls.ca, cloned.ca);
+        assert_eq!(tls.cert, cloned.cert);
+        assert_eq!(tls.key, cloned.key);
+    }
+
+    #[test]
+    fn tls_config_debug() {
+        let tls = TlsConfig::default();
+        let debug = format!("{:?}", tls);
+        assert!(debug.contains("TlsConfig"));
+    }
+
+    #[test]
+    fn buildkit_config_debug() {
+        let json = r#"{"dockerfile": "Dockerfile", "context": "."}"#;
+        let config: BuildkitConfig = serde_json::from_str(json).unwrap();
+        let debug = format!("{:?}", config);
+        assert!(debug.contains("BuildkitConfig"));
+    }
+
+    #[test]
+    fn registry_auth_clone() {
+        let auth = RegistryAuth {
+            username: "u".to_string(),
+            password: "p".to_string(),
+        };
+        let cloned = auth.clone();
+        assert_eq!(auth.username, cloned.username);
+        assert_eq!(auth.password, cloned.password);
+    }
+
+    #[test]
+    fn buildkit_config_clone() {
+        let json = r#"{"dockerfile": "Dockerfile", "context": "."}"#;
+        let config: BuildkitConfig = serde_json::from_str(json).unwrap();
+        let cloned = config.clone();
+        assert_eq!(config.dockerfile, cloned.dockerfile);
+        assert_eq!(config.context, cloned.context);
+        assert_eq!(config.buildkit_addr, cloned.buildkit_addr);
+    }
 }

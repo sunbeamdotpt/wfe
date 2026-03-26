@@ -151,6 +151,49 @@ pub fn parse_digest(output: &str) -> Option<String> {
         .map(|caps| format!("sha256:{}", &caps[1]))
 }
 
+/// Build the output data JSON object from step execution results.
+///
+/// Assembles a `serde_json::Value::Object` containing the step's stdout,
+/// stderr, digest (if found), and tags (if any).
+pub fn build_output_data(
+    step_name: &str,
+    stdout: &str,
+    stderr: &str,
+    digest: Option<&str>,
+    tags: &[String],
+) -> serde_json::Value {
+    let mut outputs = serde_json::Map::new();
+
+    if let Some(digest) = digest {
+        outputs.insert(
+            format!("{step_name}.digest"),
+            serde_json::Value::String(digest.to_string()),
+        );
+    }
+
+    if !tags.is_empty() {
+        outputs.insert(
+            format!("{step_name}.tags"),
+            serde_json::Value::Array(
+                tags.iter()
+                    .map(|t| serde_json::Value::String(t.clone()))
+                    .collect(),
+            ),
+        );
+    }
+
+    outputs.insert(
+        format!("{step_name}.stdout"),
+        serde_json::Value::String(stdout.to_string()),
+    );
+    outputs.insert(
+        format!("{step_name}.stderr"),
+        serde_json::Value::String(stderr.to_string()),
+    );
+
+    serde_json::Value::Object(outputs)
+}
+
 #[async_trait]
 impl StepBody for BuildkitStep {
     async fn run(
@@ -208,40 +251,17 @@ impl StepBody for BuildkitStep {
         let combined_output = format!("{stdout}\n{stderr}");
         let digest = parse_digest(&combined_output);
 
-        let mut outputs = serde_json::Map::new();
-
-        if let Some(ref digest) = digest {
-            outputs.insert(
-                format!("{step_name}.digest"),
-                serde_json::Value::String(digest.clone()),
-            );
-        }
-
-        if !self.config.tags.is_empty() {
-            outputs.insert(
-                format!("{step_name}.tags"),
-                serde_json::Value::Array(
-                    self.config
-                        .tags
-                        .iter()
-                        .map(|t| serde_json::Value::String(t.clone()))
-                        .collect(),
-                ),
-            );
-        }
-
-        outputs.insert(
-            format!("{step_name}.stdout"),
-            serde_json::Value::String(stdout),
-        );
-        outputs.insert(
-            format!("{step_name}.stderr"),
-            serde_json::Value::String(stderr),
+        let output_data = build_output_data(
+            step_name,
+            &stdout,
+            &stderr,
+            digest.as_deref(),
+            &self.config.tags,
         );
 
         Ok(ExecutionResult {
             proceed: true,
-            output_data: Some(serde_json::Value::Object(outputs)),
+            output_data: Some(output_data),
             ..Default::default()
         })
     }
@@ -272,6 +292,10 @@ mod tests {
             timeout_ms: None,
         }
     }
+
+    // ---------------------------------------------------------------
+    // build_command tests
+    // ---------------------------------------------------------------
 
     #[test]
     fn build_command_minimal() {
@@ -317,6 +341,22 @@ mod tests {
         assert_eq!(
             cmd[output_idx + 1],
             "type=image,name=myapp:latest,myapp:v1.0,push=true"
+        );
+    }
+
+    #[test]
+    fn build_command_tags_no_push() {
+        let mut config = minimal_config();
+        config.tags = vec!["myapp:latest".to_string()];
+        config.push = false;
+
+        let step = BuildkitStep::new(config);
+        let cmd = step.build_command();
+
+        let output_idx = cmd.iter().position(|a| a == "--output").unwrap();
+        assert_eq!(
+            cmd[output_idx + 1],
+            "type=image,name=myapp:latest,push=false"
         );
     }
 
@@ -368,6 +408,40 @@ mod tests {
     }
 
     #[test]
+    fn build_command_with_multiple_cache_sources() {
+        let mut config = minimal_config();
+        config.cache_from = vec![
+            "type=registry,ref=myapp:cache".to_string(),
+            "type=local,src=/tmp/cache".to_string(),
+        ];
+        config.cache_to = vec![
+            "type=registry,ref=myapp:cache,mode=max".to_string(),
+            "type=local,dest=/tmp/cache".to_string(),
+        ];
+
+        let step = BuildkitStep::new(config);
+        let cmd = step.build_command();
+
+        let import_positions: Vec<usize> = cmd
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| *a == "--import-cache")
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(import_positions.len(), 2);
+        assert_eq!(cmd[import_positions[0] + 1], "type=registry,ref=myapp:cache");
+        assert_eq!(cmd[import_positions[1] + 1], "type=local,src=/tmp/cache");
+
+        let export_positions: Vec<usize> = cmd
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| *a == "--export-cache")
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(export_positions.len(), 2);
+    }
+
+    #[test]
     fn build_command_with_tls() {
         let mut config = minimal_config();
         config.tls = TlsConfig {
@@ -393,6 +467,23 @@ mod tests {
         assert!(ca_idx < build_idx);
         assert!(cert_idx < build_idx);
         assert!(key_idx < build_idx);
+    }
+
+    #[test]
+    fn build_command_with_partial_tls() {
+        let mut config = minimal_config();
+        config.tls = TlsConfig {
+            ca: Some("/certs/ca.pem".to_string()),
+            cert: None,
+            key: None,
+        };
+
+        let step = BuildkitStep::new(config);
+        let cmd = step.build_command();
+
+        assert!(cmd.contains(&"--tlscacert".to_string()));
+        assert!(!cmd.contains(&"--tlscert".to_string()));
+        assert!(!cmd.contains(&"--tlskey".to_string()));
     }
 
     #[test]
@@ -452,6 +543,135 @@ mod tests {
     }
 
     #[test]
+    fn build_command_output_type_tar() {
+        let mut config = minimal_config();
+        config.output_type = Some("tar".to_string());
+
+        let step = BuildkitStep::new(config);
+        let cmd = step.build_command();
+
+        let output_idx = cmd.iter().position(|a| a == "--output").unwrap();
+        assert_eq!(cmd[output_idx + 1], "type=tar");
+    }
+
+    #[test]
+    fn build_command_dockerfile_at_root() {
+        // When dockerfile is just a bare filename (no path component),
+        // the directory should be "." and no filename opt is emitted.
+        let config = minimal_config(); // dockerfile = "Dockerfile"
+        let step = BuildkitStep::new(config);
+        let cmd = step.build_command();
+
+        assert!(cmd.contains(&"dockerfile=.".to_string()));
+        // "Dockerfile" is the default so no --opt filename=... should appear
+        assert!(!cmd.iter().any(|a| a.starts_with("filename=")));
+    }
+
+    #[test]
+    fn build_command_custom_addr() {
+        let mut config = minimal_config();
+        config.buildkit_addr = "tcp://buildkitd:1234".to_string();
+
+        let step = BuildkitStep::new(config);
+        let cmd = step.build_command();
+
+        assert_eq!(cmd[1], "--addr");
+        assert_eq!(cmd[2], "tcp://buildkitd:1234");
+    }
+
+    #[test]
+    fn build_command_all_options_combined() {
+        let mut config = minimal_config();
+        config.buildkit_addr = "tcp://remote:9999".to_string();
+        config.dockerfile = "ci/Dockerfile.ci".to_string();
+        config.context = "/workspace".to_string();
+        config.target = Some("final".to_string());
+        config.tags = vec!["img:v1".to_string()];
+        config.push = true;
+        config.build_args.insert("A".to_string(), "1".to_string());
+        config.cache_from = vec!["type=local,src=/c".to_string()];
+        config.cache_to = vec!["type=local,dest=/c".to_string()];
+        config.tls = TlsConfig {
+            ca: Some("ca".to_string()),
+            cert: Some("cert".to_string()),
+            key: Some("key".to_string()),
+        };
+
+        let step = BuildkitStep::new(config);
+        let cmd = step.build_command();
+
+        // Verify key elements exist
+        assert!(cmd.contains(&"tcp://remote:9999".to_string()));
+        assert!(cmd.contains(&"context=/workspace".to_string()));
+        assert!(cmd.contains(&"dockerfile=ci".to_string()));
+        assert!(cmd.contains(&"filename=Dockerfile.ci".to_string()));
+        assert!(cmd.contains(&"target=final".to_string()));
+        assert!(cmd.contains(&"build-arg:A=1".to_string()));
+        assert!(cmd.iter().any(|a| a.starts_with("type=image,name=img:v1,push=true")));
+    }
+
+    // ---------------------------------------------------------------
+    // build_registry_env tests
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn build_registry_env_sanitizes_host() {
+        let mut config = minimal_config();
+        config.registry_auth.insert(
+            "my-registry.example.com".to_string(),
+            RegistryAuth {
+                username: "u".to_string(),
+                password: "p".to_string(),
+            },
+        );
+
+        let step = BuildkitStep::new(config);
+        let env = step.build_registry_env();
+
+        assert!(env.contains_key("BUILDKIT_HOST_MY_REGISTRY_EXAMPLE_COM_USERNAME"));
+        assert!(env.contains_key("BUILDKIT_HOST_MY_REGISTRY_EXAMPLE_COM_PASSWORD"));
+    }
+
+    #[test]
+    fn build_registry_env_empty_when_no_auth() {
+        let step = BuildkitStep::new(minimal_config());
+        let env = step.build_registry_env();
+        assert!(env.is_empty());
+    }
+
+    #[test]
+    fn build_registry_env_multiple_registries() {
+        let mut config = minimal_config();
+        config.registry_auth.insert(
+            "ghcr.io".to_string(),
+            RegistryAuth {
+                username: "gh_user".to_string(),
+                password: "gh_pass".to_string(),
+            },
+        );
+        config.registry_auth.insert(
+            "docker.io".to_string(),
+            RegistryAuth {
+                username: "dh_user".to_string(),
+                password: "dh_pass".to_string(),
+            },
+        );
+
+        let step = BuildkitStep::new(config);
+        let env = step.build_registry_env();
+
+        assert_eq!(env.len(), 4);
+        assert_eq!(env["BUILDKIT_HOST_GHCR_IO_USERNAME"], "gh_user");
+        assert_eq!(env["BUILDKIT_HOST_GHCR_IO_PASSWORD"], "gh_pass");
+        assert_eq!(env["BUILDKIT_HOST_DOCKER_IO_USERNAME"], "dh_user");
+        assert_eq!(env["BUILDKIT_HOST_DOCKER_IO_PASSWORD"], "dh_pass");
+    }
+
+    // ---------------------------------------------------------------
+    // parse_digest tests
+    // ---------------------------------------------------------------
+
+    #[test]
     fn parse_digest_from_output() {
         let output = "some build output\nexporting manifest sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789\ndone";
         let digest = parse_digest(output);
@@ -492,27 +712,387 @@ mod tests {
     }
 
     #[test]
-    fn build_registry_env_sanitizes_host() {
-        let mut config = minimal_config();
-        config.registry_auth.insert(
-            "my-registry.example.com".to_string(),
-            RegistryAuth {
-                username: "u".to_string(),
-                password: "p".to_string(),
-            },
-        );
-
-        let step = BuildkitStep::new(config);
-        let env = step.build_registry_env();
-
-        assert!(env.contains_key("BUILDKIT_HOST_MY_REGISTRY_EXAMPLE_COM_USERNAME"));
-        assert!(env.contains_key("BUILDKIT_HOST_MY_REGISTRY_EXAMPLE_COM_PASSWORD"));
+    fn parse_digest_empty_input() {
+        assert_eq!(parse_digest(""), None);
     }
 
     #[test]
-    fn build_registry_env_empty_when_no_auth() {
-        let step = BuildkitStep::new(minimal_config());
-        let env = step.build_registry_env();
-        assert!(env.is_empty());
+    fn parse_digest_wrong_prefix() {
+        // Has the hash but without a recognized prefix
+        let output =
+            "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
+        assert_eq!(parse_digest(output), None);
+    }
+
+    #[test]
+    fn parse_digest_uppercase_hex_returns_none() {
+        // Regex expects lowercase hex
+        let output = "exporting manifest sha256:ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789";
+        assert_eq!(parse_digest(output), None);
+    }
+
+    #[test]
+    fn parse_digest_multiline_with_noise() {
+        let output = r#"
+[+] Building 12.3s (8/8) FINISHED
+ => exporting to image
+ => exporting manifest sha256:aabbccdd0011223344556677aabbccdd0011223344556677aabbccdd00112233
+ => done
+"#;
+        assert_eq!(
+            parse_digest(output),
+            Some("sha256:aabbccdd0011223344556677aabbccdd0011223344556677aabbccdd00112233".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_digest_first_match_wins() {
+        let hash1 = "a".repeat(64);
+        let hash2 = "b".repeat(64);
+        let output = format!(
+            "exporting manifest sha256:{hash1}\ndigest: sha256:{hash2}"
+        );
+        let digest = parse_digest(&output).unwrap();
+        assert_eq!(digest, format!("sha256:{hash1}"));
+    }
+
+    // ---------------------------------------------------------------
+    // build_output_data tests
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn build_output_data_with_digest_and_tags() {
+        let digest = "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
+        let tags = vec!["myapp:latest".to_string(), "myapp:v1".to_string()];
+        let result = build_output_data("build", "out", "err", Some(digest), &tags);
+
+        let obj = result.as_object().unwrap();
+        assert_eq!(obj["build.digest"], digest);
+        assert_eq!(
+            obj["build.tags"],
+            serde_json::json!(["myapp:latest", "myapp:v1"])
+        );
+        assert_eq!(obj["build.stdout"], "out");
+        assert_eq!(obj["build.stderr"], "err");
+    }
+
+    #[test]
+    fn build_output_data_without_digest() {
+        let result = build_output_data("step1", "hello", "", None, &[]);
+
+        let obj = result.as_object().unwrap();
+        assert!(!obj.contains_key("step1.digest"));
+        assert!(!obj.contains_key("step1.tags"));
+        assert_eq!(obj["step1.stdout"], "hello");
+        assert_eq!(obj["step1.stderr"], "");
+    }
+
+    #[test]
+    fn build_output_data_with_digest_no_tags() {
+        let digest = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
+        let result = build_output_data("img", "ok", "warn", Some(digest), &[]);
+
+        let obj = result.as_object().unwrap();
+        assert_eq!(obj["img.digest"], digest);
+        assert!(!obj.contains_key("img.tags"));
+        assert_eq!(obj["img.stdout"], "ok");
+        assert_eq!(obj["img.stderr"], "warn");
+    }
+
+    #[test]
+    fn build_output_data_no_digest_with_tags() {
+        let tags = vec!["app:v2".to_string()];
+        let result = build_output_data("s", "", "", None, &tags);
+
+        let obj = result.as_object().unwrap();
+        assert!(!obj.contains_key("s.digest"));
+        assert_eq!(obj["s.tags"], serde_json::json!(["app:v2"]));
+    }
+
+    #[test]
+    fn build_output_data_empty_strings() {
+        let result = build_output_data("x", "", "", None, &[]);
+        let obj = result.as_object().unwrap();
+        assert_eq!(obj["x.stdout"], "");
+        assert_eq!(obj["x.stderr"], "");
+        assert_eq!(obj.len(), 2);
+    }
+
+    // ---------------------------------------------------------------
+    // Integration tests using mock buildctl
+    // ---------------------------------------------------------------
+
+    /// Helper to create a StepExecutionContext for testing.
+    fn make_test_context(
+        step_name: &str,
+    ) -> (
+        wfe_core::models::WorkflowStep,
+        wfe_core::models::ExecutionPointer,
+        wfe_core::models::WorkflowInstance,
+    ) {
+        let mut step = wfe_core::models::WorkflowStep::new(0, "buildkit");
+        step.name = Some(step_name.to_string());
+        let pointer = wfe_core::models::ExecutionPointer::new(0);
+        let instance =
+            wfe_core::models::WorkflowInstance::new("test-wf", 1, serde_json::json!({}));
+        (step, pointer, instance)
+    }
+
+    #[cfg(unix)]
+    fn write_mock_buildctl(dir: &std::path::Path, script: &str) {
+        let path = dir.join("buildctl");
+        std::fs::write(&path, script).unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[cfg(unix)]
+    fn path_with_prefix(prefix: &std::path::Path) -> String {
+        let current = std::env::var("PATH").unwrap_or_default();
+        format!("{}:{current}", prefix.display())
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn run_with_mock_buildctl_success_with_digest() {
+        let tmp = tempfile::tempdir().unwrap();
+        let digest_hash = "a".repeat(64);
+        let script = format!(
+            "#!/bin/sh\necho \"exporting manifest sha256:{digest_hash}\"\nexit 0\n"
+        );
+        write_mock_buildctl(tmp.path(), &script);
+
+        let mut config = minimal_config();
+        config.tags = vec!["myapp:latest".to_string()];
+
+        let mut step = BuildkitStep::new(config);
+
+        let (ws, pointer, instance) = make_test_context("build-img");
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let ctx = wfe_core::traits::step::StepExecutionContext {
+            item: None,
+            execution_pointer: &pointer,
+            persistence_data: None,
+            step: &ws,
+            workflow: &instance,
+            cancellation_token: cancel,
+        };
+
+        // Override PATH so our mock is found first
+        let new_path = path_with_prefix(tmp.path());
+        unsafe { std::env::set_var("PATH", &new_path) };
+
+        let result = step.run(&ctx).await.unwrap();
+
+        assert!(result.proceed);
+        let data = result.output_data.unwrap();
+        let obj = data.as_object().unwrap();
+        assert_eq!(
+            obj["build-img.digest"],
+            format!("sha256:{digest_hash}")
+        );
+        assert_eq!(
+            obj["build-img.tags"],
+            serde_json::json!(["myapp:latest"])
+        );
+        assert!(obj.contains_key("build-img.stdout"));
+        assert!(obj.contains_key("build-img.stderr"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn run_with_mock_buildctl_success_no_digest() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_mock_buildctl(tmp.path(), "#!/bin/sh\necho \"build complete\"\nexit 0\n");
+
+        let mut step = BuildkitStep::new(minimal_config());
+
+        let (ws, pointer, instance) = make_test_context("no-digest");
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let ctx = wfe_core::traits::step::StepExecutionContext {
+            item: None,
+            execution_pointer: &pointer,
+            persistence_data: None,
+            step: &ws,
+            workflow: &instance,
+            cancellation_token: cancel,
+        };
+
+        let new_path = path_with_prefix(tmp.path());
+        unsafe { std::env::set_var("PATH", &new_path) };
+
+        let result = step.run(&ctx).await.unwrap();
+
+        assert!(result.proceed);
+        let data = result.output_data.unwrap();
+        let obj = data.as_object().unwrap();
+        assert!(!obj.contains_key("no-digest.digest"));
+        assert!(!obj.contains_key("no-digest.tags"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn run_with_mock_buildctl_nonzero_exit() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_mock_buildctl(
+            tmp.path(),
+            "#!/bin/sh\necho \"error: something failed\" >&2\nexit 1\n",
+        );
+
+        let mut step = BuildkitStep::new(minimal_config());
+
+        let (ws, pointer, instance) = make_test_context("fail-step");
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let ctx = wfe_core::traits::step::StepExecutionContext {
+            item: None,
+            execution_pointer: &pointer,
+            persistence_data: None,
+            step: &ws,
+            workflow: &instance,
+            cancellation_token: cancel,
+        };
+
+        let new_path = path_with_prefix(tmp.path());
+        unsafe { std::env::set_var("PATH", &new_path) };
+
+        let err = step.run(&ctx).await.unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("exited with code 1"), "got: {msg}");
+        assert!(msg.contains("something failed"), "got: {msg}");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn run_with_mock_buildctl_timeout() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_mock_buildctl(tmp.path(), "#!/bin/sh\nsleep 60\n");
+
+        let mut config = minimal_config();
+        config.timeout_ms = Some(100); // 100ms timeout
+
+        let mut step = BuildkitStep::new(config);
+
+        let (ws, pointer, instance) = make_test_context("timeout-step");
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let ctx = wfe_core::traits::step::StepExecutionContext {
+            item: None,
+            execution_pointer: &pointer,
+            persistence_data: None,
+            step: &ws,
+            workflow: &instance,
+            cancellation_token: cancel,
+        };
+
+        let new_path = path_with_prefix(tmp.path());
+        unsafe { std::env::set_var("PATH", &new_path) };
+
+        let err = step.run(&ctx).await.unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("timed out after 100ms"), "got: {msg}");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn run_with_missing_buildctl() {
+        // Use a temp dir with no buildctl script and make it the only PATH entry
+        let tmp = tempfile::tempdir().unwrap();
+
+        let mut step = BuildkitStep::new(minimal_config());
+
+        let (ws, pointer, instance) = make_test_context("missing");
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let ctx = wfe_core::traits::step::StepExecutionContext {
+            item: None,
+            execution_pointer: &pointer,
+            persistence_data: None,
+            step: &ws,
+            workflow: &instance,
+            cancellation_token: cancel,
+        };
+
+        // Set PATH to empty dir so buildctl is not found
+        unsafe { std::env::set_var("PATH", tmp.path()) };
+
+        let err = step.run(&ctx).await.unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("Failed to spawn buildctl"),
+            "got: {msg}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn run_with_mock_buildctl_stderr_output() {
+        let tmp = tempfile::tempdir().unwrap();
+        let digest_hash = "b".repeat(64);
+        let script = format!(
+            "#!/bin/sh\necho \"stdout line\" \necho \"digest: sha256:{digest_hash}\" >&2\nexit 0\n"
+        );
+        write_mock_buildctl(tmp.path(), &script);
+
+        let mut config = minimal_config();
+        config.tags = vec!["app:v2".to_string()];
+
+        let mut step = BuildkitStep::new(config);
+
+        let (ws, pointer, instance) = make_test_context("stderr-test");
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let ctx = wfe_core::traits::step::StepExecutionContext {
+            item: None,
+            execution_pointer: &pointer,
+            persistence_data: None,
+            step: &ws,
+            workflow: &instance,
+            cancellation_token: cancel,
+        };
+
+        let new_path = path_with_prefix(tmp.path());
+        unsafe { std::env::set_var("PATH", &new_path) };
+
+        let result = step.run(&ctx).await.unwrap();
+        let data = result.output_data.unwrap();
+        let obj = data.as_object().unwrap();
+
+        // Digest should be found from stderr (combined output is searched)
+        assert_eq!(
+            obj["stderr-test.digest"],
+            format!("sha256:{digest_hash}")
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn run_with_unnamed_step_uses_unknown() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_mock_buildctl(tmp.path(), "#!/bin/sh\necho ok\nexit 0\n");
+
+        let mut step = BuildkitStep::new(minimal_config());
+
+        // Create a step with no name
+        let ws = wfe_core::models::WorkflowStep::new(0, "buildkit");
+        let pointer = wfe_core::models::ExecutionPointer::new(0);
+        let instance =
+            wfe_core::models::WorkflowInstance::new("test-wf", 1, serde_json::json!({}));
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let ctx = wfe_core::traits::step::StepExecutionContext {
+            item: None,
+            execution_pointer: &pointer,
+            persistence_data: None,
+            step: &ws,
+            workflow: &instance,
+            cancellation_token: cancel,
+        };
+
+        let new_path = path_with_prefix(tmp.path());
+        unsafe { std::env::set_var("PATH", &new_path) };
+
+        let result = step.run(&ctx).await.unwrap();
+        let data = result.output_data.unwrap();
+        let obj = data.as_object().unwrap();
+
+        // Should use "unknown" as step name
+        assert!(obj.contains_key("unknown.stdout"));
+        assert!(obj.contains_key("unknown.stderr"));
     }
 }

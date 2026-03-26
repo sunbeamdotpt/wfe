@@ -58,6 +58,38 @@ pub struct StepConfig {
     pub permissions: Option<DenoPermissionsYaml>,
     #[serde(default)]
     pub modules: Vec<String>,
+    // BuildKit fields
+    pub dockerfile: Option<String>,
+    pub context: Option<String>,
+    pub target: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub build_args: HashMap<String, String>,
+    #[serde(default)]
+    pub cache_from: Vec<String>,
+    #[serde(default)]
+    pub cache_to: Vec<String>,
+    pub push: Option<bool>,
+    pub buildkit_addr: Option<String>,
+    #[serde(default)]
+    pub tls: Option<TlsConfigYaml>,
+    #[serde(default)]
+    pub registry_auth: Option<HashMap<String, RegistryAuthYaml>>,
+    // Containerd fields
+    pub image: Option<String>,
+    #[serde(default)]
+    pub command: Option<Vec<String>>,
+    #[serde(default)]
+    pub volumes: Vec<VolumeMountYaml>,
+    pub user: Option<String>,
+    pub network: Option<String>,
+    pub memory: Option<String>,
+    pub cpu: Option<String>,
+    pub pull: Option<String>,
+    pub containerd_addr: Option<String>,
+    /// CLI binary name for containerd steps: "nerdctl" (default) or "docker".
+    pub cli: Option<String>,
 }
 
 /// YAML-level permission configuration for Deno steps.
@@ -82,6 +114,30 @@ pub struct DataRef {
     pub name: String,
     pub path: Option<String>,
     pub json_path: Option<String>,
+}
+
+/// YAML-level TLS configuration for BuildKit steps.
+#[derive(Debug, Deserialize, Clone)]
+pub struct TlsConfigYaml {
+    pub ca: Option<String>,
+    pub cert: Option<String>,
+    pub key: Option<String>,
+}
+
+/// YAML-level registry auth configuration for BuildKit steps.
+#[derive(Debug, Deserialize, Clone)]
+pub struct RegistryAuthYaml {
+    pub username: String,
+    pub password: String,
+}
+
+/// YAML-level volume mount configuration for containerd steps.
+#[derive(Debug, Deserialize, Clone)]
+pub struct VolumeMountYaml {
+    pub source: String,
+    pub target: String,
+    #[serde(default)]
+    pub readonly: bool,
 }
 
 #[derive(Debug, Deserialize)]
