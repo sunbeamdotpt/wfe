@@ -1,20 +1,24 @@
 # WFE
 
-A persistent, embeddable workflow engine for Rust. Trait-based, pluggable, built for real infrastructure.
-
-> Rust port of [workflow-core](https://github.com/danielgerlag/workflow-core), rebuilt from scratch with async/await, pluggable persistence, and a YAML frontend with shell and Deno executors.
+A persistent, embeddable workflow engine for Rust. Trait-based, pluggable, built for large, highly complex build, test, deployment, and release pipelines of the highest levels of complexity.
 
 ---
 
 ## What is WFE?
 
-WFE is a workflow engine you embed directly into your Rust application. Define workflows as code using a fluent builder API, or as YAML files with shell and JavaScript steps. Workflows persist across restarts, support event-driven pausing, parallel execution, saga compensation, and distributed locking.
+WFE is a technical love letter from a former [VMware](https://www.vmware.com) and [Pivotal](https://pivotal.io) engineer (@siennathesane). Its internal workflow architecture is based on the amazing [workflow-core](https://github.com/danielgerlag/workflow-core) library by Daniel Gerlag, and the YAML structure and support is based on [Concourse CI](https://concourse-ci.org). WFE is a pluggable, extendable library that can be used to design embedded business workflows, CLI applications, and CI/CD pipelines. It is designed to be embedded into your application, and can scale open-ended with pluggable architectures. You can deploy Cloud Foundry, Kubernetes, or even bootstrap a public cloud with WFE.
 
-Built for:
+You can define workflows as code using a fluent builder API, or as YAML files with shell and JavaScript steps. Workflows persist across restarts, support event-driven pausing, parallel execution, saga compensation, and distributed locking. It also comes with native support for containerd and buildkitd embedded into the application.
 
-- **Persistent workflows** — steps survive process restarts. Pick up where you left off.
-- **Embeddable CLIs** — drop it into a binary, no external orchestrator required.
-- **Portable CI pipelines** — YAML workflows with shell and Deno steps, variable interpolation, structured outputs.
+The only thing not included is a server and a web UI (open to contributions that have been agreed upon and discussed ahead of time).
+
+## Why?
+
+Every CI/CD system [I've](https://src.sunbeam.pt/siennathesane) ever used has been either lovely or terrible. I wanted something that was lovely, but also flexible enough to be used in a variety of contexts. The list of CI systems I've used over the years has been extensive, and they all have their _thing_ that makes them stand out in their own ways. I wanted something that could meet every single requirement I have: a distributed workflow engine that can be embedded into any application, has pluggable executors, a statically-verifiable workflow definition language, a simple, easy to use API, YAML 1.1 merge anchors, YAML 1.2 support, multi-file workflows, can be used as a library, can be used as a CLI, and can be used to write servers.
+
+With that, I wanted the user experience to be essentially identical for embedded application developers, systems engineers, and CI/CD engineers. Whether you write your workflows in code, YAML, or you have written a web server endpoint that accepts gRPC workflow definitions and you're relying on this library as a hosted service, it should feel like the same piece of software in every context.
+
+Hell, I'm so dedicated to this being the most useful, most pragmatic, most embeddable workflow engine library ever that I'm willing to accept a C ABI contribution to make it embeddable in any language.
 
 ---
 
