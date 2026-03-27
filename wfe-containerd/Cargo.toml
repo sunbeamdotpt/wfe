@@ -9,7 +9,7 @@ description = "containerd container runner executor for WFE"
 
 [dependencies]
 wfe-core = { workspace = true }
-wfe-containerd-protos = { path = "../wfe-containerd-protos" }
+wfe-containerd-protos = { version = "1.4.0", path = "../wfe-containerd-protos", registry = "sunbeam" }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
