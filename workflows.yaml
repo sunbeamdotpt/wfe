@@ -158,7 +158,8 @@ workflows:
         config:
           run: |
             cd "$WORKSPACE_DIR"
-            cargo nextest run -p wfe-yaml --features buildkit,containerd -P ci
+            cargo nextest run -p wfe-yaml --features buildkit,containerd,rustlang -P ci
+            cargo nextest run -p wfe-rustlang -P ci
 
   # ─── Workflow: test-integration ──────────────────────────────────
 
@@ -299,12 +300,12 @@ workflows:
               }
             fi
 
-            # Wait for sockets to be available
+            # Wait for TCP proxy ports (socat bridges to containerd/buildkit sockets)
             for i in $(seq 1 30); do
-              if [ -S "$HOME/.lima/wfe-test/sock/buildkitd.sock" ]; then
+              if curl -sf http://127.0.0.1:2500 >/dev/null 2>&1 || [ $? -eq 56 ]; then
                 break
               fi
-              echo "Waiting for buildkitd socket... ($i/30)"
+              echo "Waiting for containerd TCP proxy... ($i/30)"
               sleep 2
             done
 
@@ -320,7 +321,7 @@ workflows:
         config:
           run: |
             cd "$WORKSPACE_DIR"
-            export WFE_BUILDKIT_ADDR="unix://$HOME/.lima/wfe-test/sock/buildkitd.sock"
+            export WFE_BUILDKIT_ADDR="http://127.0.0.1:2501"
             cargo nextest run -p wfe-buildkit -P ci
             echo "##wfe[output buildkit_ok=true]"
 
@@ -334,8 +335,11 @@ workflows:
         config:
           run: |
             cd "$WORKSPACE_DIR"
-            export WFE_CONTAINERD_ADDR="unix://$HOME/.lima/wfe-test/sock/containerd.sock"
+            export WFE_CONTAINERD_ADDR="http://127.0.0.1:2500"
+            export WFE_IO_DIR="/tmp/wfe-io"
+            mkdir -p "$WFE_IO_DIR"
             cargo nextest run -p wfe-containerd -P ci
+            cargo nextest run -p wfe-yaml --features rustlang,containerd --test rustlang_containerd -P ci -- --ignored
             echo "##wfe[output containerd_ok=true]"
 
     ensure:
@@ -475,7 +479,7 @@ workflows:
             cd "$WORKSPACE_DIR"
             for crate in wfe-core wfe-sqlite wfe-postgres wfe-opensearch wfe-valkey \
                          wfe-buildkit-protos wfe-containerd-protos wfe-buildkit wfe-containerd \
-                         wfe wfe-yaml; do
+                         wfe-rustlang wfe wfe-yaml; do
               echo "Packaging $crate..."
               cargo package -p "$crate" --no-verify --allow-dirty 2>&1 || exit 1
             done
@@ -619,7 +623,7 @@ workflows:
             exit 0
             cd "$WORKSPACE_DIR"
             REGISTRY="${REGISTRY:-sunbeam}"
-            for crate in wfe-buildkit wfe-containerd; do
+            for crate in wfe-buildkit wfe-containerd wfe-rustlang; do
               echo "Publishing $crate..."
               cargo publish -p "$crate" --registry "$REGISTRY" 2>&1 || echo "Already published: $crate"
             done
