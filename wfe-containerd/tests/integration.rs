@@ -15,19 +15,27 @@ use wfe_containerd::ContainerdStep;
 use wfe_core::models::{ExecutionPointer, WorkflowInstance, WorkflowStep};
 use wfe_core::traits::step::{StepBody, StepExecutionContext};
 
-/// Returns the containerd socket address if available, or None.
+/// Returns the containerd address if available, or None.
+/// Set `WFE_CONTAINERD_ADDR` to a TCP address (http://host:port) or
+/// Unix socket path (unix:///path). Defaults to the Lima wfe-test
+/// TCP proxy at http://127.0.0.1:2500.
 fn containerd_addr() -> Option<String> {
-    let addr = std::env::var("WFE_CONTAINERD_ADDR").unwrap_or_else(|_| {
-        format!(
-            "unix://{}/.lima/wfe-test/containerd.sock",
-            std::env::var("HOME").unwrap_or_else(|_| "/root".to_string())
-        )
-    });
+    if let Ok(addr) = std::env::var("WFE_CONTAINERD_ADDR") {
+        if addr.starts_with("http://") || addr.starts_with("tcp://") {
+            return Some(addr);
+        }
+        let socket_path = addr.strip_prefix("unix://").unwrap_or(addr.as_str());
+        if Path::new(socket_path).exists() {
+            return Some(addr);
+        }
+        return None;
+    }
 
-    let socket_path = addr.strip_prefix("unix://").unwrap_or(addr.as_str());
-
-    if Path::new(socket_path).exists() {
-        Some(addr)
+    // Default: check if the Lima wfe-test socket exists (for lightweight tests).
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
+    let socket = format!("{home}/.lima/wfe-test/containerd.sock");
+    if Path::new(&socket).exists() {
+        Some(format!("unix://{socket}"))
     } else {
         None
     }
