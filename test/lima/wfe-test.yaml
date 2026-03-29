@@ -1,18 +1,22 @@
-# WFE Test VM — BuildKit + containerd with host-accessible sockets
+# WFE Test VM — Alpine + containerd + BuildKit
 #
-# Provides both buildkitd and containerd daemons with Unix sockets
-# forwarded to the host for integration testing.
+# Lightweight VM for running wfe-buildkit and wfe-containerd integration tests.
+# Provides system-level containerd and BuildKit daemons with Unix sockets
+# forwarded to the host.
 #
 # Usage:
-#   limactl start ./test/lima/wfe-test.yaml
+#   limactl create --name wfe-test ./test/lima/wfe-test.yaml
+#   limactl start wfe-test
 #
 # Sockets (on host after start):
-#   BuildKit:   unix://$HOME/.lima/wfe-test/sock/buildkitd.sock
-#   containerd: unix://$HOME/.lima/wfe-test/sock/containerd.sock
+#   BuildKit:   unix://$HOME/.lima/wfe-test/buildkitd.sock
+#   containerd: unix://$HOME/.lima/wfe-test/containerd.sock
 #
-# Verify:
-#   BUILDKIT_HOST="unix://$HOME/.lima/wfe-test/sock/buildkitd.sock" buildctl debug workers
-#   # containerd accessible via gRPC at unix://$HOME/.lima/wfe-test/sock/containerd.sock
+# Run tests:
+#   WFE_BUILDKIT_ADDR="unix://$HOME/.lima/wfe-test/buildkitd.sock" \
+#   WFE_CONTAINERD_ADDR="unix://$HOME/.lima/wfe-test/containerd.sock" \
+#   cargo test -p wfe-buildkit -p wfe-containerd --test integration
+#   cargo test -p wfe-yaml --features rustlang,containerd --test rustlang_containerd -- --ignored
 #
 # Teardown:
 #   limactl stop wfe-test
@@ -21,30 +25,117 @@
 message: |
   WFE integration test VM is ready.
 
-  BuildKit socket:   unix://{{.Dir}}/sock/buildkitd.sock
-  containerd socket: unix://{{.Dir}}/sock/containerd.sock
-
-  Verify BuildKit:
-    BUILDKIT_HOST="unix://{{.Dir}}/sock/buildkitd.sock" buildctl debug workers
+  containerd: http://127.0.0.1:2500  (TCP proxy, use for gRPC)
+  BuildKit:   http://127.0.0.1:2501  (TCP proxy, use for gRPC)
 
   Run tests:
-    WFE_BUILDKIT_ADDR="unix://{{.Dir}}/sock/buildkitd.sock" \
-    WFE_CONTAINERD_ADDR="unix://{{.Dir}}/sock/containerd.sock" \
-    cargo nextest run -p wfe-buildkit -p wfe-containerd
+    WFE_CONTAINERD_ADDR="http://127.0.0.1:2500" \
+    WFE_BUILDKIT_ADDR="http://127.0.0.1:2501" \
+    cargo test -p wfe-yaml --features rustlang,containerd --test rustlang_containerd -- --ignored
 
-minimumLimaVersion: 2.0.0
+minimumLimaVersion: "2.0.0"
 
-base: template:_images/ubuntu-lts
+vmType: vz
+mountType: virtiofs
+cpus: 2
+memory: 4GiB
+disk: 20GiB
+
+images:
+  - location: "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/cloud/nocloud_alpine-3.21.6-aarch64-uefi-cloudinit-r0.qcow2"
+    arch: "aarch64"
+  - location: "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/cloud/nocloud_alpine-3.21.6-x86_64-uefi-cloudinit-r0.qcow2"
+    arch: "x86_64"
+
+mounts:
+  # Share /tmp so the containerd shim can access FIFOs created by the host-side executor
+  - location: /tmp/wfe-io
+    mountPoint: /tmp/wfe-io
+    writable: true
 
 containerd:
   system: false
-  user: true
+  user: false
+
+provision:
+  # 1. Base packages + containerd + buildkit from Alpine repos (musl-compatible)
+  - mode: system
+    script: |
+      #!/bin/sh
+      set -eux
+      apk update
+      apk add --no-cache \
+        curl bash coreutils findutils grep tar gzip pigz \
+        containerd containerd-openrc \
+        runc \
+        buildkit buildkit-openrc \
+        nerdctl
+
+  # 2. Start containerd
+  - mode: system
+    script: |
+      #!/bin/sh
+      set -eux
+      rc-update add containerd default 2>/dev/null || true
+      rc-service containerd start 2>/dev/null || true
+      # Wait for socket
+      for i in $(seq 1 15); do
+        [ -S /run/containerd/containerd.sock ] && break
+        sleep 1
+      done
+      chmod 666 /run/containerd/containerd.sock 2>/dev/null || true
+
+  # 3. Start BuildKit (Alpine package names the service "buildkitd")
+  - mode: system
+    script: |
+      #!/bin/sh
+      set -eux
+      rc-update add buildkitd default 2>/dev/null || true
+      rc-service buildkitd start 2>/dev/null || true
+
+  # 4. Fix socket permissions + TCP proxy for gRPC access (persists across reboots)
+  - mode: system
+    script: |
+      #!/bin/sh
+      set -eux
+      apk add --no-cache socat
+      mkdir -p /etc/local.d
+      cat > /etc/local.d/fix-sockets.start << 'EOF'
+      #!/bin/sh
+      # Wait for daemons
+      for i in $(seq 1 30); do
+        [ -S /run/buildkit/buildkitd.sock ] && break
+        sleep 1
+      done
+      # Fix permissions for Lima socket forwarding
+      chmod 755 /run/buildkit /run/containerd 2>/dev/null
+      chmod 666 /run/buildkit/buildkitd.sock /run/containerd/containerd.sock 2>/dev/null
+      # TCP proxy for gRPC (Lima socket forwarding breaks HTTP/2)
+      socat TCP4-LISTEN:2500,fork,reuseaddr UNIX-CONNECT:/run/containerd/containerd.sock &
+      socat TCP4-LISTEN:2501,fork,reuseaddr UNIX-CONNECT:/run/buildkit/buildkitd.sock &
+      EOF
+      chmod +x /etc/local.d/fix-sockets.start
+      rc-update add local default 2>/dev/null || true
+      /etc/local.d/fix-sockets.start
+
+probes:
+  - script: |
+      #!/bin/sh
+      set -eux
+      sudo test -S /run/containerd/containerd.sock
+      sudo chmod 755 /run/containerd 2>/dev/null
+      sudo chmod 666 /run/containerd/containerd.sock 2>/dev/null
+    hint: "Waiting for containerd socket"
+  - script: |
+      #!/bin/sh
+      set -eux
+      sudo test -S /run/buildkit/buildkitd.sock
+      sudo chmod 755 /run/buildkit 2>/dev/null
+      sudo chmod 666 /run/buildkit/buildkitd.sock 2>/dev/null
+    hint: "Waiting for BuildKit socket"
 
 portForwards:
-  # BuildKit daemon socket
-  - guestSocket: "/run/user/{{.UID}}/buildkit-default/buildkitd.sock"
-    hostSocket: "{{.Dir}}/sock/buildkitd.sock"
-
-  # containerd daemon socket (rootless)
-  - guestSocket: "/run/user/{{.UID}}/containerd/containerd.sock"
-    hostSocket: "{{.Dir}}/sock/containerd.sock"
+  - guestSocket: "/run/buildkit/buildkitd.sock"
+    hostSocket: "{{.Dir}}/buildkitd.sock"
+  - guestSocket: "/run/containerd/containerd.sock"
+    hostSocket: "{{.Dir}}/containerd.sock"
