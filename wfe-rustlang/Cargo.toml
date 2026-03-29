@@ -1,0 +1,22 @@
+[package]
+name = "wfe-rustlang"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Rust toolchain step executors (cargo, rustup) for WFE"
+
+[dependencies]
+wfe-core = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+tracing = { workspace = true }
+rustdoc-types = "0.38"
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
+tokio = { workspace = true, features = ["test-util", "process"] }
+tempfile = { workspace = true }
