@@ -11,6 +11,9 @@ use wfe_containerd_protos::containerd::services::containers::v1::{
     containers_client::ContainersClient, Container, CreateContainerRequest,
     DeleteContainerRequest, container::Runtime,
 };
+use wfe_containerd_protos::containerd::services::content::v1::{
+    content_client::ContentClient, ReadContentRequest,
+};
 use wfe_containerd_protos::containerd::services::images::v1::{
     images_client::ImagesClient, GetImageRequest,
 };
@@ -134,6 +137,153 @@ impl ContainerdStep {
         }
     }
 
+    /// Resolve the snapshot chain ID for an image.
+    ///
+    /// This reads the image manifest and config from the content store to
+    /// compute the chain ID of the topmost layer. The chain ID is used as
+    /// the parent snapshot when preparing a writable rootfs for a container.
+    ///
+    /// Chain ID computation follows the OCI image spec:
+    ///   chain_id[0] = diff_id[0]
+    ///   chain_id[n] = sha256(chain_id[n-1] + " " + diff_id[n])
+    async fn resolve_image_chain_id(
+        channel: &Channel,
+        image: &str,
+        namespace: &str,
+    ) -> Result<String, WfeError> {
+        use sha2::{Sha256, Digest};
+
+        // 1. Get the image record to find the manifest digest.
+        let mut images_client = ImagesClient::new(channel.clone());
+        let req = Self::with_namespace(
+            GetImageRequest { name: image.to_string() },
+            namespace,
+        );
+        let image_resp = images_client.get(req).await.map_err(|e| {
+            WfeError::StepExecution(format!("failed to get image '{image}': {e}"))
+        })?;
+        let img = image_resp.into_inner().image.ok_or_else(|| {
+            WfeError::StepExecution(format!("image '{image}' has no record"))
+        })?;
+        let target = img.target.ok_or_else(|| {
+            WfeError::StepExecution(format!("image '{image}' has no target descriptor"))
+        })?;
+
+        // The target might be an index (multi-platform) or a manifest.
+        // Read the content and determine based on mediaType.
+        let manifest_digest = target.digest.clone();
+        let manifest_bytes = Self::read_content(channel, &manifest_digest, namespace).await?;
+        let manifest_json: serde_json::Value = serde_json::from_slice(&manifest_bytes)
+            .map_err(|e| WfeError::StepExecution(format!("failed to parse manifest: {e}")))?;
+
+        // 2. If it's an index, pick the matching platform manifest.
+        let manifest_json = if manifest_json.get("manifests").is_some() {
+            // OCI image index — find the platform-matching manifest.
+            let arch = std::env::consts::ARCH;
+            let oci_arch = match arch {
+                "aarch64" => "arm64",
+                "x86_64" => "amd64",
+                other => other,
+            };
+            let manifests = manifest_json["manifests"].as_array().ok_or_else(|| {
+                WfeError::StepExecution("image index has no manifests array".to_string())
+            })?;
+            let platform_manifest = manifests.iter().find(|m| {
+                m.get("platform")
+                    .and_then(|p| p.get("architecture"))
+                    .and_then(|a| a.as_str())
+                    == Some(oci_arch)
+            }).ok_or_else(|| {
+                WfeError::StepExecution(format!(
+                    "no manifest for architecture '{oci_arch}' in image index"
+                ))
+            })?;
+            let digest = platform_manifest["digest"].as_str().ok_or_else(|| {
+                WfeError::StepExecution("platform manifest has no digest".to_string())
+            })?;
+            let bytes = Self::read_content(channel, digest, namespace).await?;
+            serde_json::from_slice(&bytes)
+                .map_err(|e| WfeError::StepExecution(format!("failed to parse platform manifest: {e}")))?
+        } else {
+            manifest_json
+        };
+
+        // 3. Get the config digest from the manifest.
+        let config_digest = manifest_json["config"]["digest"]
+            .as_str()
+            .ok_or_else(|| {
+                WfeError::StepExecution("manifest has no config.digest".to_string())
+            })?;
+
+        // 4. Read the image config.
+        let config_bytes = Self::read_content(channel, config_digest, namespace).await?;
+        let config_json: serde_json::Value = serde_json::from_slice(&config_bytes)
+            .map_err(|e| WfeError::StepExecution(format!("failed to parse image config: {e}")))?;
+
+        // 5. Extract diff_ids and compute chain ID.
+        let diff_ids = config_json["rootfs"]["diff_ids"]
+            .as_array()
+            .ok_or_else(|| {
+                WfeError::StepExecution("image config has no rootfs.diff_ids".to_string())
+            })?;
+
+        if diff_ids.is_empty() {
+            return Err(WfeError::StepExecution(
+                "image has no layers (empty diff_ids)".to_string(),
+            ));
+        }
+
+        let mut chain_id = diff_ids[0]
+            .as_str()
+            .ok_or_else(|| WfeError::StepExecution("diff_id is not a string".to_string()))?
+            .to_string();
+
+        for diff_id in &diff_ids[1..] {
+            let diff = diff_id.as_str().ok_or_else(|| {
+                WfeError::StepExecution("diff_id is not a string".to_string())
+            })?;
+            let mut hasher = Sha256::new();
+            hasher.update(format!("{chain_id} {diff}"));
+            chain_id = format!("sha256:{:x}", hasher.finalize());
+        }
+
+        tracing::debug!(image = image, chain_id = %chain_id, "resolved image chain ID");
+        Ok(chain_id)
+    }
+
+    /// Read content from the containerd content store by digest.
+    async fn read_content(
+        channel: &Channel,
+        digest: &str,
+        namespace: &str,
+    ) -> Result<Vec<u8>, WfeError> {
+        use tokio_stream::StreamExt;
+
+        let mut client = ContentClient::new(channel.clone());
+        let req = Self::with_namespace(
+            ReadContentRequest {
+                digest: digest.to_string(),
+                offset: 0,
+                size: 0, // read all
+            },
+            namespace,
+        );
+
+        let mut stream = client.read(req).await.map_err(|e| {
+            WfeError::StepExecution(format!("failed to read content {digest}: {e}"))
+        })?.into_inner();
+
+        let mut data = Vec::new();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|e| {
+                WfeError::StepExecution(format!("error reading content {digest}: {e}"))
+            })?;
+            data.extend_from_slice(&chunk.data);
+        }
+
+        Ok(data)
+    }
+
     /// Build a minimal OCI runtime spec as a `prost_types::Any`.
     ///
     /// The spec is serialized as JSON and wrapped in a protobuf Any with
@@ -144,7 +294,7 @@ impl ContainerdStep {
     ) -> prost_types::Any {
         // Build the args array for the process.
         let args: Vec<String> = if let Some(ref run) = self.config.run {
-            vec!["sh".to_string(), "-c".to_string(), run.clone()]
+            vec!["/bin/sh".to_string(), "-c".to_string(), run.clone()]
         } else if let Some(ref command) = self.config.command {
             command.clone()
         } else {
@@ -206,13 +356,24 @@ impl ContainerdStep {
             "cwd": self.config.working_dir.as_deref().unwrap_or("/"),
         });
 
-        // Add capabilities (minimal set).
+        // Add capabilities. When running as root, grant the default Docker
+        // capability set so tools like apt-get work. Non-root gets nothing.
+        let caps = if uid == 0 {
+            serde_json::json!([
+                "CAP_AUDIT_WRITE", "CAP_CHOWN", "CAP_DAC_OVERRIDE",
+                "CAP_FOWNER", "CAP_FSETID", "CAP_KILL", "CAP_MKNOD",
+                "CAP_NET_BIND_SERVICE", "CAP_NET_RAW", "CAP_SETFCAP",
+                "CAP_SETGID", "CAP_SETPCAP", "CAP_SETUID", "CAP_SYS_CHROOT",
+            ])
+        } else {
+            serde_json::json!([])
+        };
         process["capabilities"] = serde_json::json!({
-            "bounding": [],
-            "effective": [],
-            "inheritable": [],
-            "permitted": [],
-            "ambient": [],
+            "bounding": caps,
+            "effective": caps,
+            "inheritable": caps,
+            "permitted": caps,
+            "ambient": caps,
         });
 
         let spec = serde_json::json!({
@@ -400,15 +561,11 @@ impl StepBody for ContainerdStep {
             WfeError::StepExecution(format!("failed to create container: {e}"))
         })?;
 
-        // 6. Prepare snapshot to get rootfs mounts.
+        // 6. Prepare snapshot with the image's layers as parent.
         let mut snapshots_client = SnapshotsClient::new(channel.clone());
 
-        // Get the image's chain ID to use as parent for the snapshot.
-        // We try to get mounts from the snapshot (already committed by image unpack).
-        // If snapshot already exists, use Mounts; otherwise Prepare from the image's
-        // snapshot key (same as container_id for our flow).
         let mounts = {
-            // First try: see if the snapshot was already prepared.
+            // First try: see if a snapshot was already prepared for this container.
             let mounts_req = Self::with_namespace(
                 MountsRequest {
                     snapshotter: DEFAULT_SNAPSHOTTER.to_string(),
@@ -420,12 +577,18 @@ impl StepBody for ContainerdStep {
             match snapshots_client.mounts(mounts_req).await {
                 Ok(resp) => resp.into_inner().mounts,
                 Err(_) => {
-                    // Try to prepare a fresh snapshot.
+                    // Resolve the image's chain ID to use as snapshot parent.
+                    let parent = if should_check {
+                        Self::resolve_image_chain_id(&channel, &self.config.image, namespace).await?
+                    } else {
+                        String::new()
+                    };
+
                     let prepare_req = Self::with_namespace(
                         PrepareSnapshotRequest {
                             snapshotter: DEFAULT_SNAPSHOTTER.to_string(),
                             key: container_id.clone(),
-                            parent: String::new(),
+                            parent,
                             labels: HashMap::new(),
                         },
                         namespace,
@@ -445,7 +608,12 @@ impl StepBody for ContainerdStep {
         };
 
         // 7. Create FIFO paths for stdout/stderr capture.
-        let tmp_dir = std::env::temp_dir().join(format!("wfe-io-{container_id}"));
+        // Use WFE_IO_DIR if set (e.g., a shared mount with a remote containerd daemon),
+        // otherwise fall back to the system temp directory.
+        let io_base = std::env::var("WFE_IO_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::env::temp_dir());
+        let tmp_dir = io_base.join(format!("wfe-io-{container_id}"));
         std::fs::create_dir_all(&tmp_dir).map_err(|e| {
             WfeError::StepExecution(format!("failed to create IO temp dir: {e}"))
         })?;
@@ -453,19 +621,26 @@ impl StepBody for ContainerdStep {
         let stdout_path = tmp_dir.join("stdout");
         let stderr_path = tmp_dir.join("stderr");
 
-        // Create named pipes (FIFOs) for the task I/O.
+        // Create empty files for the shim to write stdout/stderr to.
+        // We use regular files instead of FIFOs because FIFOs don't work
+        // across filesystem boundaries (e.g., virtiofs mounts with Lima VMs).
         for path in [&stdout_path, &stderr_path] {
-            // Remove if exists from a previous run.
             let _ = std::fs::remove_file(path);
-            nix_mkfifo(path).map_err(|e| {
-                WfeError::StepExecution(format!("failed to create FIFO {}: {e}", path.display()))
+            std::fs::File::create(path).map_err(|e| {
+                WfeError::StepExecution(format!("failed to create IO file {}: {e}", path.display()))
             })?;
+            // Ensure the remote shim can write to it.
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o666)).ok();
+            }
         }
 
         let stdout_str = stdout_path.to_string_lossy().to_string();
         let stderr_str = stderr_path.to_string_lossy().to_string();
 
-        // 8. Create and start task.
+        // 8. Create task.
         let mut tasks_client = TasksClient::new(channel.clone());
 
         let create_task_req = Self::with_namespace(
@@ -486,17 +661,6 @@ impl StepBody for ContainerdStep {
         tasks_client.create(create_task_req).await.map_err(|e| {
             WfeError::StepExecution(format!("failed to create task: {e}"))
         })?;
-
-        // Spawn readers for FIFOs before starting the task (FIFOs block on open
-        // until both ends connect).
-        let stdout_reader = {
-            let path = stdout_path.clone();
-            tokio::spawn(async move { read_fifo(&path).await })
-        };
-        let stderr_reader = {
-            let path = stderr_path.clone();
-            tokio::spawn(async move { read_fifo(&path).await })
-        };
 
         // Start the task.
         let start_req = Self::with_namespace(
@@ -555,14 +719,12 @@ impl StepBody for ContainerdStep {
             }
         };
 
-        // 10. Read captured output.
-        let stdout_content = stdout_reader
+        // 10. Read captured output from files.
+        let stdout_content = tokio::fs::read_to_string(&stdout_path)
             .await
-            .unwrap_or_else(|_| Ok(String::new()))
             .unwrap_or_default();
-        let stderr_content = stderr_reader
+        let stderr_content = tokio::fs::read_to_string(&stderr_path)
             .await
-            .unwrap_or_else(|_| Ok(String::new()))
             .unwrap_or_default();
 
         // 11. Cleanup: delete task, then container.
@@ -627,38 +789,6 @@ impl ContainerdStep {
 
         Ok(())
     }
-}
-
-/// Create a named pipe (FIFO) at the given path. This is a thin wrapper
-/// around the `mkfifo` libc call, avoiding an extra dependency.
-fn nix_mkfifo(path: &Path) -> std::io::Result<()> {
-    use std::ffi::CString;
-    use std::os::unix::ffi::OsStrExt;
-
-    let c_path = CString::new(path.as_os_str().as_bytes())
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
-
-    // SAFETY: c_path is a valid null-terminated C string and 0o622 is a
-    // standard FIFO permission mode.
-    let ret = unsafe { libc::mkfifo(c_path.as_ptr(), 0o622) };
-    if ret != 0 {
-        Err(std::io::Error::last_os_error())
-    } else {
-        Ok(())
-    }
-}
-
-/// Read the entire contents of a FIFO into a String. This opens the FIFO
-/// in read mode (which blocks until a writer opens the other end) and reads
-/// until EOF.
-async fn read_fifo(path: &Path) -> Result<String, std::io::Error> {
-    use tokio::io::AsyncReadExt;
-
-    let file = tokio::fs::File::open(path).await?;
-    let mut reader = tokio::io::BufReader::new(file);
-    let mut buf = String::new();
-    reader.read_to_string(&mut buf).await?;
-    Ok(buf)
 }
 
 #[cfg(test)]
@@ -1033,22 +1163,6 @@ mod tests {
         assert_eq!(step.config.containerd_addr, "/run/containerd/containerd.sock");
     }
 
-    // ── nix_mkfifo ─────────────────────────────────────────────────────
-
-    #[test]
-    fn mkfifo_creates_and_removes_fifo() {
-        let tmp = tempfile::tempdir().unwrap();
-        let fifo_path = tmp.path().join("test.fifo");
-        nix_mkfifo(&fifo_path).unwrap();
-        assert!(fifo_path.exists());
-        std::fs::remove_file(&fifo_path).unwrap();
-    }
-
-    #[test]
-    fn mkfifo_invalid_path_returns_error() {
-        let result = nix_mkfifo(Path::new("/nonexistent-dir/fifo"));
-        assert!(result.is_err());
-    }
 }
 
 /// Integration tests that require a live containerd daemon.
