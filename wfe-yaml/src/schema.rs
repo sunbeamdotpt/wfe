@@ -164,6 +164,39 @@ pub struct StepConfig {
     pub containerd_addr: Option<String>,
     /// CLI binary name for containerd steps: "nerdctl" (default) or "docker".
     pub cli: Option<String>,
+    // Cargo fields
+    /// Target package for cargo steps (`-p`).
+    pub package: Option<String>,
+    /// Features to enable for cargo steps.
+    #[serde(default)]
+    pub features: Vec<String>,
+    /// Enable all features for cargo steps.
+    #[serde(default)]
+    pub all_features: Option<bool>,
+    /// Disable default features for cargo steps.
+    #[serde(default)]
+    pub no_default_features: Option<bool>,
+    /// Build in release mode for cargo steps.
+    #[serde(default)]
+    pub release: Option<bool>,
+    /// Build profile for cargo steps (`--profile`).
+    pub profile: Option<String>,
+    /// Rust toolchain override for cargo steps (e.g. "nightly").
+    pub toolchain: Option<String>,
+    /// Additional arguments for cargo/rustup steps.
+    #[serde(default)]
+    pub extra_args: Vec<String>,
+    /// Output directory for generated files (e.g., MDX docs).
+    pub output_dir: Option<String>,
+    // Rustup fields
+    /// Components to add for rustup steps (e.g. ["clippy", "rustfmt"]).
+    #[serde(default)]
+    pub components: Vec<String>,
+    /// Compilation targets to add for rustup steps (e.g. ["wasm32-unknown-unknown"]).
+    #[serde(default)]
+    pub targets: Vec<String>,
+    /// Default toolchain for rust-install steps.
+    pub default_toolchain: Option<String>,
     // Workflow (sub-workflow) fields
     /// Child workflow ID (for `type: workflow` steps).
     #[serde(rename = "workflow")]

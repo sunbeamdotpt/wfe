@@ -9,6 +9,7 @@ default = []
 deno = ["deno_core", "deno_error", "url", "reqwest"]
 buildkit = ["wfe-buildkit"]
 containerd = ["wfe-containerd"]
+rustlang = ["wfe-rustlang"]
 
 [dependencies]
 wfe-core = { workspace = true }
@@ -27,6 +28,7 @@ url = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
 wfe-buildkit = { workspace = true, optional = true }
 wfe-containerd = { workspace = true, optional = true }
+wfe-rustlang = { workspace = true, optional = true }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }
@@ -36,3 +38,4 @@ wfe-core = { workspace = true, features = ["test-support"] }
 wfe = { path = "../wfe" }
 wiremock = { workspace = true }
 tempfile = { workspace = true }
+tracing-subscriber = { workspace = true }

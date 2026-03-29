@@ -13,6 +13,8 @@ use crate::executors::deno::{DenoConfig, DenoPermissions, DenoStep};
 use wfe_buildkit::{BuildkitConfig, BuildkitStep};
 #[cfg(feature = "containerd")]
 use wfe_containerd::{ContainerdConfig, ContainerdStep};
+#[cfg(feature = "rustlang")]
+use wfe_rustlang::{CargoCommand, CargoConfig, CargoStep, RustupCommand, RustupConfig, RustupStep};
 use wfe_core::primitives::sub_workflow::SubWorkflowStep;
 use wfe_core::models::condition::{ComparisonOp, FieldComparison, StepCondition};
 
@@ -454,6 +456,38 @@ fn build_step_config_and_factory(
             });
             Ok((key, value, factory))
         }
+        #[cfg(feature = "rustlang")]
+        "cargo-build" | "cargo-test" | "cargo-check" | "cargo-clippy" | "cargo-fmt"
+        | "cargo-doc" | "cargo-publish" | "cargo-audit" | "cargo-deny" | "cargo-nextest"
+        | "cargo-llvm-cov" | "cargo-doc-mdx" => {
+            let config = build_cargo_config(step, step_type)?;
+            let key = format!("wfe_yaml::cargo::{}", step.name);
+            let value = serde_json::to_value(&config).map_err(|e| {
+                YamlWorkflowError::Compilation(format!(
+                    "Failed to serialize cargo config: {e}"
+                ))
+            })?;
+            let config_clone = config.clone();
+            let factory: StepFactory = Box::new(move || {
+                Box::new(CargoStep::new(config_clone.clone())) as Box<dyn StepBody>
+            });
+            Ok((key, value, factory))
+        }
+        #[cfg(feature = "rustlang")]
+        "rust-install" | "rustup-toolchain" | "rustup-component" | "rustup-target" => {
+            let config = build_rustup_config(step, step_type)?;
+            let key = format!("wfe_yaml::rustup::{}", step.name);
+            let value = serde_json::to_value(&config).map_err(|e| {
+                YamlWorkflowError::Compilation(format!(
+                    "Failed to serialize rustup config: {e}"
+                ))
+            })?;
+            let config_clone = config.clone();
+            let factory: StepFactory = Box::new(move || {
+                Box::new(RustupStep::new(config_clone.clone())) as Box<dyn StepBody>
+            });
+            Ok((key, value, factory))
+        }
         "workflow" => {
             let config = step.config.as_ref().ok_or_else(|| {
                 YamlWorkflowError::Compilation(format!(
@@ -572,6 +606,88 @@ fn build_shell_config(step: &YamlStep) -> Result<ShellConfig, YamlWorkflowError>
         shell,
         env: config.env.clone(),
         working_dir: config.working_dir.clone(),
+        timeout_ms,
+    })
+}
+
+#[cfg(feature = "rustlang")]
+fn build_cargo_config(
+    step: &YamlStep,
+    step_type: &str,
+) -> Result<CargoConfig, YamlWorkflowError> {
+    let command = match step_type {
+        "cargo-build" => CargoCommand::Build,
+        "cargo-test" => CargoCommand::Test,
+        "cargo-check" => CargoCommand::Check,
+        "cargo-clippy" => CargoCommand::Clippy,
+        "cargo-fmt" => CargoCommand::Fmt,
+        "cargo-doc" => CargoCommand::Doc,
+        "cargo-publish" => CargoCommand::Publish,
+        "cargo-audit" => CargoCommand::Audit,
+        "cargo-deny" => CargoCommand::Deny,
+        "cargo-nextest" => CargoCommand::Nextest,
+        "cargo-llvm-cov" => CargoCommand::LlvmCov,
+        "cargo-doc-mdx" => CargoCommand::DocMdx,
+        _ => {
+            return Err(YamlWorkflowError::Compilation(format!(
+                "Unknown cargo step type: '{step_type}'"
+            )));
+        }
+    };
+
+    let config = step.config.as_ref();
+    let timeout_ms = config
+        .and_then(|c| c.timeout.as_ref())
+        .and_then(|t| parse_duration_ms(t));
+
+    Ok(CargoConfig {
+        command,
+        toolchain: config.and_then(|c| c.toolchain.clone()),
+        package: config.and_then(|c| c.package.clone()),
+        features: config.map(|c| c.features.clone()).unwrap_or_default(),
+        all_features: config.and_then(|c| c.all_features).unwrap_or(false),
+        no_default_features: config.and_then(|c| c.no_default_features).unwrap_or(false),
+        release: config.and_then(|c| c.release).unwrap_or(false),
+        target: config.and_then(|c| c.target.clone()),
+        profile: config.and_then(|c| c.profile.clone()),
+        extra_args: config.map(|c| c.extra_args.clone()).unwrap_or_default(),
+        env: config.map(|c| c.env.clone()).unwrap_or_default(),
+        working_dir: config.and_then(|c| c.working_dir.clone()),
+        timeout_ms,
+        output_dir: config.and_then(|c| c.output_dir.clone()),
+    })
+}
+
+#[cfg(feature = "rustlang")]
+fn build_rustup_config(
+    step: &YamlStep,
+    step_type: &str,
+) -> Result<RustupConfig, YamlWorkflowError> {
+    let command = match step_type {
+        "rust-install" => RustupCommand::Install,
+        "rustup-toolchain" => RustupCommand::ToolchainInstall,
+        "rustup-component" => RustupCommand::ComponentAdd,
+        "rustup-target" => RustupCommand::TargetAdd,
+        _ => {
+            return Err(YamlWorkflowError::Compilation(format!(
+                "Unknown rustup step type: '{step_type}'"
+            )));
+        }
+    };
+
+    let config = step.config.as_ref();
+    let timeout_ms = config
+        .and_then(|c| c.timeout.as_ref())
+        .and_then(|t| parse_duration_ms(t));
+
+    Ok(RustupConfig {
+        command,
+        toolchain: config.and_then(|c| c.toolchain.clone()),
+        components: config.map(|c| c.components.clone()).unwrap_or_default(),
+        targets: config.map(|c| c.targets.clone()).unwrap_or_default(),
+        profile: config.and_then(|c| c.profile.clone()),
+        default_toolchain: config.and_then(|c| c.default_toolchain.clone()),
+        extra_args: config.map(|c| c.extra_args.clone()).unwrap_or_default(),
         timeout_ms,
     })
 }
