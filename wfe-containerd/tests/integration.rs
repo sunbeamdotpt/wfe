@@ -2,7 +2,7 @@
 //!
 //! These tests require a live containerd daemon. They are skipped when the
 //! socket is not available. Set `WFE_CONTAINERD_ADDR` to point to a custom
-//! socket, or use the default `~/.lima/wfe-test/sock/containerd.sock`.
+//! socket, or use the default `~/.lima/wfe-test/containerd.sock`.
 //!
 //! Before running, ensure the test image is pre-pulled:
 //!   ctr -n default image pull docker.io/library/alpine:3.18
@@ -19,7 +19,7 @@ use wfe_core::traits::step::{StepBody, StepExecutionContext};
 fn containerd_addr() -> Option<String> {
     let addr = std::env::var("WFE_CONTAINERD_ADDR").unwrap_or_else(|_| {
         format!(
-            "unix://{}/.lima/wfe-test/sock/containerd.sock",
+            "unix://{}/.lima/wfe-test/containerd.sock",
             std::env::var("HOME").unwrap_or_else(|_| "/root".to_string())
         )
     });
@@ -149,6 +149,142 @@ async fn skip_image_check_when_pull_never() {
         !msg.contains("Pre-pull it with"),
         "image check should have been skipped for pull=never, got: {msg}"
     );
+}
+
+// ── Run a real container end-to-end ──────────────────────────────────
+
+#[tokio::test]
+async fn run_echo_hello_in_container() {
+    let Some(addr) = containerd_addr() else {
+        eprintln!("SKIP: containerd socket not available");
+        return;
+    };
+
+    let mut config = minimal_config(&addr);
+    config.image = "docker.io/library/alpine:3.18".to_string();
+    config.run = Some("echo hello-from-container".to_string());
+    config.pull = "if-not-present".to_string();
+    config.user = "0:0".to_string();
+    config.timeout_ms = Some(30_000);
+    let mut step = ContainerdStep::new(config);
+
+    let mut wf_step = WorkflowStep::new(0, "containerd");
+    wf_step.name = Some("echo-test".to_string());
+    let workflow = WorkflowInstance::new("test-wf", 1, serde_json::json!({}));
+    let pointer = ExecutionPointer::new(0);
+    let ctx = make_context(&wf_step, &workflow, &pointer);
+
+    let result = step.run(&ctx).await;
+    match &result {
+        Ok(r) => {
+            eprintln!("SUCCESS: {:?}", r.output_data);
+            let data = r.output_data.as_ref().unwrap().as_object().unwrap();
+            let stdout = data.get("echo-test.stdout").unwrap().as_str().unwrap();
+            assert!(stdout.contains("hello-from-container"), "stdout: {stdout}");
+        }
+        Err(e) => panic!("container step failed: {e}"),
+    }
+}
+
+// ── Run a container with a volume mount ──────────────────────────────
+
+#[tokio::test]
+async fn run_container_with_volume_mount() {
+    let Some(addr) = containerd_addr() else {
+        eprintln!("SKIP: containerd socket not available");
+        return;
+    };
+
+    let shared_dir = std::env::var("WFE_IO_DIR")
+        .unwrap_or_else(|_| "/tmp/wfe-io".to_string());
+    let vol_dir = format!("{shared_dir}/test-vol");
+    std::fs::create_dir_all(&vol_dir).unwrap();
+
+    let mut config = minimal_config(&addr);
+    config.image = "docker.io/library/alpine:3.18".to_string();
+    config.run = Some("echo hello > /mnt/test/output.txt && cat /mnt/test/output.txt".to_string());
+    config.pull = "if-not-present".to_string();
+    config.user = "0:0".to_string();
+    config.timeout_ms = Some(30_000);
+    config.volumes = vec![wfe_containerd::VolumeMountConfig {
+        source: vol_dir.clone(),
+        target: "/mnt/test".to_string(),
+        readonly: false,
+    }];
+    let mut step = ContainerdStep::new(config);
+
+    let mut wf_step = WorkflowStep::new(0, "containerd");
+    wf_step.name = Some("vol-test".to_string());
+    let workflow = WorkflowInstance::new("test-wf", 1, serde_json::json!({}));
+    let pointer = ExecutionPointer::new(0);
+    let ctx = make_context(&wf_step, &workflow, &pointer);
+
+    match step.run(&ctx).await {
+        Ok(r) => {
+            let data = r.output_data.as_ref().unwrap().as_object().unwrap();
+            let stdout = data.get("vol-test.stdout").unwrap().as_str().unwrap();
+            assert!(stdout.contains("hello"), "stdout: {stdout}");
+        }
+        Err(e) => panic!("container step with volume failed: {e}"),
+    }
+
+    std::fs::remove_dir_all(&vol_dir).ok();
+}
+
+// ── Run a container with volume mount and network (simulates install step) ──
+
+#[tokio::test]
+async fn run_debian_with_volume_and_network() {
+    let Some(addr) = containerd_addr() else {
+        eprintln!("SKIP: containerd socket not available");
+        return;
+    };
+
+    let shared_dir = std::env::var("WFE_IO_DIR")
+        .unwrap_or_else(|_| "/tmp/wfe-io".to_string());
+    let cargo_dir = format!("{shared_dir}/test-cargo");
+    let rustup_dir = format!("{shared_dir}/test-rustup");
+    std::fs::create_dir_all(&cargo_dir).unwrap();
+    std::fs::create_dir_all(&rustup_dir).unwrap();
+
+    let mut config = minimal_config(&addr);
+    config.image = "docker.io/library/debian:bookworm-slim".to_string();
+    config.run = Some("echo hello && ls /cargo && ls /rustup".to_string());
+    config.pull = "if-not-present".to_string();
+    config.user = "0:0".to_string();
+    config.network = "host".to_string();
+    config.timeout_ms = Some(30_000);
+    config.env.insert("CARGO_HOME".to_string(), "/cargo".to_string());
+    config.env.insert("RUSTUP_HOME".to_string(), "/rustup".to_string());
+    config.volumes = vec![
+        wfe_containerd::VolumeMountConfig {
+            source: cargo_dir.clone(),
+            target: "/cargo".to_string(),
+            readonly: false,
+        },
+        wfe_containerd::VolumeMountConfig {
+            source: rustup_dir.clone(),
+            target: "/rustup".to_string(),
+            readonly: false,
+        },
+    ];
+    let mut step = ContainerdStep::new(config);
+
+    let mut wf_step = WorkflowStep::new(0, "containerd");
+    wf_step.name = Some("debian-test".to_string());
+    let workflow = WorkflowInstance::new("test-wf", 1, serde_json::json!({}));
+    let pointer = ExecutionPointer::new(0);
+    let ctx = make_context(&wf_step, &workflow, &pointer);
+
+    match step.run(&ctx).await {
+        Ok(r) => {
+            eprintln!("SUCCESS: {:?}", r.output_data);
+        }
+        Err(e) => panic!("debian container with volumes failed: {e}"),
+    }
+
+    std::fs::remove_dir_all(&cargo_dir).ok();
+    std::fs::remove_dir_all(&rustup_dir).ok();
 }
 
 // ── Step name defaults to "unknown" when None ────────────────────────
