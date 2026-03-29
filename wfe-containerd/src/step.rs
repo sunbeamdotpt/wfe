@@ -994,7 +994,7 @@ mod tests {
         // Deserialize and verify.
         let parsed: serde_json::Value = serde_json::from_slice(&spec.value).unwrap();
         assert_eq!(parsed["ociVersion"], "1.0.2");
-        assert_eq!(parsed["process"]["args"][0], "sh");
+        assert_eq!(parsed["process"]["args"][0], "/bin/sh");
         assert_eq!(parsed["process"]["args"][1], "-c");
         assert_eq!(parsed["process"]["args"][2], "echo hello");
         assert_eq!(parsed["process"]["user"]["uid"], 65534);
