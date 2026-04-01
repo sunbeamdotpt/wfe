@@ -2,6 +2,45 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.0] - 2026-04-01
+
+### Added
+
+- **wfe-server**: Headless workflow server (single binary)
+  - gRPC API with 13 RPCs: workflow CRUD, lifecycle streaming, log streaming, log search
+  - HTTP webhooks: GitHub and Gitea with HMAC-SHA256 verification, configurable triggers
+  - OIDC/JWT authentication with JWKS discovery and asymmetric algorithm allowlist
+  - Static bearer token auth with constant-time comparison
+  - Lifecycle event broadcasting via `WatchLifecycle` server-streaming RPC
+  - Real-time log streaming via `StreamLogs` with follow mode and history replay
+  - Full-text log search via OpenSearch with `SearchLogs` RPC
+  - Layered config: CLI flags > env vars > TOML file
+- **wfe-server-protos**: gRPC service definitions (tonic 0.14, server + client stubs)
+- **wfe-core**: `LogSink` trait for real-time step output streaming
+- **wfe-core**: Lifecycle publisher wired into executor (StepStarted, StepCompleted, Error, Completed, Terminated)
+- **wfe**: `use_log_sink()` on `WorkflowHostBuilder`
+- **wfe-yaml**: Shell step streaming mode with `tokio::select!` interleaved stdout/stderr
+
+### Security
+
+- JWT algorithm confusion prevention: derive algorithm from JWK, reject symmetric algorithms
+- Constant-time static token comparison via `subtle` crate
+- OIDC issuer HTTPS validation to prevent SSRF
+- Fail-closed on OIDC discovery failure (server won't start with broken auth)
+- Authenticated generic webhook endpoint
+- 2MB webhook payload size limit
+- Config parse errors fail loudly (no silent fallback to open defaults)
+- Blocked sensitive env var injection (PATH, LD_PRELOAD, etc.) from workflow data
+- Security regression tests for all critical and high findings
+
+### Fixed
+
+- Shell step streaming path now respects `timeout_ms` with `child.kill()` on timeout
+- LogSink properly threaded from WorkflowHostBuilder through executor to StepExecutionContext
+- LogStore.with_search() wired in server main.rs for OpenSearch indexing
+- OpenSearch `index_chunk` returns Err on HTTP failure instead of swallowing it
+- Webhook publish failures return 500 instead of 200
+
 ## [1.5.0] - 2026-03-29
 
 ### Added
