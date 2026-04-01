@@ -42,6 +42,7 @@ fn make_context<'a>(
         workflow,
         cancellation_token: tokio_util::sync::CancellationToken::new(),
         host_context: None,
+                log_sink: None,
     }
 }
 

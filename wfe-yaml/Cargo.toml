@@ -21,6 +21,7 @@ async-trait = { workspace = true }
 tokio = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+chrono = { workspace = true }
 regex = { workspace = true }
 deno_core = { workspace = true, optional = true }
 deno_error = { workspace = true, optional = true }
