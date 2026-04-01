@@ -23,6 +23,7 @@ pub struct WorkflowExecutor {
     pub queue_provider: Arc<dyn QueueProvider>,
     pub lifecycle: Option<Arc<dyn LifecyclePublisher>>,
     pub search: Option<Arc<dyn SearchIndex>>,
+    pub log_sink: Option<Arc<dyn crate::traits::LogSink>>,
 }
 
 impl WorkflowExecutor {
@@ -37,7 +38,13 @@ impl WorkflowExecutor {
             queue_provider,
             lifecycle: None,
             search: None,
+            log_sink: None,
         }
+    }
+
+    pub fn with_log_sink(mut self, sink: Arc<dyn crate::traits::LogSink>) -> Self {
+        self.log_sink = Some(sink);
+        self
     }
 
     pub fn with_lifecycle(mut self, lifecycle: Arc<dyn LifecyclePublisher>) -> Self {
@@ -48,6 +55,15 @@ impl WorkflowExecutor {
     pub fn with_search(mut self, search: Arc<dyn SearchIndex>) -> Self {
         self.search = Some(search);
         self
+    }
+
+    /// Publish a lifecycle event if a publisher is configured.
+    async fn publish_lifecycle(&self, event: crate::models::LifecycleEvent) {
+        if let Some(ref publisher) = self.lifecycle {
+            if let Err(e) = publisher.publish(event).await {
+                warn!(error = %e, "failed to publish lifecycle event");
+            }
+        }
     }
 
     /// Execute a single workflow instance.
@@ -202,6 +218,16 @@ impl WorkflowExecutor {
             }
             workflow.execution_pointers[idx].status = PointerStatus::Running;
 
+            self.publish_lifecycle(crate::models::LifecycleEvent::new(
+                &workflow.id,
+                &workflow.workflow_definition_id,
+                workflow.version,
+                crate::models::LifecycleEventType::StepStarted {
+                    step_id,
+                    step_name: step.name.clone(),
+                },
+            )).await;
+
             // c. Build StepExecutionContext (borrows workflow immutably).
             let cancellation_token = tokio_util::sync::CancellationToken::new();
             let context = StepExecutionContext {
@@ -212,6 +238,7 @@ impl WorkflowExecutor {
                 workflow: &workflow,
                 cancellation_token,
                 host_context,
+                log_sink: self.log_sink.as_deref(),
             };
 
             // d. Call step.run(context).
@@ -238,6 +265,17 @@ impl WorkflowExecutor {
                         has_branches = result.branch_values.is_some(),
                         "Step completed"
                     );
+
+                    self.publish_lifecycle(crate::models::LifecycleEvent::new(
+                        &workflow.id,
+                        &workflow.workflow_definition_id,
+                        workflow.version,
+                        crate::models::LifecycleEventType::StepCompleted {
+                            step_id,
+                            step_name: step.name.clone(),
+                        },
+                    )).await;
+
                     // e. Process the ExecutionResult.
                     // Extract workflow_id before mutable borrow.
                     let wf_id = workflow.id.clone();
@@ -272,6 +310,15 @@ impl WorkflowExecutor {
                     tracing::Span::current().record("step.status", "failed");
                     warn!(workflow_id, step_id, error = %error_msg, "Step execution failed");
 
+                    self.publish_lifecycle(crate::models::LifecycleEvent::new(
+                        &workflow.id,
+                        &workflow.workflow_definition_id,
+                        workflow.version,
+                        crate::models::LifecycleEventType::Error {
+                            message: error_msg.clone(),
+                        },
+                    )).await;
+
                     let pointer_id = workflow.execution_pointers[idx].id.clone();
                     execution_errors.push(ExecutionError::new(
                         workflow_id,
@@ -293,6 +340,12 @@ impl WorkflowExecutor {
                         workflow.status = new_status;
                         if new_status == WorkflowStatus::Terminated {
                             workflow.complete_time = Some(Utc::now());
+                            self.publish_lifecycle(crate::models::LifecycleEvent::new(
+                                &workflow.id,
+                                &workflow.workflow_definition_id,
+                                workflow.version,
+                                crate::models::LifecycleEventType::Terminated,
+                            )).await;
                         }
                     }
 
@@ -320,6 +373,13 @@ impl WorkflowExecutor {
             info!(workflow_id, "All pointers complete, workflow finished");
             workflow.status = WorkflowStatus::Complete;
             workflow.complete_time = Some(Utc::now());
+
+            self.publish_lifecycle(crate::models::LifecycleEvent::new(
+                &workflow.id,
+                &workflow.workflow_definition_id,
+                workflow.version,
+                crate::models::LifecycleEventType::Completed,
+            )).await;
 
             // Publish completion event for SubWorkflow parents.
             let completion_event = Event::new(
