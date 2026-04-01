@@ -1,5 +1,5 @@
 [workspace]
-members = ["wfe-core", "wfe-sqlite", "wfe-postgres", "wfe-opensearch", "wfe-valkey", "wfe", "wfe-yaml", "wfe-buildkit", "wfe-containerd", "wfe-containerd-protos", "wfe-buildkit-protos", "wfe-rustlang"]
+members = ["wfe-core", "wfe-sqlite", "wfe-postgres", "wfe-opensearch", "wfe-valkey", "wfe", "wfe-yaml", "wfe-buildkit", "wfe-containerd", "wfe-containerd-protos", "wfe-buildkit-protos", "wfe-rustlang", "wfe-server-protos", "wfe-server"]
 resolver = "2"
 
 [workspace.package]

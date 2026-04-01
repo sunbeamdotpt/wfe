@@ -94,6 +94,7 @@ async fn build_simple_dockerfile_via_grpc() {
         workflow: &instance,
         cancellation_token: cancel,
         host_context: None,
+                log_sink: None,
     };
 
     let result = step.run(&ctx).await.expect("build should succeed");
@@ -180,6 +181,7 @@ async fn build_with_build_args() {
         workflow: &instance,
         cancellation_token: cancel,
         host_context: None,
+                log_sink: None,
     };
 
     let result = step.run(&ctx).await.expect("build with args should succeed");
@@ -227,6 +229,7 @@ async fn connect_to_unavailable_daemon_returns_error() {
         workflow: &instance,
         cancellation_token: cancel,
         host_context: None,
+                log_sink: None,
     };
 
     let err = step.run(&ctx).await;
