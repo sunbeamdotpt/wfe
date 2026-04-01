@@ -21,6 +21,7 @@ pub struct WorkflowHostBuilder {
     queue_provider: Option<Arc<dyn QueueProvider>>,
     lifecycle: Option<Arc<dyn LifecyclePublisher>>,
     search: Option<Arc<dyn SearchIndex>>,
+    log_sink: Option<Arc<dyn wfe_core::traits::LogSink>>,
 }
 
 impl WorkflowHostBuilder {
@@ -31,6 +32,7 @@ impl WorkflowHostBuilder {
             queue_provider: None,
             lifecycle: None,
             search: None,
+            log_sink: None,
         }
     }
 
@@ -64,6 +66,12 @@ impl WorkflowHostBuilder {
         self
     }
 
+    /// Set an optional log sink for real-time step output streaming.
+    pub fn use_log_sink(mut self, sink: Arc<dyn wfe_core::traits::LogSink>) -> Self {
+        self.log_sink = Some(sink);
+        self
+    }
+
     /// Build the `WorkflowHost`.
     ///
     /// Returns an error if persistence, lock_provider, or queue_provider have not been set.
@@ -89,6 +97,9 @@ impl WorkflowHostBuilder {
         }
         if let Some(ref search) = self.search {
             executor = executor.with_search(Arc::clone(search));
+        }
+        if let Some(ref log_sink) = self.log_sink {
+            executor = executor.with_log_sink(Arc::clone(log_sink));
         }
 
         Ok(WorkflowHost {

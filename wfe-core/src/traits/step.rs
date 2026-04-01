@@ -38,6 +38,8 @@ pub struct StepExecutionContext<'a> {
     pub cancellation_token: tokio_util::sync::CancellationToken,
     /// Host context for starting child workflows. None if not available.
     pub host_context: Option<&'a dyn HostContext>,
+    /// Log sink for streaming step output. None if not configured.
+    pub log_sink: Option<&'a dyn super::LogSink>,
 }
 
 // Manual Debug impl since dyn HostContext is not Debug.
@@ -50,6 +52,7 @@ impl<'a> std::fmt::Debug for StepExecutionContext<'a> {
             .field("step", &self.step)
             .field("workflow", &self.workflow)
             .field("host_context", &self.host_context.is_some())
+            .field("log_sink", &self.log_sink.is_some())
             .finish()
     }
 }

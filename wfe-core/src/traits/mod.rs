@@ -1,5 +1,6 @@
 pub mod lifecycle;
 pub mod lock;
+pub mod log_sink;
 pub mod middleware;
 pub mod persistence;
 pub mod queue;
@@ -9,6 +10,7 @@ pub mod step;
 
 pub use lifecycle::LifecyclePublisher;
 pub use lock::DistributedLockProvider;
+pub use log_sink::{LogChunk, LogSink, LogStreamType};
 pub use middleware::{StepMiddleware, WorkflowMiddleware};
 pub use persistence::{
     EventRepository, PersistenceProvider, ScheduledCommandRepository, SubscriptionRepository,

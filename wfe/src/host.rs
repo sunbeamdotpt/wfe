@@ -8,8 +8,8 @@ use tracing::{debug, error, info, warn};
 
 use wfe_core::executor::{StepRegistry, WorkflowExecutor};
 use wfe_core::models::{
-    Event, ExecutionPointer, PointerStatus, QueueType, WorkflowDefinition, WorkflowInstance,
-    WorkflowStatus,
+    Event, ExecutionPointer, LifecycleEvent, LifecycleEventType, PointerStatus, QueueType,
+    WorkflowDefinition, WorkflowInstance, WorkflowStatus,
 };
 use wfe_core::traits::{
     DistributedLockProvider, HostContext, LifecyclePublisher, PersistenceProvider, QueueProvider,
@@ -308,6 +308,18 @@ impl WorkflowHost {
             .queue_work(&id, QueueType::Workflow)
             .await?;
 
+        // Publish lifecycle event.
+        if let Some(ref publisher) = self.lifecycle {
+            let _ = publisher
+                .publish(LifecycleEvent::new(
+                    &id,
+                    definition_id,
+                    version,
+                    LifecycleEventType::Started,
+                ))
+                .await;
+        }
+
         Ok(id)
     }
 
@@ -345,6 +357,16 @@ impl WorkflowHost {
         }
         instance.status = WorkflowStatus::Suspended;
         self.persistence.persist_workflow(&instance).await?;
+        if let Some(ref publisher) = self.lifecycle {
+            let _ = publisher
+                .publish(LifecycleEvent::new(
+                    id,
+                    &instance.workflow_definition_id,
+                    instance.version,
+                    LifecycleEventType::Suspended,
+                ))
+                .await;
+        }
         Ok(true)
     }
 
@@ -362,6 +384,16 @@ impl WorkflowHost {
             .queue_work(id, QueueType::Workflow)
             .await?;
 
+        if let Some(ref publisher) = self.lifecycle {
+            let _ = publisher
+                .publish(LifecycleEvent::new(
+                    id,
+                    &instance.workflow_definition_id,
+                    instance.version,
+                    LifecycleEventType::Resumed,
+                ))
+                .await;
+        }
         Ok(true)
     }
 
@@ -376,6 +408,16 @@ impl WorkflowHost {
         instance.status = WorkflowStatus::Terminated;
         instance.complete_time = Some(chrono::Utc::now());
         self.persistence.persist_workflow(&instance).await?;
+        if let Some(ref publisher) = self.lifecycle {
+            let _ = publisher
+                .publish(LifecycleEvent::new(
+                    id,
+                    &instance.workflow_definition_id,
+                    instance.version,
+                    LifecycleEventType::Terminated,
+                ))
+                .await;
+        }
         Ok(true)
     }
 
