@@ -1,0 +1,72 @@
+[package]
+name = "wfe-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Headless workflow server with gRPC API and HTTP webhooks"
+
+[[bin]]
+name = "wfe-server"
+path = "src/main.rs"
+
+[dependencies]
+# Internal
+wfe-core = { workspace = true, features = ["test-support"] }
+wfe = { path = "../wfe" }
+wfe-yaml = { path = "../wfe-yaml", features = ["rustlang", "buildkit", "containerd"] }
+wfe-server-protos = { path = "../wfe-server-protos" }
+wfe-sqlite = { workspace = true }
+wfe-postgres = { workspace = true }
+wfe-valkey = { workspace = true }
+wfe-opensearch = { workspace = true }
+opensearch = { workspace = true }
+
+# gRPC
+tonic = "0.14"
+tonic-health = "0.14"
+prost-types = "0.14"
+
+# HTTP (webhooks)
+axum = { version = "0.8", features = ["json", "macros"] }
+hyper = "1"
+tower = "0.5"
+
+# Runtime
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = "0.8"
+
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+
+# Auth
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+jsonwebtoken = "9"
+subtle = "2"
+reqwest = { workspace = true }
+
+# Observability
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+
+# Utils
+tokio-stream = "0.1"
+dashmap = "6"
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
+tempfile = { workspace = true }
+rsa = { version = "0.9", features = ["pem"] }
+rand = "0.8"
+base64 = "0.22"
