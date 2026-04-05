@@ -67,6 +67,9 @@ pub fn handle_error(
                 && let Some(comp_step_id) = step.compensation_step_id
             {
                 let mut comp_pointer = ExecutionPointer::new(comp_step_id);
+                comp_pointer.step_name = definition.steps.iter()
+                    .find(|s| s.id == comp_step_id)
+                    .and_then(|s| s.name.clone());
                 comp_pointer.predecessor_id = Some(pointer.id.clone());
                 comp_pointer.scope = pointer.scope.clone();
                 new_pointers.push(comp_pointer);
