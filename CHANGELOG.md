@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.3] - 2026-04-05
+
+### Fixed
+
+- **wfe-core**: Propagate `step_name` into execution pointers when advancing to next steps, compensation steps, and parallel branch children
+- **wfe**: Set `step_name` on initial execution pointer when starting a workflow instance
+
 ## [1.6.2] - 2026-04-05
 
 ### Added
