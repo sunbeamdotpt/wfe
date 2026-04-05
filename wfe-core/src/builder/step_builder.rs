@@ -43,6 +43,14 @@ impl<D: WorkflowData> StepBuilder<D> {
         self
     }
 
+    /// Attach arbitrary JSON configuration to this step.
+    ///
+    /// The step can read it at runtime via `context.step.step_config`.
+    pub fn config(mut self, config: serde_json::Value) -> Self {
+        self.builder.steps[self.step_id].step_config = Some(config);
+        self
+    }
+
     /// Add a compensation step for saga rollback.
     pub fn compensate_with<C: StepBody + Default + 'static>(mut self) -> Self {
         let comp_id = self.builder.add_step(std::any::type_name::<C>());
