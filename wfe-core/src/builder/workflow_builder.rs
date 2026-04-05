@@ -61,8 +61,23 @@ impl<D: WorkflowData> WorkflowBuilder<D> {
         id
     }
 
+    /// Add a typed step with an optional name and config.
+    /// Convenience for use inside `parallel` branch closures.
+    pub fn add_step_typed<S: StepBody + Default + 'static>(
+        &mut self,
+        name: &str,
+        config: Option<serde_json::Value>,
+    ) -> usize {
+        let id = self.add_step(std::any::type_name::<S>());
+        self.steps[id].name = Some(name.to_string());
+        if let Some(cfg) = config {
+            self.steps[id].step_config = Some(cfg);
+        }
+        id
+    }
+
     /// Wire an outcome from `from_step` to `to_step`.
-    pub(crate) fn wire_outcome(&mut self, from_step: usize, to_step: usize, value: Option<serde_json::Value>) {
+    pub fn wire_outcome(&mut self, from_step: usize, to_step: usize, value: Option<serde_json::Value>) {
         if let Some(step) = self.steps.get_mut(from_step) {
             step.outcomes.push(StepOutcome {
                 next_step: to_step,
@@ -384,6 +399,34 @@ mod tests {
         assert_eq!(def.steps[1].step_config, Some(cfg_b));
         // Both are StepA
         assert_eq!(def.steps[0].step_type, def.steps[1].step_type);
+    }
+
+    #[test]
+    fn add_step_typed_sets_name_and_config() {
+        let cfg = serde_json::json!({"namespace": "ory"});
+        let mut builder = WorkflowBuilder::<TestData>::new();
+        let id = builder.add_step_typed::<StepA>("apply-ory", Some(cfg.clone()));
+        assert_eq!(builder.steps[id].name, Some("apply-ory".into()));
+        assert_eq!(builder.steps[id].step_config, Some(cfg));
+        assert!(builder.steps[id].step_type.contains("StepA"));
+    }
+
+    #[test]
+    fn add_step_typed_without_config() {
+        let mut builder = WorkflowBuilder::<TestData>::new();
+        let id = builder.add_step_typed::<StepB>("my-step", None);
+        assert_eq!(builder.steps[id].name, Some("my-step".into()));
+        assert_eq!(builder.steps[id].step_config, None);
+    }
+
+    #[test]
+    fn wire_outcome_connects_steps() {
+        let mut builder = WorkflowBuilder::<TestData>::new();
+        let id0 = builder.add_step_typed::<StepA>("first", None);
+        let id1 = builder.add_step_typed::<StepB>("second", None);
+        builder.wire_outcome(id0, id1, None);
+        assert_eq!(builder.steps[id0].outcomes.len(), 1);
+        assert_eq!(builder.steps[id0].outcomes[0].next_step, id1);
     }
 
     #[test]
