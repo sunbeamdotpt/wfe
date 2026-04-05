@@ -293,7 +293,9 @@ impl WorkflowHost {
         // Create initial execution pointer for step 0 if the definition has steps.
         let mut instance = WorkflowInstance::new(definition_id, version, data);
         if !definition.steps.is_empty() {
-            instance.execution_pointers.push(ExecutionPointer::new(0));
+            let mut pointer = ExecutionPointer::new(0);
+            pointer.step_name = definition.steps.first().and_then(|s| s.name.clone());
+            instance.execution_pointers.push(pointer);
         }
 
         // Persist the instance.

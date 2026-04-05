@@ -181,6 +181,9 @@ impl WorkflowExecutor {
                         if let Some(next_id) = next_step_id {
                             let mut next_pointer =
                                 crate::models::ExecutionPointer::new(next_id);
+                            next_pointer.step_name = definition.steps.iter()
+                                .find(|s| s.id == next_id)
+                                .and_then(|s| s.name.clone());
                             next_pointer.predecessor_id =
                                 Some(workflow.execution_pointers[idx].id.clone());
                             next_pointer.scope =

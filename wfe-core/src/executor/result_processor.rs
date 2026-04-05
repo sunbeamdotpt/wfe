@@ -36,6 +36,9 @@ pub fn process_result(
             let next_step_id = find_next_step(step, &result.outcome_value);
             if let Some(next_id) = next_step_id {
                 let mut next_pointer = ExecutionPointer::new(next_id);
+                next_pointer.step_name = definition.steps.iter()
+                    .find(|s| s.id == next_id)
+                    .and_then(|s| s.name.clone());
                 next_pointer.predecessor_id = Some(pointer.id.clone());
                 next_pointer.scope = pointer.scope.clone();
                 new_pointers.push(next_pointer);
@@ -59,6 +62,9 @@ pub fn process_result(
         for value in branch_values {
             for &child_step_id in &child_step_ids {
                 let mut child_pointer = ExecutionPointer::new(child_step_id);
+                child_pointer.step_name = definition.steps.iter()
+                    .find(|s| s.id == child_step_id)
+                    .and_then(|s| s.name.clone());
                 child_pointer.context_item = Some(value.clone());
                 child_pointer.scope = child_scope.clone();
                 child_pointer.predecessor_id = Some(pointer.id.clone());
