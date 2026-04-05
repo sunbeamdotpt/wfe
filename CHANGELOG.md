@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.2] - 2026-04-05
+
+### Added
+
+- **wfe-core**: `WorkflowBuilder::add_step_typed()` for adding named, configured steps in parallel branch closures
+- **wfe-core**: `WorkflowBuilder::wire_outcome()` now public for custom graph wiring
+
 ## [1.6.1] - 2026-04-05
 
 ### Added
