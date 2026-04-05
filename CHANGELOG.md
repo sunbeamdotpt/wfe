@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.0] - 2026-04-05
+
+### Added
+
+- **wfe-deno**: New crate -- Deno/JS/TS bindings for the WFE workflow engine
+  - Full API surface via 23 deno_core ops: host lifecycle, workflow management, fluent builder, step registration, event publishing
+  - Channel-based execution bridge: JS step functions called from tokio executor via mpsc/oneshot channels
+  - High-level JS API classes: `WorkflowHost`, `WorkflowBuilder`, `ExecutionResult`
+  - 52 tests (26 unit + 26 integration), 93% line coverage
+- **wfe-core**: `WorkflowBuilder.steps` and `last_step` fields now public
+
 ## [1.6.3] - 2026-04-05
 
 ### Fixed

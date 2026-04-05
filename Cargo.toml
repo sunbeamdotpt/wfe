@@ -3,7 +3,7 @@ members = ["wfe-core", "wfe-sqlite", "wfe-postgres", "wfe-opensearch", "wfe-valk
 resolver = "2"
 
 [workspace.package]
-version = "1.6.3"
+version = "1.7.0"
 edition = "2024"
 license = "MIT"
 repository = "https://src.sunbeam.pt/studio/wfe"
@@ -38,15 +38,15 @@ redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
 opensearch = "2"
 
 # Internal crates
-wfe-core = { version = "1.6.3", path = "wfe-core", registry = "sunbeam" }
-wfe-sqlite = { version = "1.6.3", path = "wfe-sqlite", registry = "sunbeam" }
-wfe-postgres = { version = "1.6.3", path = "wfe-postgres", registry = "sunbeam" }
-wfe-opensearch = { version = "1.6.3", path = "wfe-opensearch", registry = "sunbeam" }
-wfe-valkey = { version = "1.6.3", path = "wfe-valkey", registry = "sunbeam" }
-wfe-yaml = { version = "1.6.3", path = "wfe-yaml", registry = "sunbeam" }
-wfe-buildkit = { version = "1.6.3", path = "wfe-buildkit", registry = "sunbeam" }
-wfe-containerd = { version = "1.6.3", path = "wfe-containerd", registry = "sunbeam" }
-wfe-rustlang = { version = "1.6.3", path = "wfe-rustlang", registry = "sunbeam" }
+wfe-core = { version = "1.7.0", path = "wfe-core", registry = "sunbeam" }
+wfe-sqlite = { version = "1.7.0", path = "wfe-sqlite", registry = "sunbeam" }
+wfe-postgres = { version = "1.7.0", path = "wfe-postgres", registry = "sunbeam" }
+wfe-opensearch = { version = "1.7.0", path = "wfe-opensearch", registry = "sunbeam" }
+wfe-valkey = { version = "1.7.0", path = "wfe-valkey", registry = "sunbeam" }
+wfe-yaml = { version = "1.7.0", path = "wfe-yaml", registry = "sunbeam" }
+wfe-buildkit = { version = "1.7.0", path = "wfe-buildkit", registry = "sunbeam" }
+wfe-containerd = { version = "1.7.0", path = "wfe-containerd", registry = "sunbeam" }
+wfe-rustlang = { version = "1.7.0", path = "wfe-rustlang", registry = "sunbeam" }
 
 # YAML
 serde_yaml = "0.9"
