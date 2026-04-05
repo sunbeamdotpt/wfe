@@ -16,7 +16,7 @@ async-trait = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
 regex = { workspace = true }
-wfe-buildkit-protos = { version = "1.6.0", path = "../wfe-buildkit-protos", registry = "sunbeam" }
+wfe-buildkit-protos = { version = "1.6.1", path = "../wfe-buildkit-protos", registry = "sunbeam" }
 tonic = "0.14"
 tower = { version = "0.4", features = ["util"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
