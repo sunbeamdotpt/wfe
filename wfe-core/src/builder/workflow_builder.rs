@@ -342,6 +342,51 @@ mod tests {
     }
 
     #[test]
+    fn config_sets_step_config() {
+        let cfg = serde_json::json!({"namespace": "ory", "timeout": 30});
+        let def = WorkflowBuilder::<TestData>::new()
+            .start_with::<StepA>()
+            .config(cfg.clone())
+            .end_workflow()
+            .build("test", 1);
+        assert_eq!(def.steps[0].step_config, Some(cfg));
+    }
+
+    #[test]
+    fn config_chains_with_name() {
+        let cfg = serde_json::json!({"namespace": "data"});
+        let def = WorkflowBuilder::<TestData>::new()
+            .start_with::<StepA>()
+            .name("apply-data")
+            .config(cfg.clone())
+            .then::<StepB>()
+            .end_workflow()
+            .build("test", 1);
+        assert_eq!(def.steps[0].name, Some("apply-data".into()));
+        assert_eq!(def.steps[0].step_config, Some(cfg));
+        assert_eq!(def.steps[0].outcomes[0].next_step, 1);
+    }
+
+    #[test]
+    fn config_on_multiple_steps_of_same_type() {
+        let cfg_a = serde_json::json!({"namespace": "ory"});
+        let cfg_b = serde_json::json!({"namespace": "data"});
+        let def = WorkflowBuilder::<TestData>::new()
+            .start_with::<StepA>()
+            .name("apply-ory")
+            .config(cfg_a.clone())
+            .then::<StepA>()
+            .name("apply-data")
+            .config(cfg_b.clone())
+            .end_workflow()
+            .build("test", 1);
+        assert_eq!(def.steps[0].step_config, Some(cfg_a));
+        assert_eq!(def.steps[1].step_config, Some(cfg_b));
+        // Both are StepA
+        assert_eq!(def.steps[0].step_type, def.steps[1].step_type);
+    }
+
+    #[test]
     fn inline_step_via_then_fn() {
         let def = WorkflowBuilder::<TestData>::new()
             .start_with::<StepA>()
