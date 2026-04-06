@@ -1,0 +1,27 @@
+[package]
+name = "wfe-kubernetes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Kubernetes executor for WFE — runs workflow steps as K8s Jobs"
+
+[dependencies]
+wfe-core = { workspace = true }
+kube = { workspace = true }
+k8s-openapi = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+futures = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
+tokio-util = "0.7"
+wfe-core = { workspace = true, features = ["test-support"] }
