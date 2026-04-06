@@ -87,9 +87,67 @@ pub struct WorkflowSpec {
     /// Typed output schema: { field_name: type_string }.
     #[serde(default)]
     pub outputs: HashMap<String, String>,
+    /// Infrastructure services required by this workflow.
+    #[serde(default)]
+    pub services: HashMap<String, YamlService>,
     /// Allow unknown top-level keys (e.g. `_templates`) for YAML anchors.
     #[serde(flatten)]
     pub _extra: HashMap<String, serde_yaml::Value>,
+}
+
+/// A service definition in YAML format.
+#[derive(Debug, Deserialize)]
+pub struct YamlService {
+    pub image: String,
+    #[serde(default)]
+    pub ports: Vec<u16>,
+    #[serde(default)]
+    pub env: HashMap<String, String>,
+    #[serde(default)]
+    pub readiness: Option<YamlReadiness>,
+    #[serde(default)]
+    pub memory: Option<String>,
+    #[serde(default)]
+    pub cpu: Option<String>,
+    #[serde(default)]
+    pub command: Option<Vec<String>>,
+    #[serde(default)]
+    pub args: Option<Vec<String>>,
+}
+
+/// Readiness probe configuration in YAML format.
+#[derive(Debug, Deserialize)]
+pub struct YamlReadiness {
+    /// Execute a command to check readiness.
+    #[serde(default)]
+    pub exec: Option<Vec<String>>,
+    /// Check if a TCP port is accepting connections.
+    #[serde(default)]
+    pub tcp: Option<u16>,
+    /// HTTP GET health check.
+    #[serde(default)]
+    pub http: Option<YamlHttpGet>,
+    /// Poll interval (e.g., "5s", "2s").
+    #[serde(default)]
+    pub interval: Option<String>,
+    /// Total timeout (e.g., "60s", "30s").
+    #[serde(default)]
+    pub timeout: Option<String>,
+    /// Max retries before giving up.
+    #[serde(default)]
+    pub retries: Option<u32>,
+}
+
+/// HTTP GET readiness check.
+#[derive(Debug, Deserialize)]
+pub struct YamlHttpGet {
+    pub port: u16,
+    #[serde(default = "default_health_path")]
+    pub path: String,
+}
+
+fn default_health_path() -> String {
+    "/".into()
 }
 
 #[derive(Debug, Deserialize)]
