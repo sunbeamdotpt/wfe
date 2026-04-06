@@ -47,6 +47,7 @@ wfe-yaml = { version = "1.7.0", path = "wfe-yaml", registry = "sunbeam" }
 wfe-buildkit = { version = "1.7.0", path = "wfe-buildkit", registry = "sunbeam" }
 wfe-containerd = { version = "1.7.0", path = "wfe-containerd", registry = "sunbeam" }
 wfe-rustlang = { version = "1.7.0", path = "wfe-rustlang", registry = "sunbeam" }
+wfe-kubernetes = { version = "1.7.0", path = "wfe-kubernetes", registry = "sunbeam" }
 
 # YAML
 serde_yaml = "0.9"
