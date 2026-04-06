@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.8.0] - 2026-04-06
+
+### Added
+
+- **wfe-kubernetes**: New crate -- Kubernetes executor for running workflow steps as K8s Jobs
+  - Namespace-per-workflow isolation with automatic cleanup
+  - Job manifest builder with env, resources, pull policy, node selector support
+  - Pod log streaming to LogSink with real-time output capture
+  - `##wfe[output key=value]` parsing from Job stdout
+  - Timeout handling with Job cleanup on expiry
+  - `KubernetesServiceProvider`: provisions infrastructure services as K8s Pods + Services with DNS resolution and readiness polling
+  - 100% test coverage on service provider, 91% overall crate coverage
+- **wfe-core**: `ServiceDefinition`, `ServicePort`, `ReadinessProbe`, `ServiceEndpoint` types for declaring infrastructure services
+- **wfe-core**: `ServiceProvider` trait for pluggable service provisioning
+- **wfe-core**: `services` field on `WorkflowDefinition` for declaring required services
+- **wfe**: Capability-based workflow routing -- hosts check `can_execute()` before accepting workflows
+  - Verifies all step types are registered in the StepRegistry
+  - Verifies ServiceProvider is configured and can provision required services
+  - Re-queues workflows that can't be handled by this host
+- **wfe**: Service lifecycle in dequeue loop -- provision before execution, teardown after completion/failure
+- **wfe**: `use_service_provider()` on `WorkflowHostBuilder`
+- **wfe-containerd**: `ContainerdServiceProvider` for running services via containerd gRPC API on host network
+- **wfe-yaml**: `services:` block in workflow YAML definitions with readiness probes (exec, tcp, http)
+- **wfe-yaml**: `kubernetes`/`k8s` step type with lazy client creation
+
 ## [1.7.0] - 2026-04-05
 
 ### Added
