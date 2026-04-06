@@ -1,6 +1,0 @@
-[submodule "wfe-containerd-protos/vendor/containerd"]
-	path = wfe-containerd-protos/vendor/containerd
-	url = https://github.com/containerd/containerd.git
-[submodule "wfe-buildkit-protos/vendor/buildkit"]
-	path = wfe-buildkit-protos/vendor/buildkit
-	url = https://github.com/moby/buildkit.git

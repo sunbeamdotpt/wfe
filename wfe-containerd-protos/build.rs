@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let api_dir = PathBuf::from("vendor/containerd/api");
+    let api_dir = PathBuf::from("proto/api");
 
     // Collect all .proto files, excluding internal runtime shim protos
     let proto_files: Vec<PathBuf> = walkdir(&api_dir)?
