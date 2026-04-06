@@ -412,6 +412,66 @@ impl ContainerdStep {
         request
     }
 
+    /// Start a long-running service container (does not wait for exit).
+    ///
+    /// Used by `ContainerdServiceProvider` to provision infrastructure services.
+    /// The container runs on the host network so its ports are accessible on 127.0.0.1.
+    pub async fn run_service(
+        _addr: &str,
+        container_id: &str,
+        image: &str,
+        env: &std::collections::HashMap<String, String>,
+    ) -> Result<(), WfeError> {
+        // TODO: Implement containerd service container lifecycle.
+        // This requires refactoring the internal OCI spec builder and snapshot
+        // preparation into reusable functions. For now, delegate to nerdctl CLI
+        // as a pragmatic fallback.
+        let mut cmd = tokio::process::Command::new("nerdctl");
+        cmd.arg("run")
+            .arg("-d")
+            .arg("--name")
+            .arg(container_id)
+            .arg("--network")
+            .arg("host");
+
+        for (k, v) in env {
+            cmd.arg("-e").arg(format!("{k}={v}"));
+        }
+
+        cmd.arg(image);
+
+        let output = cmd.output().await.map_err(|e| {
+            WfeError::StepExecution(format!("failed to start service container via nerdctl: {e}"))
+        })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(WfeError::StepExecution(format!(
+                "nerdctl run failed for service '{}': {stderr}",
+                container_id
+            )));
+        }
+
+        Ok(())
+    }
+
+    /// Stop and clean up a service container.
+    pub async fn cleanup_service(_addr: &str, container_id: &str) -> Result<(), WfeError> {
+        // Stop the container.
+        let _ = tokio::process::Command::new("nerdctl")
+            .args(["stop", container_id])
+            .output()
+            .await;
+
+        // Remove the container.
+        let _ = tokio::process::Command::new("nerdctl")
+            .args(["rm", "-f", container_id])
+            .output()
+            .await;
+
+        Ok(())
+    }
+
     /// Parse `##wfe[output key=value]` lines from stdout.
     pub fn parse_outputs(stdout: &str) -> HashMap<String, String> {
         let mut outputs = HashMap::new();
