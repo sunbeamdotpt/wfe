@@ -172,6 +172,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/webhooks/github", axum::routing::post(webhook::handle_github_webhook))
         .route("/webhooks/gitea", axum::routing::post(webhook::handle_gitea_webhook))
         .route("/healthz", axum::routing::get(webhook::health_check))
+        .route("/schema/workflow.proto", axum::routing::get(serve_proto_schema))
+        .route("/schema/workflow.json", axum::routing::get(serve_json_schema))
+        .route("/schema/workflow.yaml", axum::routing::get(serve_yaml_example))
         .layer(axum::extract::DefaultBodyLimit::max(2 * 1024 * 1024))
         .with_state(webhook_state);
 
@@ -180,8 +183,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let http_addr = config.http_addr;
     tracing::info!(%grpc_addr, %http_addr, "servers listening");
 
+    let reflection_service = tonic_reflection::server::Builder::configure()
+        .register_encoded_file_descriptor_set(wfe_server_protos::FILE_DESCRIPTOR_SET)
+        .build_v1()
+        .expect("failed to build reflection service");
+
     let grpc_server = Server::builder()
         .add_service(health_service)
+        .add_service(reflection_service)
         .add_service(WfeServer::with_interceptor(wfe_service, auth_interceptor))
         .serve(grpc_addr);
 
@@ -247,4 +256,26 @@ async fn load_yaml_definitions(host: &wfe::WorkflowHost, dir: &std::path::Path) 
             }
         }
     }
+}
+
+/// Serve the raw .proto schema file.
+async fn serve_proto_schema() -> impl axum::response::IntoResponse {
+    (
+        [(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+        include_str!("../../wfe-server-protos/proto/wfe/v1/wfe.proto"),
+    )
+}
+
+/// Serve the auto-generated JSON Schema for workflow YAML definitions.
+async fn serve_json_schema() -> impl axum::response::IntoResponse {
+    let schema = wfe_yaml::schema::generate_json_schema();
+    axum::Json(schema)
+}
+
+/// Serve the auto-generated JSON Schema as YAML.
+async fn serve_yaml_example() -> impl axum::response::IntoResponse {
+    (
+        [(axum::http::header::CONTENT_TYPE, "text/yaml; charset=utf-8")],
+        wfe_yaml::schema::generate_yaml_schema(),
+    )
 }

@@ -27,6 +27,7 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 chrono = { workspace = true }
 regex = { workspace = true }
+schemars = { version = "1", features = ["derive"] }
 deno_core = { workspace = true, optional = true }
 deno_error = { workspace = true, optional = true }
 url = { workspace = true, optional = true }
