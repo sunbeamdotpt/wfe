@@ -1,0 +1,10 @@
+target/
+.git/
+*.md
+!README.md
+.envrc
+TODO.md
+.cargo/
+.github/
+test/
+workflows.yaml
