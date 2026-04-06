@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.8.1] - 2026-04-06
+
+### Added
+
+- **wfe-server**: gRPC reflection support via `tonic-reflection`
+- **wfe-server**: Schema endpoints: `/schema/workflow.json` (JSON Schema), `/schema/workflow.yaml` (YAML Schema), `/schema/workflow.proto` (raw proto)
+- **wfe-yaml**: Auto-generated JSON Schema from `schemars` derives on all YAML types
+- **wfe-server**: Dockerfile for multi-stage alpine build with all executor features
+- **wfe-server**: Comprehensive configuration reference (README.md)
+
+### Fixed
+
+- **wfe-yaml**: Added missing `license`, `repository`, `homepage` fields to Cargo.toml
+- **wfe-buildkit-protos**: Removed vendored Go repos (166MB -> 356K), kept only .proto files
+- **wfe-containerd-protos**: Removed vendored Go repos (53MB -> 216K), kept only .proto files
+- Filesystem loop warnings from circular symlinks in vendored Go modules eliminated
+- Pinned `icu_calendar <2.2` to work around `temporal_rs`/`deno_core` incompatibility
+
 ## [1.8.0] - 2026-04-06
 
 ### Added

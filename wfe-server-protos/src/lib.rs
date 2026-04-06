@@ -15,3 +15,6 @@ include!(concat!(env!("OUT_DIR"), "/mod.rs"));
 pub use prost;
 pub use prost_types;
 pub use tonic;
+
+/// Encoded file descriptor set for gRPC reflection.
+pub const FILE_DESCRIPTOR_SET: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/wfe_descriptor.bin"));

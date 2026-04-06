@@ -14,9 +14,9 @@ path = "src/main.rs"
 [dependencies]
 # Internal
 wfe-core = { workspace = true, features = ["test-support"] }
-wfe = { version = "1.8.0", path = "../wfe", registry = "sunbeam" }
-wfe-yaml = { version = "1.8.0", path = "../wfe-yaml", registry = "sunbeam", features = ["rustlang", "buildkit", "containerd"] }
-wfe-server-protos = { version = "1.8.0", path = "../wfe-server-protos", registry = "sunbeam" }
+wfe = { version = "1.8.1", path = "../wfe", registry = "sunbeam" }
+wfe-yaml = { version = "1.8.1", path = "../wfe-yaml", registry = "sunbeam", features = ["rustlang", "buildkit", "containerd"] }
+wfe-server-protos = { version = "1.8.1", path = "../wfe-server-protos", registry = "sunbeam" }
 wfe-sqlite = { workspace = true }
 wfe-postgres = { workspace = true }
 wfe-valkey = { workspace = true }
@@ -26,6 +26,7 @@ opensearch = { workspace = true }
 # gRPC
 tonic = "0.14"
 tonic-health = "0.14"
+tonic-reflection = "0.14"
 prost-types = "0.14"
 
 # HTTP (webhooks)
