@@ -1,2 +1,5 @@
+[build]
+rustc-wrapper = "/opt/homebrew/bin/sccache"
+
 [registries.sunbeam]
 index = "sparse+https://src.sunbeam.pt/api/packages/studio/cargo/"
