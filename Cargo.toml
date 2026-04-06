@@ -1,5 +1,5 @@
 [workspace]
-members = ["wfe-core", "wfe-sqlite", "wfe-postgres", "wfe-opensearch", "wfe-valkey", "wfe", "wfe-yaml", "wfe-buildkit", "wfe-containerd", "wfe-containerd-protos", "wfe-buildkit-protos", "wfe-rustlang", "wfe-server-protos", "wfe-server", "wfe-deno"]
+members = ["wfe-core", "wfe-sqlite", "wfe-postgres", "wfe-opensearch", "wfe-valkey", "wfe", "wfe-yaml", "wfe-buildkit", "wfe-containerd", "wfe-containerd-protos", "wfe-buildkit-protos", "wfe-rustlang", "wfe-server-protos", "wfe-server", "wfe-deno", "wfe-kubernetes"]
 resolver = "2"
 
 [workspace.package]
@@ -57,6 +57,11 @@ regex = "1"
 deno_core = "0.394"
 deno_error = "0.7"
 url = "2"
+
+# Kubernetes
+kube = { version = "3.1", features = ["runtime", "client", "ws"] }
+k8s-openapi = { version = "0.27", features = ["latest"] }
+futures = "0.3"
 
 # Dev/Test
 pretty_assertions = "1"
