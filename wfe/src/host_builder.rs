@@ -6,6 +6,7 @@ use tokio_util::sync::CancellationToken;
 use wfe_core::executor::{StepRegistry, WorkflowExecutor};
 use wfe_core::traits::{
     DistributedLockProvider, LifecyclePublisher, PersistenceProvider, QueueProvider, SearchIndex,
+    ServiceProvider,
 };
 use wfe_core::WfeError;
 
@@ -22,6 +23,7 @@ pub struct WorkflowHostBuilder {
     lifecycle: Option<Arc<dyn LifecyclePublisher>>,
     search: Option<Arc<dyn SearchIndex>>,
     log_sink: Option<Arc<dyn wfe_core::traits::LogSink>>,
+    service_provider: Option<Arc<dyn ServiceProvider>>,
 }
 
 impl WorkflowHostBuilder {
@@ -33,6 +35,7 @@ impl WorkflowHostBuilder {
             lifecycle: None,
             search: None,
             log_sink: None,
+            service_provider: None,
         }
     }
 
@@ -72,6 +75,12 @@ impl WorkflowHostBuilder {
         self
     }
 
+    /// Set an optional service provider for provisioning infrastructure services.
+    pub fn use_service_provider(mut self, provider: Arc<dyn ServiceProvider>) -> Self {
+        self.service_provider = Some(provider);
+        self
+    }
+
     /// Build the `WorkflowHost`.
     ///
     /// Returns an error if persistence, lock_provider, or queue_provider have not been set.
@@ -108,6 +117,7 @@ impl WorkflowHostBuilder {
             queue_provider,
             lifecycle: self.lifecycle,
             search: self.search,
+            service_provider: self.service_provider,
             registry: Arc::new(RwLock::new(InMemoryWorkflowRegistry::new())),
             step_registry: Arc::new(RwLock::new(StepRegistry::new())),
             executor: Arc::new(executor),
