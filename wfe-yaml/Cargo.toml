@@ -10,6 +10,7 @@ deno = ["deno_core", "deno_error", "url", "reqwest"]
 buildkit = ["wfe-buildkit"]
 containerd = ["wfe-containerd"]
 rustlang = ["wfe-rustlang"]
+kubernetes = ["wfe-kubernetes"]
 
 [dependencies]
 wfe-core = { workspace = true }
@@ -30,6 +31,7 @@ reqwest = { workspace = true, optional = true }
 wfe-buildkit = { workspace = true, optional = true }
 wfe-containerd = { workspace = true, optional = true }
 wfe-rustlang = { workspace = true, optional = true }
+wfe-kubernetes = { workspace = true, optional = true }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }

@@ -15,6 +15,8 @@ use wfe_buildkit::{BuildkitConfig, BuildkitStep};
 use wfe_containerd::{ContainerdConfig, ContainerdStep};
 #[cfg(feature = "rustlang")]
 use wfe_rustlang::{CargoCommand, CargoConfig, CargoStep, RustupCommand, RustupConfig, RustupStep};
+#[cfg(feature = "kubernetes")]
+use wfe_kubernetes::{ClusterConfig, KubernetesStepConfig, KubernetesStep};
 use wfe_core::primitives::sub_workflow::SubWorkflowStep;
 use wfe_core::models::condition::{ComparisonOp, FieldComparison, StepCondition};
 
@@ -456,6 +458,23 @@ fn build_step_config_and_factory(
             });
             Ok((key, value, factory))
         }
+        #[cfg(feature = "kubernetes")]
+        "kubernetes" | "k8s" => {
+            let config = build_kubernetes_config(step)?;
+            let key = format!("wfe_yaml::kubernetes::{}", step.name);
+            let value = serde_json::to_value(&config.0).map_err(|e| {
+                YamlWorkflowError::Compilation(format!(
+                    "Failed to serialize kubernetes config: {e}"
+                ))
+            })?;
+            let step_config = config.0;
+            let cluster_config = config.1;
+            let factory: StepFactory = Box::new(move || {
+                Box::new(KubernetesStep::lazy(step_config.clone(), cluster_config.clone()))
+                    as Box<dyn StepBody>
+            });
+            Ok((key, value, factory))
+        }
         #[cfg(feature = "rustlang")]
         "cargo-build" | "cargo-test" | "cargo-check" | "cargo-clippy" | "cargo-fmt"
         | "cargo-doc" | "cargo-publish" | "cargo-audit" | "cargo-deny" | "cargo-nextest"
@@ -860,6 +879,47 @@ fn build_containerd_config(
         registry_auth,
         timeout_ms,
     })
+}
+
+#[cfg(feature = "kubernetes")]
+fn build_kubernetes_config(
+    step: &YamlStep,
+) -> Result<(KubernetesStepConfig, ClusterConfig), YamlWorkflowError> {
+    let config = step.config.as_ref().ok_or_else(|| {
+        YamlWorkflowError::Compilation(format!(
+            "Kubernetes step '{}' is missing 'config' section",
+            step.name
+        ))
+    })?;
+
+    let image = config.image.clone().ok_or_else(|| {
+        YamlWorkflowError::Compilation(format!(
+            "Kubernetes step '{}' must have 'config.image'",
+            step.name
+        ))
+    })?;
+
+    let timeout_ms = config.timeout.as_ref().and_then(|t| parse_duration_ms(t));
+
+    let step_config = KubernetesStepConfig {
+        image,
+        command: config.command.clone(),
+        run: config.run.clone(),
+        env: config.env.clone(),
+        working_dir: config.working_dir.clone(),
+        memory: config.memory.clone(),
+        cpu: config.cpu.clone(),
+        timeout_ms,
+        pull_policy: config.pull_policy.clone(),
+        namespace: config.namespace.clone(),
+    };
+
+    let cluster_config = ClusterConfig {
+        kubeconfig: config.kubeconfig.clone(),
+        ..Default::default()
+    };
+
+    Ok((step_config, cluster_config))
 }
 
 fn map_error_behavior(eb: &YamlErrorBehavior) -> Result<ErrorBehavior, YamlWorkflowError> {

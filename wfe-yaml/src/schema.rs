@@ -164,6 +164,13 @@ pub struct StepConfig {
     pub containerd_addr: Option<String>,
     /// CLI binary name for containerd steps: "nerdctl" (default) or "docker".
     pub cli: Option<String>,
+    // Kubernetes fields
+    /// Kubeconfig path for kubernetes steps.
+    pub kubeconfig: Option<String>,
+    /// Namespace override for kubernetes steps.
+    pub namespace: Option<String>,
+    /// Image pull policy for kubernetes steps: Always, IfNotPresent, Never.
+    pub pull_policy: Option<String>,
     // Cargo fields
     /// Target package for cargo steps (`-p`).
     pub package: Option<String>,
