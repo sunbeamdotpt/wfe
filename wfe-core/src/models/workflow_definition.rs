@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use super::condition::StepCondition;
 use super::error_behavior::ErrorBehavior;
+use super::service::ServiceDefinition;
 
 /// A compiled workflow definition ready for execution.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -15,6 +16,9 @@ pub struct WorkflowDefinition {
     pub default_error_behavior: ErrorBehavior,
     #[serde(default, with = "super::option_duration_millis")]
     pub default_error_retry_interval: Option<Duration>,
+    /// Infrastructure services required by this workflow (databases, caches, etc.).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub services: Vec<ServiceDefinition>,
 }
 
 impl WorkflowDefinition {
@@ -26,6 +30,7 @@ impl WorkflowDefinition {
             steps: Vec::new(),
             default_error_behavior: ErrorBehavior::default(),
             default_error_retry_interval: None,
+            services: Vec::new(),
         }
     }
 }

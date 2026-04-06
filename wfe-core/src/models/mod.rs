@@ -1,6 +1,7 @@
 pub mod condition;
 pub mod error_behavior;
 pub mod event;
+pub mod service;
 pub mod execution_error;
 pub mod execution_pointer;
 pub mod execution_result;
@@ -26,6 +27,7 @@ pub use scheduled_command::{CommandName, ScheduledCommand};
 pub use schema::{SchemaType, WorkflowSchema};
 pub use status::{PointerStatus, WorkflowStatus};
 pub use workflow_definition::{StepOutcome, WorkflowDefinition, WorkflowStep};
+pub use service::{ReadinessCheck, ReadinessProbe, ServiceDefinition, ServiceEndpoint, ServicePort};
 pub use workflow_instance::WorkflowInstance;
 
 /// Serde helper for `Option<Duration>` as milliseconds.

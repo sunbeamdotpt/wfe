@@ -1,5 +1,6 @@
 pub mod lifecycle;
 pub mod lock;
+pub mod service;
 pub mod log_sink;
 pub mod middleware;
 pub mod persistence;
@@ -19,4 +20,5 @@ pub use persistence::{
 pub use queue::QueueProvider;
 pub use registry::WorkflowRegistry;
 pub use search::{Page, SearchFilter, SearchIndex, WorkflowSearchResult};
+pub use service::ServiceProvider;
 pub use step::{HostContext, StepBody, StepExecutionContext, WorkflowData};
