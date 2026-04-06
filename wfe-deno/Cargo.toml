@@ -19,6 +19,9 @@ async-trait = { workspace = true }
 tracing = { workspace = true }
 chrono = { workspace = true }
 
+# Pin icu crates to 2.1.x -- icu 2.2 broke temporal_rs (deno_core transitive dep)
+icu_calendar = ">=2.1, <2.2"
+
 [dev-dependencies]
 pretty_assertions = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
