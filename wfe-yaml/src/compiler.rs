@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use serde::Serialize;
 use wfe_core::models::error_behavior::ErrorBehavior;
+use wfe_core::models::service::{ReadinessCheck, ReadinessProbe, ServiceDefinition, ServicePort};
 use wfe_core::models::workflow_definition::{StepOutcome, WorkflowDefinition, WorkflowStep};
 use wfe_core::traits::StepBody;
 
@@ -52,6 +53,9 @@ pub fn compile(spec: &WorkflowSpec) -> Result<CompiledWorkflow, YamlWorkflowErro
     let mut next_id: usize = 0;
 
     compile_steps(&spec.steps, &mut definition, &mut factories, &mut next_id)?;
+
+    // Compile services.
+    definition.services = compile_services(&spec.services)?;
 
     Ok(CompiledWorkflow {
         definition,
@@ -920,6 +924,68 @@ fn build_kubernetes_config(
     };
 
     Ok((step_config, cluster_config))
+}
+
+fn compile_services(
+    yaml_services: &std::collections::HashMap<String, crate::schema::YamlService>,
+) -> Result<Vec<ServiceDefinition>, YamlWorkflowError> {
+    let mut services = Vec::new();
+
+    for (name, yaml_svc) in yaml_services {
+        let readiness = yaml_svc.readiness.as_ref().map(|r| {
+            let check = if let Some(ref exec_cmd) = r.exec {
+                ReadinessCheck::Exec(exec_cmd.clone())
+            } else if let Some(tcp_port) = r.tcp {
+                ReadinessCheck::TcpSocket(tcp_port)
+            } else if let Some(ref http) = r.http {
+                ReadinessCheck::HttpGet {
+                    port: http.port,
+                    path: http.path.clone(),
+                }
+            } else {
+                // Default: TCP check on first port.
+                ReadinessCheck::TcpSocket(
+                    yaml_svc.ports.first().copied().unwrap_or(0),
+                )
+            };
+
+            let interval_ms = r
+                .interval
+                .as_ref()
+                .and_then(|s| parse_duration_ms(s))
+                .unwrap_or(5000);
+            let timeout_ms = r
+                .timeout
+                .as_ref()
+                .and_then(|s| parse_duration_ms(s))
+                .unwrap_or(60000);
+
+            ReadinessProbe {
+                check,
+                interval_ms,
+                timeout_ms,
+                retries: r.retries.unwrap_or(12),
+            }
+        });
+
+        services.push(ServiceDefinition {
+            name: name.clone(),
+            image: yaml_svc.image.clone(),
+            ports: yaml_svc
+                .ports
+                .iter()
+                .map(|&p| ServicePort::tcp(p))
+                .collect(),
+            env: yaml_svc.env.clone(),
+            readiness,
+            command: yaml_svc.command.clone().unwrap_or_default(),
+            args: yaml_svc.args.clone().unwrap_or_default(),
+            memory: yaml_svc.memory.clone(),
+            cpu: yaml_svc.cpu.clone(),
+        });
+    }
+
+    Ok(services)
 }
 
 fn map_error_behavior(eb: &YamlErrorBehavior) -> Result<ErrorBehavior, YamlWorkflowError> {
