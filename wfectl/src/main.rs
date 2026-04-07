@@ -131,9 +131,8 @@ async fn dispatch(
         Command::Watch(args) => watch::run(args, client).await,
         Command::Logs(args) => logs::run(args, client).await,
         Command::SearchLogs(args) => search_logs::run(args, client, format).await,
-        Command::Login(_)
-        | Command::Logout(_)
-        | Command::Whoami(_)
-        | Command::Validate(_) => unreachable!(),
+        Command::Login(_) | Command::Logout(_) | Command::Whoami(_) | Command::Validate(_) => {
+            unreachable!()
+        }
     }
 }

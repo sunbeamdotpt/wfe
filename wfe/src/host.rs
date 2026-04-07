@@ -58,10 +58,7 @@ impl HostContext for HostContextImpl {
             // child shows up as `{definition_id}-{N}` in lookups and logs.
             // Sub-workflows always use the default; callers wanting a custom
             // name should start the parent workflow directly.
-            let n = self
-                .persistence
-                .next_definition_sequence(&def_id)
-                .await?;
+            let n = self.persistence.next_definition_sequence(&def_id).await?;
             instance.name = format!("{def_id}-{n}");
 
             let id = self.persistence.create_new_workflow(&instance).await?;

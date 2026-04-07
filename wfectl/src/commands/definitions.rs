@@ -65,10 +65,7 @@ pub async fn run(
                     .collect();
                 println!(
                     "{}",
-                    render_table(
-                        &["Name", "ID", "Version", "Steps", "Description"],
-                        &rows
-                    )
+                    render_table(&["Name", "ID", "Version", "Steps", "Description"], &rows)
                 );
                 println!("{} definition(s)", resp.definitions.len());
             }
