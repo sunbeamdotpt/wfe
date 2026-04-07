@@ -15,8 +15,7 @@ pub trait WorkflowRepository: Send + Sync {
     ) -> crate::Result<()>;
     async fn get_runnable_instances(&self, as_at: DateTime<Utc>) -> crate::Result<Vec<String>>;
     async fn get_workflow_instance(&self, id: &str) -> crate::Result<WorkflowInstance>;
-    async fn get_workflow_instance_by_name(&self, name: &str)
-    -> crate::Result<WorkflowInstance>;
+    async fn get_workflow_instance_by_name(&self, name: &str) -> crate::Result<WorkflowInstance>;
     async fn get_workflow_instances(&self, ids: &[String]) -> crate::Result<Vec<WorkflowInstance>>;
 
     /// Atomically allocate the next sequence number for a given workflow
