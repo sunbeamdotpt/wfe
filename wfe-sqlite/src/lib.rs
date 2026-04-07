@@ -57,6 +57,7 @@ impl SqlitePersistenceProvider {
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS workflows (
                 id TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
                 definition_id TEXT NOT NULL,
                 version INTEGER NOT NULL,
                 description TEXT,
@@ -66,6 +67,17 @@ impl SqlitePersistenceProvider {
                 next_execution INTEGER,
                 create_time TEXT NOT NULL,
                 complete_time TEXT
+            )",
+        )
+        .execute(&self.pool)
+        .await?;
+
+        // Per-definition monotonic counter used to generate human-friendly
+        // instance names of the form `{definition_id}-{N}`.
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS definition_sequences (
+                definition_id TEXT PRIMARY KEY,
+                next_num INTEGER NOT NULL
             )",
         )
         .execute(&self.pool)
@@ -157,30 +169,28 @@ impl SqlitePersistenceProvider {
         .await?;
 
         // Indexes
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_workflows_next_execution ON workflows(next_execution)")
-            .execute(&self.pool)
-            .await?;
         sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_workflows_status ON workflows(status)",
+            "CREATE INDEX IF NOT EXISTS idx_workflows_next_execution ON workflows(next_execution)",
         )
         .execute(&self.pool)
         .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_workflows_status ON workflows(status)")
+            .execute(&self.pool)
+            .await?;
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_execution_pointers_workflow_id ON execution_pointers(workflow_id)")
             .execute(&self.pool)
             .await?;
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_events_name_key ON events(event_name, event_key)")
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_events_name_key ON events(event_name, event_key)",
+        )
+        .execute(&self.pool)
+        .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_events_is_processed ON events(is_processed)")
             .execute(&self.pool)
             .await?;
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_events_is_processed ON events(is_processed)",
-        )
-        .execute(&self.pool)
-        .await?;
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_events_event_time ON events(event_time)",
-        )
-        .execute(&self.pool)
-        .await?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_events_event_time ON events(event_time)")
+            .execute(&self.pool)
+            .await?;
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_event_subscriptions_name_key ON event_subscriptions(event_name, event_key)")
             .execute(&self.pool)
             .await?;
@@ -226,10 +236,8 @@ fn row_to_workflow(
     pointers: Vec<ExecutionPointer>,
 ) -> std::result::Result<WorkflowInstance, WfeError> {
     let status_str: String = row.try_get("status").map_err(to_persistence_err)?;
-    let status: WorkflowStatus =
-        serde_json::from_str(&format!("\"{status_str}\"")).map_err(|e| {
-            WfeError::Persistence(format!("Failed to deserialize WorkflowStatus: {e}"))
-        })?;
+    let status: WorkflowStatus = serde_json::from_str(&format!("\"{status_str}\""))
+        .map_err(|e| WfeError::Persistence(format!("Failed to deserialize WorkflowStatus: {e}")))?;
 
     let data_str: String = row.try_get("data").map_err(to_persistence_err)?;
     let data: serde_json::Value = serde_json::from_str(&data_str)
@@ -241,6 +249,7 @@ fn row_to_workflow(
 
     Ok(WorkflowInstance {
         id: row.try_get("id").map_err(to_persistence_err)?,
+        name: row.try_get("name").map_err(to_persistence_err)?,
         workflow_definition_id: row.try_get("definition_id").map_err(to_persistence_err)?,
         version: row
             .try_get::<i64, _>("version")
@@ -272,10 +281,11 @@ fn row_to_pointer(
         .as_deref()
         .map(serde_json::from_str)
         .transpose()
-        .map_err(|e| WfeError::Persistence(format!("Failed to deserialize persistence_data: {e}")))?;
+        .map_err(|e| {
+            WfeError::Persistence(format!("Failed to deserialize persistence_data: {e}"))
+        })?;
 
-    let event_data_str: Option<String> =
-        row.try_get("event_data").map_err(to_persistence_err)?;
+    let event_data_str: Option<String> = row.try_get("event_data").map_err(to_persistence_err)?;
     let event_data: Option<serde_json::Value> = event_data_str
         .as_deref()
         .map(serde_json::from_str)
@@ -308,15 +318,13 @@ fn row_to_pointer(
     let ext_str: String = row
         .try_get("extension_attributes")
         .map_err(to_persistence_err)?;
-    let extension_attributes: HashMap<String, serde_json::Value> =
-        serde_json::from_str(&ext_str).map_err(|e| {
-            WfeError::Persistence(format!("Failed to deserialize extension_attributes: {e}"))
-        })?;
+    let extension_attributes: HashMap<String, serde_json::Value> = serde_json::from_str(&ext_str)
+        .map_err(|e| {
+        WfeError::Persistence(format!("Failed to deserialize extension_attributes: {e}"))
+    })?;
 
-    let sleep_until_str: Option<String> =
-        row.try_get("sleep_until").map_err(to_persistence_err)?;
-    let start_time_str: Option<String> =
-        row.try_get("start_time").map_err(to_persistence_err)?;
+    let sleep_until_str: Option<String> = row.try_get("sleep_until").map_err(to_persistence_err)?;
+    let start_time_str: Option<String> = row.try_get("start_time").map_err(to_persistence_err)?;
     let end_time_str: Option<String> = row.try_get("end_time").map_err(to_persistence_err)?;
 
     Ok(ExecutionPointer {
@@ -373,8 +381,7 @@ fn row_to_event(row: &sqlx::sqlite::SqliteRow) -> std::result::Result<Event, Wfe
 fn row_to_subscription(
     row: &sqlx::sqlite::SqliteRow,
 ) -> std::result::Result<EventSubscription, WfeError> {
-    let subscribe_as_of_str: String =
-        row.try_get("subscribe_as_of").map_err(to_persistence_err)?;
+    let subscribe_as_of_str: String = row.try_get("subscribe_as_of").map_err(to_persistence_err)?;
 
     let subscription_data_str: Option<String> = row
         .try_get("subscription_data")
@@ -436,10 +443,11 @@ impl WorkflowRepository for SqlitePersistenceProvider {
         let mut tx = self.pool.begin().await.map_err(to_persistence_err)?;
 
         sqlx::query(
-            "INSERT INTO workflows (id, definition_id, version, description, reference, status, data, next_execution, create_time, complete_time)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT INTO workflows (id, name, definition_id, version, description, reference, status, data, next_execution, create_time, complete_time)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         )
         .bind(&id)
+        .bind(&instance.name)
         .bind(&instance.workflow_definition_id)
         .bind(instance.version as i64)
         .bind(&instance.description)
@@ -474,10 +482,11 @@ impl WorkflowRepository for SqlitePersistenceProvider {
         let mut tx = self.pool.begin().await.map_err(to_persistence_err)?;
 
         sqlx::query(
-            "UPDATE workflows SET definition_id = ?1, version = ?2, description = ?3, reference = ?4,
-             status = ?5, data = ?6, next_execution = ?7, complete_time = ?8
-             WHERE id = ?9",
+            "UPDATE workflows SET name = ?1, definition_id = ?2, version = ?3, description = ?4, reference = ?5,
+             status = ?6, data = ?7, next_execution = ?8, complete_time = ?9
+             WHERE id = ?10",
         )
+        .bind(&instance.name)
         .bind(&instance.workflow_definition_id)
         .bind(instance.version as i64)
         .bind(&instance.description)
@@ -523,10 +532,11 @@ impl WorkflowRepository for SqlitePersistenceProvider {
         let mut tx = self.pool.begin().await.map_err(to_persistence_err)?;
 
         sqlx::query(
-            "UPDATE workflows SET definition_id = ?1, version = ?2, description = ?3, reference = ?4,
-             status = ?5, data = ?6, next_execution = ?7, complete_time = ?8
-             WHERE id = ?9",
+            "UPDATE workflows SET name = ?1, definition_id = ?2, version = ?3, description = ?4, reference = ?5,
+             status = ?6, data = ?7, next_execution = ?8, complete_time = ?9
+             WHERE id = ?10",
         )
+        .bind(&instance.name)
         .bind(&instance.workflow_definition_id)
         .bind(instance.version as i64)
         .bind(&instance.description)
@@ -583,12 +593,11 @@ impl WorkflowRepository for SqlitePersistenceProvider {
             .map_err(to_persistence_err)?
             .ok_or_else(|| WfeError::WorkflowNotFound(id.to_string()))?;
 
-        let pointer_rows =
-            sqlx::query("SELECT * FROM execution_pointers WHERE workflow_id = ?1")
-                .bind(id)
-                .fetch_all(&self.pool)
-                .await
-                .map_err(to_persistence_err)?;
+        let pointer_rows = sqlx::query("SELECT * FROM execution_pointers WHERE workflow_id = ?1")
+            .bind(id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(to_persistence_err)?;
 
         let pointers = pointer_rows
             .iter()
@@ -596,6 +605,36 @@ impl WorkflowRepository for SqlitePersistenceProvider {
             .collect::<Result<Vec<ExecutionPointer>>>()?;
 
         row_to_workflow(&row, pointers)
+    }
+
+    async fn get_workflow_instance_by_name(&self, name: &str) -> Result<WorkflowInstance> {
+        let row = sqlx::query("SELECT id FROM workflows WHERE name = ?1")
+            .bind(name)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(to_persistence_err)?
+            .ok_or_else(|| WfeError::WorkflowNotFound(name.to_string()))?;
+        let id: String = row.try_get("id").map_err(to_persistence_err)?;
+        self.get_workflow_instance(&id).await
+    }
+
+    async fn next_definition_sequence(&self, definition_id: &str) -> Result<u64> {
+        // SQLite doesn't support `INSERT ... ON CONFLICT ... RETURNING` prior
+        // to 3.35, but sqlx bundles a new-enough build. Emulate an atomic
+        // increment via UPSERT + RETURNING so concurrent callers don't collide.
+        let row = sqlx::query(
+            "INSERT INTO definition_sequences (definition_id, next_num)
+             VALUES (?1, 1)
+             ON CONFLICT(definition_id) DO UPDATE
+               SET next_num = next_num + 1
+             RETURNING next_num",
+        )
+        .bind(definition_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(to_persistence_err)?;
+        let next: i64 = row.try_get("next_num").map_err(to_persistence_err)?;
+        Ok(next as u64)
     }
 
     async fn get_workflow_instances(&self, ids: &[String]) -> Result<Vec<WorkflowInstance>> {
@@ -735,10 +774,7 @@ async fn insert_subscription(
 
 #[async_trait]
 impl SubscriptionRepository for SqlitePersistenceProvider {
-    async fn create_event_subscription(
-        &self,
-        subscription: &EventSubscription,
-    ) -> Result<String> {
+    async fn create_event_subscription(&self, subscription: &EventSubscription) -> Result<String> {
         let id = if subscription.id.is_empty() {
             uuid::Uuid::new_v4().to_string()
         } else {
@@ -776,18 +812,14 @@ impl SubscriptionRepository for SqlitePersistenceProvider {
     }
 
     async fn terminate_subscription(&self, subscription_id: &str) -> Result<()> {
-        let result = sqlx::query(
-            "UPDATE event_subscriptions SET terminated = 1 WHERE id = ?1",
-        )
-        .bind(subscription_id)
-        .execute(&self.pool)
-        .await
-        .map_err(to_persistence_err)?;
+        let result = sqlx::query("UPDATE event_subscriptions SET terminated = 1 WHERE id = ?1")
+            .bind(subscription_id)
+            .execute(&self.pool)
+            .await
+            .map_err(to_persistence_err)?;
 
         if result.rows_affected() == 0 {
-            return Err(WfeError::SubscriptionNotFound(
-                subscription_id.to_string(),
-            ));
+            return Err(WfeError::SubscriptionNotFound(subscription_id.to_string()));
         }
         Ok(())
     }
@@ -860,20 +892,14 @@ impl SubscriptionRepository for SqlitePersistenceProvider {
                 .await
                 .map_err(to_persistence_err)?;
             if exists.is_none() {
-                return Err(WfeError::SubscriptionNotFound(
-                    subscription_id.to_string(),
-                ));
+                return Err(WfeError::SubscriptionNotFound(subscription_id.to_string()));
             }
             return Ok(false);
         }
         Ok(true)
     }
 
-    async fn clear_subscription_token(
-        &self,
-        subscription_id: &str,
-        token: &str,
-    ) -> Result<()> {
+    async fn clear_subscription_token(&self, subscription_id: &str, token: &str) -> Result<()> {
         let result = sqlx::query(
             "UPDATE event_subscriptions
              SET external_token = NULL, external_worker_id = NULL, external_token_expiry = NULL
@@ -886,9 +912,7 @@ impl SubscriptionRepository for SqlitePersistenceProvider {
         .map_err(to_persistence_err)?;
 
         if result.rows_affected() == 0 {
-            return Err(WfeError::SubscriptionNotFound(
-                subscription_id.to_string(),
-            ));
+            return Err(WfeError::SubscriptionNotFound(subscription_id.to_string()));
         }
         Ok(())
     }
@@ -937,13 +961,11 @@ impl EventRepository for SqlitePersistenceProvider {
 
     async fn get_runnable_events(&self, as_at: DateTime<Utc>) -> Result<Vec<String>> {
         let as_at_str = dt_to_string(&as_at);
-        let rows = sqlx::query(
-            "SELECT id FROM events WHERE is_processed = 0 AND event_time <= ?1",
-        )
-        .bind(&as_at_str)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(to_persistence_err)?;
+        let rows = sqlx::query("SELECT id FROM events WHERE is_processed = 0 AND event_time <= ?1")
+            .bind(&as_at_str)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(to_persistence_err)?;
 
         rows.iter()
             .map(|r| r.try_get("id").map_err(to_persistence_err))
@@ -1029,9 +1051,14 @@ impl ScheduledCommandRepository for SqlitePersistenceProvider {
     async fn process_commands(
         &self,
         as_of: DateTime<Utc>,
-        handler: &(dyn Fn(ScheduledCommand) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>>
-              + Send
-              + Sync),
+        handler: &(
+             dyn Fn(
+            ScheduledCommand,
+        )
+            -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>>
+                 + Send
+                 + Sync
+         ),
     ) -> Result<()> {
         let as_of_millis = as_of.timestamp_millis();
 
