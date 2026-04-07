@@ -60,9 +60,7 @@ pub fn build_job(
             cluster
                 .image_pull_secrets
                 .iter()
-                .map(|s| LocalObjectReference {
-                    name: s.clone(),
-                })
+                .map(|s| LocalObjectReference { name: s.clone() })
                 .collect(),
         )
     };
@@ -70,7 +68,13 @@ pub fn build_job(
     let node_selector = if cluster.node_selector.is_empty() {
         None
     } else {
-        Some(cluster.node_selector.iter().map(|(k, v)| (k.clone(), v.clone())).collect::<BTreeMap<_, _>>())
+        Some(
+            cluster
+                .node_selector
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect::<BTreeMap<_, _>>(),
+        )
     };
 
     Job {
@@ -108,8 +112,11 @@ fn resolve_command(config: &KubernetesStepConfig) -> (Option<Vec<String>>, Optio
     if let Some(ref cmd) = config.command {
         (Some(cmd.clone()), None)
     } else if let Some(ref run) = config.run {
+        // Use bash so that scripts can rely on `set -o pipefail`, process
+        // substitution, arrays, and other bashisms that dash (/bin/sh on
+        // debian-family images) does not support.
         (
-            Some(vec!["/bin/sh".into(), "-c".into()]),
+            Some(vec!["/bin/bash".into(), "-c".into()]),
             Some(vec![run.clone()]),
         )
     } else {
@@ -174,7 +181,13 @@ pub fn sanitize_name(name: &str) -> String {
     let sanitized: String = name
         .to_lowercase()
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
         .take(63)
         .collect();
     sanitized.trim_end_matches('-').to_string()
@@ -203,7 +216,13 @@ mod tests {
             pull_policy: None,
             namespace: None,
         };
-        let job = build_job(&config, "test-step", "wfe-abc", &HashMap::new(), &default_cluster());
+        let job = build_job(
+            &config,
+            "test-step",
+            "wfe-abc",
+            &HashMap::new(),
+            &default_cluster(),
+        );
 
         assert_eq!(job.metadata.name, Some("test-step".into()));
         assert_eq!(job.metadata.namespace, Some("wfe-abc".into()));
@@ -242,7 +261,7 @@ mod tests {
 
         assert_eq!(
             container.command,
-            Some(vec!["/bin/sh".into(), "-c".into()])
+            Some(vec!["/bin/bash".into(), "-c".into()])
         );
         assert_eq!(container.args, Some(vec!["npm test".into()]));
         assert_eq!(container.working_dir, Some("/app".into()));
@@ -265,10 +284,7 @@ mod tests {
         let job = build_job(&config, "build", "ns", &HashMap::new(), &default_cluster());
         let container = &job.spec.unwrap().template.spec.unwrap().containers[0];
 
-        assert_eq!(
-            container.command,
-            Some(vec!["make".into(), "build".into()])
-        );
+        assert_eq!(container.command, Some(vec!["make".into(), "build".into()]));
         assert!(container.args.is_none());
     }
 
@@ -286,8 +302,11 @@ mod tests {
             pull_policy: None,
             namespace: None,
         };
-        let overrides: HashMap<String, String> =
-            [("WORKFLOW_ID".into(), "wf-123".into()), ("APP_ENV".into(), "staging".into())].into();
+        let overrides: HashMap<String, String> = [
+            ("WORKFLOW_ID".into(), "wf-123".into()),
+            ("APP_ENV".into(), "staging".into()),
+        ]
+        .into();
 
         let job = build_job(&config, "step", "ns", &overrides, &default_cluster());
         let container = &job.spec.unwrap().template.spec.unwrap().containers[0];
@@ -376,7 +395,13 @@ mod tests {
             pull_policy: None,
             namespace: None,
         };
-        let job = build_job(&config, "my-step", "ns", &HashMap::new(), &default_cluster());
+        let job = build_job(
+            &config,
+            "my-step",
+            "ns",
+            &HashMap::new(),
+            &default_cluster(),
+        );
         let labels = job.metadata.labels.as_ref().unwrap();
         assert_eq!(labels.get(LABEL_STEP_NAME), Some(&"my-step".to_string()));
         assert_eq!(
