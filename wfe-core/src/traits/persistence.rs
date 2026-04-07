@@ -1,9 +1,7 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
-use crate::models::{
-    Event, EventSubscription, ExecutionError, ScheduledCommand, WorkflowInstance,
-};
+use crate::models::{Event, EventSubscription, ExecutionError, ScheduledCommand, WorkflowInstance};
 
 /// Persistence for workflow instances.
 #[async_trait]
@@ -17,7 +15,15 @@ pub trait WorkflowRepository: Send + Sync {
     ) -> crate::Result<()>;
     async fn get_runnable_instances(&self, as_at: DateTime<Utc>) -> crate::Result<Vec<String>>;
     async fn get_workflow_instance(&self, id: &str) -> crate::Result<WorkflowInstance>;
+    async fn get_workflow_instance_by_name(&self, name: &str)
+    -> crate::Result<WorkflowInstance>;
     async fn get_workflow_instances(&self, ids: &[String]) -> crate::Result<Vec<WorkflowInstance>>;
+
+    /// Atomically allocate the next sequence number for a given workflow
+    /// definition id. Used by the host to assign human-friendly names of the
+    /// form `{definition_id}-{N}` before inserting a new workflow instance.
+    /// Guaranteed monotonic per definition_id; no guarantees across definitions.
+    async fn next_definition_sequence(&self, definition_id: &str) -> crate::Result<u64>;
 }
 
 /// Persistence for event subscriptions.
@@ -79,9 +85,14 @@ pub trait ScheduledCommandRepository: Send + Sync {
     async fn process_commands(
         &self,
         as_of: DateTime<Utc>,
-        handler: &(dyn Fn(ScheduledCommand) -> std::pin::Pin<Box<dyn std::future::Future<Output = crate::Result<()>> + Send>>
-              + Send
-              + Sync),
+        handler: &(
+             dyn Fn(
+            ScheduledCommand,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = crate::Result<()>> + Send>,
+        > + Send
+                 + Sync
+         ),
     ) -> crate::Result<()>;
 }
 

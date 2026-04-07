@@ -6,7 +6,14 @@ use super::status::{PointerStatus, WorkflowStatus};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowInstance {
+    /// UUID — the primary key, always unique, never changes.
     pub id: String,
+    /// Human-friendly unique name, e.g. "ci-42". Auto-assigned as
+    /// `{definition_id}-{N}` via a per-definition monotonic counter when
+    /// the caller does not supply an override. Used interchangeably with
+    /// `id` in lookup APIs. Empty when the instance has not yet been
+    /// persisted (the host fills it in before the first insert).
+    pub name: String,
     pub workflow_definition_id: String,
     pub version: u32,
     pub description: Option<String>,
@@ -20,9 +27,15 @@ pub struct WorkflowInstance {
 }
 
 impl WorkflowInstance {
-    pub fn new(workflow_definition_id: impl Into<String>, version: u32, data: serde_json::Value) -> Self {
+    pub fn new(
+        workflow_definition_id: impl Into<String>,
+        version: u32,
+        data: serde_json::Value,
+    ) -> Self {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
+            // Filled in by WorkflowHost::start_workflow before persisting.
+            name: String::new(),
             workflow_definition_id: workflow_definition_id.into(),
             version,
             description: None,
@@ -134,7 +147,10 @@ mod tests {
         let json = serde_json::to_string(&instance).unwrap();
         let deserialized: WorkflowInstance = serde_json::from_str(&json).unwrap();
         assert_eq!(instance.id, deserialized.id);
-        assert_eq!(instance.workflow_definition_id, deserialized.workflow_definition_id);
+        assert_eq!(
+            instance.workflow_definition_id,
+            deserialized.workflow_definition_id
+        );
         assert_eq!(instance.version, deserialized.version);
         assert_eq!(instance.status, deserialized.status);
         assert_eq!(instance.data, deserialized.data);

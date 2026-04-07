@@ -5,9 +5,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use tokio::sync::RwLock;
 
-use crate::models::{
-    Event, EventSubscription, ExecutionError, ScheduledCommand, WorkflowInstance,
-};
+use crate::models::{Event, EventSubscription, ExecutionError, ScheduledCommand, WorkflowInstance};
 use crate::traits::{
     EventRepository, PersistenceProvider, ScheduledCommandRepository, SubscriptionRepository,
     WorkflowRepository,
@@ -22,6 +20,9 @@ pub struct InMemoryPersistenceProvider {
     subscriptions: Arc<RwLock<HashMap<String, EventSubscription>>>,
     errors: Arc<RwLock<Vec<ExecutionError>>>,
     scheduled_commands: Arc<RwLock<Vec<ScheduledCommand>>>,
+    /// Per-definition monotonic counter used to generate human-friendly
+    /// workflow instance names of the form `{definition_id}-{N}`.
+    sequences: Arc<RwLock<HashMap<String, u64>>>,
 }
 
 impl InMemoryPersistenceProvider {
@@ -32,6 +33,7 @@ impl InMemoryPersistenceProvider {
             subscriptions: Arc::new(RwLock::new(HashMap::new())),
             errors: Arc::new(RwLock::new(Vec::new())),
             scheduled_commands: Arc::new(RwLock::new(Vec::new())),
+            sequences: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -107,6 +109,23 @@ impl WorkflowRepository for InMemoryPersistenceProvider {
             .ok_or_else(|| WfeError::WorkflowNotFound(id.to_string()))
     }
 
+    async fn get_workflow_instance_by_name(&self, name: &str) -> Result<WorkflowInstance> {
+        self.workflows
+            .read()
+            .await
+            .values()
+            .find(|w| w.name == name)
+            .cloned()
+            .ok_or_else(|| WfeError::WorkflowNotFound(name.to_string()))
+    }
+
+    async fn next_definition_sequence(&self, definition_id: &str) -> Result<u64> {
+        let mut seqs = self.sequences.write().await;
+        let next = seqs.get(definition_id).copied().unwrap_or(0) + 1;
+        seqs.insert(definition_id.to_string(), next);
+        Ok(next)
+    }
+
     async fn get_workflow_instances(&self, ids: &[String]) -> Result<Vec<WorkflowInstance>> {
         let workflows = self.workflows.read().await;
         let mut result = Vec::new();
@@ -121,10 +140,7 @@ impl WorkflowRepository for InMemoryPersistenceProvider {
 
 #[async_trait]
 impl SubscriptionRepository for InMemoryPersistenceProvider {
-    async fn create_event_subscription(
-        &self,
-        subscription: &EventSubscription,
-    ) -> Result<String> {
+    async fn create_event_subscription(&self, subscription: &EventSubscription) -> Result<String> {
         let id = if subscription.id.is_empty() {
             uuid::Uuid::new_v4().to_string()
         } else {
@@ -217,11 +233,7 @@ impl SubscriptionRepository for InMemoryPersistenceProvider {
         }
     }
 
-    async fn clear_subscription_token(
-        &self,
-        subscription_id: &str,
-        token: &str,
-    ) -> Result<()> {
+    async fn clear_subscription_token(&self, subscription_id: &str, token: &str) -> Result<()> {
         let mut subs = self.subscriptions.write().await;
         match subs.get_mut(subscription_id) {
             Some(sub) => {
@@ -282,7 +294,9 @@ impl EventRepository for InMemoryPersistenceProvider {
         let events = self.events.read().await;
         let ids = events
             .values()
-            .filter(|e| e.event_name == event_name && e.event_key == event_key && e.event_time <= as_of)
+            .filter(|e| {
+                e.event_name == event_name && e.event_key == event_key && e.event_time <= as_of
+            })
             .map(|e| e.id.clone())
             .collect();
         Ok(ids)
@@ -325,9 +339,14 @@ impl ScheduledCommandRepository for InMemoryPersistenceProvider {
     async fn process_commands(
         &self,
         as_of: DateTime<Utc>,
-        handler: &(dyn Fn(ScheduledCommand) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>>
-              + Send
-              + Sync),
+        handler: &(
+             dyn Fn(
+            ScheduledCommand,
+        )
+            -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>>
+                 + Send
+                 + Sync
+         ),
     ) -> Result<()> {
         let as_of_millis = as_of.timestamp_millis();
         let due: Vec<ScheduledCommand> = {
@@ -360,7 +379,7 @@ impl PersistenceProvider for InMemoryPersistenceProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{Event, EventSubscription, ExecutionError, ScheduledCommand, CommandName};
+    use crate::models::{CommandName, Event, EventSubscription, ExecutionError, ScheduledCommand};
     use crate::traits::{
         EventRepository, PersistenceProvider, ScheduledCommandRepository, SubscriptionRepository,
         WorkflowRepository,
