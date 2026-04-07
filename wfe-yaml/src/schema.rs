@@ -82,8 +82,12 @@ pub struct YamlWorkflow {
 /// A complete workflow definition.
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct WorkflowSpec {
-    /// Unique workflow identifier.
+    /// Unique workflow identifier (slug, e.g. "ci"). Primary lookup key.
     pub id: String,
+    /// Optional human-friendly display name shown in UIs and listings
+    /// (e.g. "Continuous Integration"). Defaults to the slug `id` when unset.
+    #[serde(default)]
+    pub name: Option<String>,
     /// Workflow version number.
     pub version: u32,
     /// Optional human-readable description.
@@ -432,4 +436,34 @@ pub fn generate_json_schema() -> serde_json::Value {
 pub fn generate_yaml_schema() -> String {
     let schema = generate_json_schema();
     serde_yaml::to_string(&schema).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn json_schema_is_non_empty() {
+        let schema = generate_json_schema();
+        assert!(schema.is_object(), "schema should be a JSON object");
+        let obj = schema.as_object().unwrap();
+        assert!(
+            obj.contains_key("$schema")
+                || obj.contains_key("type")
+                || obj.contains_key("properties"),
+            "schema missing standard JSON Schema keys: {:?}",
+            obj.keys().collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn yaml_schema_is_non_empty() {
+        let yaml = generate_yaml_schema();
+        assert!(!yaml.is_empty(), "yaml schema should not be empty");
+        assert!(
+            yaml.len() > 100,
+            "yaml schema suspiciously short: {} chars",
+            yaml.len()
+        );
+    }
 }

@@ -7,21 +7,23 @@ use wfe_core::models::workflow_definition::{StepOutcome, WorkflowDefinition, Wor
 use wfe_core::traits::StepBody;
 
 use crate::error::YamlWorkflowError;
-use crate::executors::shell::{ShellConfig, ShellStep};
 #[cfg(feature = "deno")]
 use crate::executors::deno::{DenoConfig, DenoPermissions, DenoStep};
+use crate::executors::shell::{ShellConfig, ShellStep};
 #[cfg(feature = "buildkit")]
 use wfe_buildkit::{BuildkitConfig, BuildkitStep};
 #[cfg(feature = "containerd")]
 use wfe_containerd::{ContainerdConfig, ContainerdStep};
+use wfe_core::models::condition::{ComparisonOp, FieldComparison, StepCondition};
+use wfe_core::primitives::sub_workflow::SubWorkflowStep;
+#[cfg(feature = "kubernetes")]
+use wfe_kubernetes::{ClusterConfig, KubernetesStep, KubernetesStepConfig};
 #[cfg(feature = "rustlang")]
 use wfe_rustlang::{CargoCommand, CargoConfig, CargoStep, RustupCommand, RustupConfig, RustupStep};
-#[cfg(feature = "kubernetes")]
-use wfe_kubernetes::{ClusterConfig, KubernetesStepConfig, KubernetesStep};
-use wfe_core::primitives::sub_workflow::SubWorkflowStep;
-use wfe_core::models::condition::{ComparisonOp, FieldComparison, StepCondition};
 
-use crate::schema::{WorkflowSpec, YamlCombinator, YamlComparison, YamlCondition, YamlErrorBehavior, YamlStep};
+use crate::schema::{
+    WorkflowSpec, YamlCombinator, YamlComparison, YamlCondition, YamlErrorBehavior, YamlStep,
+};
 
 /// Configuration for a sub-workflow step.
 #[derive(Debug, Clone, Serialize)]
@@ -43,6 +45,7 @@ pub struct CompiledWorkflow {
 /// Compile a parsed WorkflowSpec into a CompiledWorkflow.
 pub fn compile(spec: &WorkflowSpec) -> Result<CompiledWorkflow, YamlWorkflowError> {
     let mut definition = WorkflowDefinition::new(&spec.id, spec.version);
+    definition.name = spec.name.clone();
     definition.description = spec.description.clone();
 
     if let Some(ref eb) = spec.error_behavior {
@@ -77,10 +80,8 @@ fn compile_steps(
             let container_id = *next_id;
             *next_id += 1;
 
-            let mut container = WorkflowStep::new(
-                container_id,
-                "wfe_core::primitives::sequence::SequenceStep",
-            );
+            let mut container =
+                WorkflowStep::new(container_id, "wfe_core::primitives::sequence::SequenceStep");
             container.name = Some(yaml_step.name.clone());
 
             if let Some(ref eb) = yaml_step.error_behavior {
@@ -88,8 +89,7 @@ fn compile_steps(
             }
 
             // Compile children.
-            let child_ids =
-                compile_steps(parallel_children, definition, factories, next_id)?;
+            let child_ids = compile_steps(parallel_children, definition, factories, next_id)?;
             container.children = child_ids;
 
             // Compile condition if present.
@@ -104,10 +104,7 @@ fn compile_steps(
             let step_id = *next_id;
             *next_id += 1;
 
-            let step_type = yaml_step
-                .step_type
-                .as_deref()
-                .unwrap_or("shell");
+            let step_type = yaml_step.step_type.as_deref().unwrap_or("shell");
 
             let (step_type_key, step_config_value, factory): (
                 String,
@@ -133,10 +130,7 @@ fn compile_steps(
                 let comp_id = *next_id;
                 *next_id += 1;
 
-                let on_failure_type = on_failure
-                    .step_type
-                    .as_deref()
-                    .unwrap_or("shell");
+                let on_failure_type = on_failure.step_type.as_deref().unwrap_or("shell");
                 let (comp_key, comp_config_value, comp_factory) =
                     build_step_config_and_factory(on_failure, on_failure_type)?;
 
@@ -156,10 +150,7 @@ fn compile_steps(
                 let success_id = *next_id;
                 *next_id += 1;
 
-                let on_success_type = on_success
-                    .step_type
-                    .as_deref()
-                    .unwrap_or("shell");
+                let on_success_type = on_success.step_type.as_deref().unwrap_or("shell");
                 let (success_key, success_config_value, success_factory) =
                     build_step_config_and_factory(on_success, on_success_type)?;
 
@@ -183,10 +174,7 @@ fn compile_steps(
                 let ensure_id = *next_id;
                 *next_id += 1;
 
-                let ensure_type = ensure
-                    .step_type
-                    .as_deref()
-                    .unwrap_or("shell");
+                let ensure_type = ensure.step_type.as_deref().unwrap_or("shell");
                 let (ensure_key, ensure_config_value, ensure_factory) =
                     build_step_config_and_factory(ensure, ensure_type)?;
 
@@ -407,9 +395,7 @@ fn build_step_config_and_factory(
             let config = build_shell_config(step)?;
             let key = format!("wfe_yaml::shell::{}", step.name);
             let value = serde_json::to_value(&config).map_err(|e| {
-                YamlWorkflowError::Compilation(format!(
-                    "Failed to serialize shell config: {e}"
-                ))
+                YamlWorkflowError::Compilation(format!("Failed to serialize shell config: {e}"))
             })?;
             let config_clone = config.clone();
             let factory: StepFactory = Box::new(move || {
@@ -422,9 +408,7 @@ fn build_step_config_and_factory(
             let config = build_deno_config(step)?;
             let key = format!("wfe_yaml::deno::{}", step.name);
             let value = serde_json::to_value(&config).map_err(|e| {
-                YamlWorkflowError::Compilation(format!(
-                    "Failed to serialize deno config: {e}"
-                ))
+                YamlWorkflowError::Compilation(format!("Failed to serialize deno config: {e}"))
             })?;
             let config_clone = config.clone();
             let factory: StepFactory = Box::new(move || {
@@ -437,9 +421,7 @@ fn build_step_config_and_factory(
             let config = build_buildkit_config(step)?;
             let key = format!("wfe_yaml::buildkit::{}", step.name);
             let value = serde_json::to_value(&config).map_err(|e| {
-                YamlWorkflowError::Compilation(format!(
-                    "Failed to serialize buildkit config: {e}"
-                ))
+                YamlWorkflowError::Compilation(format!("Failed to serialize buildkit config: {e}"))
             })?;
             let config_clone = config.clone();
             let factory: StepFactory = Box::new(move || {
@@ -474,8 +456,10 @@ fn build_step_config_and_factory(
             let step_config = config.0;
             let cluster_config = config.1;
             let factory: StepFactory = Box::new(move || {
-                Box::new(KubernetesStep::lazy(step_config.clone(), cluster_config.clone()))
-                    as Box<dyn StepBody>
+                Box::new(KubernetesStep::lazy(
+                    step_config.clone(),
+                    cluster_config.clone(),
+                )) as Box<dyn StepBody>
             });
             Ok((key, value, factory))
         }
@@ -486,9 +470,7 @@ fn build_step_config_and_factory(
             let config = build_cargo_config(step, step_type)?;
             let key = format!("wfe_yaml::cargo::{}", step.name);
             let value = serde_json::to_value(&config).map_err(|e| {
-                YamlWorkflowError::Compilation(format!(
-                    "Failed to serialize cargo config: {e}"
-                ))
+                YamlWorkflowError::Compilation(format!("Failed to serialize cargo config: {e}"))
             })?;
             let config_clone = config.clone();
             let factory: StepFactory = Box::new(move || {
@@ -501,9 +483,7 @@ fn build_step_config_and_factory(
             let config = build_rustup_config(step, step_type)?;
             let key = format!("wfe_yaml::rustup::{}", step.name);
             let value = serde_json::to_value(&config).map_err(|e| {
-                YamlWorkflowError::Compilation(format!(
-                    "Failed to serialize rustup config: {e}"
-                ))
+                YamlWorkflowError::Compilation(format!("Failed to serialize rustup config: {e}"))
             })?;
             let config_clone = config.clone();
             let factory: StepFactory = Box::new(move || {
@@ -534,9 +514,7 @@ fn build_step_config_and_factory(
 
             let key = format!("wfe_yaml::workflow::{}", step.name);
             let value = serde_json::to_value(&sub_config).map_err(|e| {
-                YamlWorkflowError::Compilation(format!(
-                    "Failed to serialize workflow config: {e}"
-                ))
+                YamlWorkflowError::Compilation(format!("Failed to serialize workflow config: {e}"))
             })?;
             let config_clone = sub_config.clone();
             let factory: StepFactory = Box::new(move || {
@@ -603,10 +581,7 @@ fn build_deno_config(step: &YamlStep) -> Result<DenoConfig, YamlWorkflowError> {
 
 fn build_shell_config(step: &YamlStep) -> Result<ShellConfig, YamlWorkflowError> {
     let config = step.config.as_ref().ok_or_else(|| {
-        YamlWorkflowError::Compilation(format!(
-            "Step '{}' is missing 'config' section",
-            step.name
-        ))
+        YamlWorkflowError::Compilation(format!("Step '{}' is missing 'config' section", step.name))
     })?;
 
     let run = config
@@ -634,10 +609,7 @@ fn build_shell_config(step: &YamlStep) -> Result<ShellConfig, YamlWorkflowError>
 }
 
 #[cfg(feature = "rustlang")]
-fn build_cargo_config(
-    step: &YamlStep,
-    step_type: &str,
-) -> Result<CargoConfig, YamlWorkflowError> {
+fn build_cargo_config(step: &YamlStep, step_type: &str) -> Result<CargoConfig, YamlWorkflowError> {
     let command = match step_type {
         "cargo-build" => CargoCommand::Build,
         "cargo-test" => CargoCommand::Test,
@@ -730,9 +702,7 @@ fn parse_duration_ms(s: &str) -> Option<u64> {
 }
 
 #[cfg(feature = "buildkit")]
-fn build_buildkit_config(
-    step: &YamlStep,
-) -> Result<BuildkitConfig, YamlWorkflowError> {
+fn build_buildkit_config(step: &YamlStep) -> Result<BuildkitConfig, YamlWorkflowError> {
     let config = step.config.as_ref().ok_or_else(|| {
         YamlWorkflowError::Compilation(format!(
             "BuildKit step '{}' is missing 'config' section",
@@ -805,9 +775,7 @@ fn build_buildkit_config(
 }
 
 #[cfg(feature = "containerd")]
-fn build_containerd_config(
-    step: &YamlStep,
-) -> Result<ContainerdConfig, YamlWorkflowError> {
+fn build_containerd_config(step: &YamlStep) -> Result<ContainerdConfig, YamlWorkflowError> {
     let config = step.config.as_ref().ok_or_else(|| {
         YamlWorkflowError::Compilation(format!(
             "Containerd step '{}' is missing 'config' section",
@@ -869,11 +837,17 @@ fn build_containerd_config(
         env: config.env.clone(),
         volumes,
         working_dir: config.working_dir.clone(),
-        user: config.user.clone().unwrap_or_else(|| "65534:65534".to_string()),
+        user: config
+            .user
+            .clone()
+            .unwrap_or_else(|| "65534:65534".to_string()),
         network: config.network.clone().unwrap_or_else(|| "none".to_string()),
         memory: config.memory.clone(),
         cpu: config.cpu.clone(),
-        pull: config.pull.clone().unwrap_or_else(|| "if-not-present".to_string()),
+        pull: config
+            .pull
+            .clone()
+            .unwrap_or_else(|| "if-not-present".to_string()),
         containerd_addr: config
             .containerd_addr
             .clone()
@@ -944,9 +918,7 @@ fn compile_services(
                 }
             } else {
                 // Default: TCP check on first port.
-                ReadinessCheck::TcpSocket(
-                    yaml_svc.ports.first().copied().unwrap_or(0),
-                )
+                ReadinessCheck::TcpSocket(yaml_svc.ports.first().copied().unwrap_or(0))
             };
 
             let interval_ms = r
