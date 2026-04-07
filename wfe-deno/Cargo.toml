@@ -9,7 +9,7 @@ description = "Deno bindings for the WFE workflow engine"
 
 [dependencies]
 wfe-core = { workspace = true, features = ["test-support"] }
-wfe = { version = "1.8.1", path = "../wfe", registry = "sunbeam" }
+wfe = { version = "1.9.0", path = "../wfe", registry = "sunbeam" }
 deno_core = { workspace = true }
 deno_error = { workspace = true }
 tokio = { workspace = true }
