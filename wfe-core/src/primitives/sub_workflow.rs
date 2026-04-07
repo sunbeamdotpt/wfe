@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use chrono::Utc;
 
-use crate::models::schema::WorkflowSchema;
 use crate::models::ExecutionResult;
+use crate::models::schema::WorkflowSchema;
 use crate::traits::step::{StepBody, StepExecutionContext};
 
 /// A step that starts a child workflow and waits for its completion.
@@ -110,12 +110,18 @@ impl StepBody for SubWorkflowStep {
             )
         })?;
 
-        // Use inputs if set, otherwise pass an empty object so the child
-        // workflow has a valid JSON object for storing step outputs.
-        let child_data = if self.inputs.is_null() {
-            serde_json::json!({})
-        } else {
+        // Use explicit inputs if set; otherwise inherit the parent workflow's
+        // data so child steps can reference the same top-level fields (e.g.
+        // REPO_URL, COMMIT_SHA) without every `type: workflow` step having to
+        // re-declare them. Fall back to an empty object when the parent has
+        // no data either so the child still has a valid JSON object for
+        // storing step outputs.
+        let child_data = if !self.inputs.is_null() {
             self.inputs.clone()
+        } else if context.workflow.data.is_object() {
+            context.workflow.data.clone()
+        } else {
+            serde_json::json!({})
         };
         let child_instance_id = host
             .start_workflow(&self.workflow_id, self.version, child_data)
@@ -132,8 +138,8 @@ impl StepBody for SubWorkflowStep {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::schema::SchemaType;
     use crate::models::ExecutionPointer;
+    use crate::models::schema::SchemaType;
     use crate::primitives::test_helpers::*;
     use crate::traits::step::HostContext;
     use serde_json::json;
@@ -170,10 +176,7 @@ mod tests {
             let def_id = definition_id.to_string();
             let result_id = self.result_id.clone();
             Box::pin(async move {
-                self.started
-                    .lock()
-                    .unwrap()
-                    .push((def_id, version, data));
+                self.started.lock().unwrap().push((def_id, version, data));
                 Ok(result_id)
             })
         }
@@ -265,10 +268,7 @@ mod tests {
 
         let result = step.run(&ctx).await.unwrap();
         assert!(result.proceed);
-        assert_eq!(
-            result.output_data,
-            Some(json!({"result": "success"}))
-        );
+        assert_eq!(result.output_data, Some(json!({"result": "success"})));
     }
 
     #[tokio::test]
@@ -292,10 +292,7 @@ mod tests {
 
         let result = step.run(&ctx).await.unwrap();
         assert!(result.proceed);
-        assert_eq!(
-            result.output_data,
-            Some(json!({"a": 1, "b": 2}))
-        );
+        assert_eq!(result.output_data, Some(json!({"a": 1, "b": 2})));
     }
 
     #[tokio::test]
