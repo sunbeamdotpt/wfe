@@ -9,7 +9,14 @@ use super::service::ServiceDefinition;
 /// A compiled workflow definition ready for execution.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowDefinition {
+    /// Stable slug used as the primary key (e.g. "ci", "checkout"). Must be
+    /// unique within a host. Referenced by other workflows, webhooks, and
+    /// clients when starting new instances.
     pub id: String,
+    /// Optional human-friendly display name surfaced in UIs, listings, and
+    /// logs (e.g. "Continuous Integration"). Falls back to `id` when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     pub version: u32,
     pub description: Option<String>,
     pub steps: Vec<WorkflowStep>,
@@ -25,6 +32,7 @@ impl WorkflowDefinition {
     pub fn new(id: impl Into<String>, version: u32) -> Self {
         Self {
             id: id.into(),
+            name: None,
             version,
             description: None,
             steps: Vec::new(),
@@ -32,6 +40,11 @@ impl WorkflowDefinition {
             default_error_retry_interval: None,
             services: Vec::new(),
         }
+    }
+
+    /// Return the display name when set, otherwise fall back to the slug id.
+    pub fn display_name(&self) -> &str {
+        self.name.as_deref().unwrap_or(&self.id)
     }
 }
 

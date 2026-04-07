@@ -3,9 +3,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
+use wfe_core::WfeError;
 use wfe_core::models::ExecutionResult;
 use wfe_core::traits::step::{StepBody, StepExecutionContext};
-use wfe_core::WfeError;
 
 /// A request sent from the executor (tokio) to the V8 thread.
 pub struct StepRequest {
@@ -160,7 +160,9 @@ pub fn deserialize_execution_result(
     value: &serde_json::Value,
 ) -> wfe_core::Result<ExecutionResult> {
     let js_result: JsExecutionResult = serde_json::from_value(value.clone()).map_err(|e| {
-        WfeError::StepExecution(format!("failed to deserialize ExecutionResult from JS: {e}"))
+        WfeError::StepExecution(format!(
+            "failed to deserialize ExecutionResult from JS: {e}"
+        ))
     })?;
 
     Ok(ExecutionResult {
@@ -186,6 +188,7 @@ mod tests {
     fn make_test_context() -> (WorkflowInstance, WorkflowStep, ExecutionPointer) {
         let instance = WorkflowInstance {
             id: "wf-1".into(),
+            name: "test-def-1".into(),
             workflow_definition_id: "test-def".into(),
             version: 1,
             description: None,
@@ -373,7 +376,9 @@ mod tests {
             assert_eq!(req.step_type, "MyStep");
             assert_eq!(req.request_id, 0);
             req.response_tx
-                .send(Ok(serde_json::json!({"proceed": true, "outputData": {"done": true}})))
+                .send(Ok(
+                    serde_json::json!({"proceed": true, "outputData": {"done": true}}),
+                ))
                 .unwrap();
         });
 
