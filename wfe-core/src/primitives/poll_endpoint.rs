@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
-use crate::models::poll_config::PollEndpointConfig;
 use crate::models::ExecutionResult;
+use crate::models::poll_config::PollEndpointConfig;
 use crate::traits::step::{StepBody, StepExecutionContext};
 
 /// A step that polls an external HTTP endpoint until a condition is met.
@@ -21,8 +21,8 @@ impl StepBody for PollEndpointStep {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::poll_config::{HttpMethod, PollCondition};
     use crate::models::ExecutionPointer;
+    use crate::models::poll_config::{HttpMethod, PollCondition};
     use crate::primitives::test_helpers::*;
     use std::collections::HashMap;
     use std::time::Duration;

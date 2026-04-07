@@ -69,7 +69,10 @@ mod tests {
         let result = step.run(&ctx).await.unwrap();
         assert!(!result.proceed);
         assert_eq!(result.branch_values, Some(vec![json!(null)]));
-        assert_eq!(result.persistence_data, Some(json!({"children_active": true})));
+        assert_eq!(
+            result.persistence_data,
+            Some(json!({"children_active": true}))
+        );
     }
 
     #[tokio::test]
@@ -141,6 +144,9 @@ mod tests {
         let result = step.run(&ctx).await.unwrap();
         assert!(!result.proceed);
         assert!(result.branch_values.is_none());
-        assert_eq!(result.persistence_data, Some(json!({"children_active": true})));
+        assert_eq!(
+            result.persistence_data,
+            Some(json!({"children_active": true}))
+        );
     }
 }

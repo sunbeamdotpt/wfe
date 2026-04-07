@@ -80,7 +80,7 @@ impl SearchIndex for OpenSearchIndex {
             .client
             .indices()
             .exists(opensearch::indices::IndicesExistsParts::Index(&[
-                &self.index_name,
+                &self.index_name
             ]))
             .send()
             .await

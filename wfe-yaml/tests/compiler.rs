@@ -221,7 +221,10 @@ workflow:
     let test_config: wfe_yaml::executors::shell::ShellConfig =
         serde_json::from_value(test_step.step_config.clone().unwrap()).unwrap();
     assert_eq!(test_config.run, "cargo build");
-    assert_eq!(test_config.shell, "bash", "shell should be inherited from YAML anchor alias");
+    assert_eq!(
+        test_config.shell, "bash",
+        "shell should be inherited from YAML anchor alias"
+    );
 }
 
 #[test]
@@ -473,8 +476,14 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
-    assert!(err.contains("explode"), "Error should mention the invalid type, got: {err}");
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
+    assert!(
+        err.contains("explode"),
+        "Error should mention the invalid type, got: {err}"
+    );
 }
 
 #[test]
@@ -517,7 +526,10 @@ workflow:
             .iter()
             .find(|s| s.name.as_deref() == Some(*child_name))
             .unwrap();
-        assert!(child.step_config.is_some(), "Child {child_name} should have step_config");
+        assert!(
+            child.step_config.is_some(),
+            "Child {child_name} should have step_config"
+        );
     }
 
     // Factories should include entries for all 3 children.
@@ -806,7 +818,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("config"),
         "Error should mention missing config, got: {err}"
@@ -1019,11 +1034,11 @@ workflow:
 /// SubWorkflowStep (from wfe-core), not a placeholder.
 #[tokio::test]
 async fn workflow_step_factory_produces_real_sub_workflow_step() {
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::sync::Mutex;
     use wfe_core::models::{ExecutionPointer, WorkflowInstance, WorkflowStep as WfStep};
     use wfe_core::traits::step::{HostContext, StepExecutionContext};
-    use std::pin::Pin;
-    use std::future::Future;
-    use std::sync::Mutex;
 
     let yaml = r#"
 workflows:
@@ -1047,30 +1062,45 @@ workflows:
     let workflows = load_workflow_from_str(yaml, &config).unwrap();
 
     // Find the parent workflow's factory for the "run-child" step
-    let parent = workflows.iter().find(|w| w.definition.id == "parent").unwrap();
-    let factory_key = parent.step_factories.iter()
+    let parent = workflows
+        .iter()
+        .find(|w| w.definition.id == "parent")
+        .unwrap();
+    let factory_key = parent
+        .step_factories
+        .iter()
         .find(|(k, _)| k.contains("run-child"))
         .map(|(k, _)| k.clone())
         .expect("run-child factory should exist");
 
     // Create a step from the factory
-    let factory = &parent.step_factories.iter()
+    let factory = &parent
+        .step_factories
+        .iter()
         .find(|(k, _)| *k == factory_key)
-        .unwrap().1;
+        .unwrap()
+        .1;
     let mut step = factory();
 
     // Mock host context that records the start_workflow call
-    struct MockHost { called: Mutex<bool> }
+    struct MockHost {
+        called: Mutex<bool>,
+    }
     impl HostContext for MockHost {
-        fn start_workflow(&self, _def: &str, _ver: u32, _data: serde_json::Value)
-            -> Pin<Box<dyn Future<Output = wfe_core::Result<String>> + Send + '_>>
-        {
+        fn start_workflow(
+            &self,
+            _def: &str,
+            _ver: u32,
+            _data: serde_json::Value,
+        ) -> Pin<Box<dyn Future<Output = wfe_core::Result<String>> + Send + '_>> {
             *self.called.lock().unwrap() = true;
             Box::pin(async { Ok("child-instance-id".to_string()) })
         }
     }
 
-    let host = MockHost { called: Mutex::new(false) };
+    let host = MockHost {
+        called: Mutex::new(false),
+    };
     let pointer = ExecutionPointer::new(0);
     let wf_step = WfStep::new(0, &factory_key);
     let workflow = WorkflowInstance::new("parent", 1, serde_json::json!({}));
@@ -1182,15 +1212,13 @@ workflow:
             }
             // Second child: not
             match &children[1] {
-                wfe_core::models::StepCondition::Not(inner) => {
-                    match inner.as_ref() {
-                        wfe_core::models::StepCondition::Comparison(cmp) => {
-                            assert_eq!(cmp.field, ".inputs.skip");
-                            assert_eq!(cmp.operator, wfe_core::models::ComparisonOp::Equals);
-                        }
-                        other => panic!("Expected Comparison inside Not, got: {other:?}"),
+                wfe_core::models::StepCondition::Not(inner) => match inner.as_ref() {
+                    wfe_core::models::StepCondition::Comparison(cmp) => {
+                        assert_eq!(cmp.field, ".inputs.skip");
+                        assert_eq!(cmp.operator, wfe_core::models::ComparisonOp::Equals);
                     }
-                }
+                    other => panic!("Expected Comparison inside Not, got: {other:?}"),
+                },
                 other => panic!("Expected Not, got: {other:?}"),
             }
         }

@@ -3,9 +3,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::sync::Mutex;
 
+use crate::Result;
 use crate::models::LifecycleEvent;
 use crate::traits::LifecyclePublisher;
-use crate::Result;
 
 /// An in-memory implementation of `LifecyclePublisher` for testing.
 #[derive(Debug, Clone)]

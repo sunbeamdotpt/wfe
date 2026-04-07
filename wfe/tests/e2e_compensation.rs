@@ -3,16 +3,14 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
+use wfe::WorkflowHostBuilder;
 use wfe::models::{
-    ErrorBehavior, ExecutionResult, PointerStatus, StepOutcome, WorkflowDefinition,
-    WorkflowStep,
+    ErrorBehavior, ExecutionResult, PointerStatus, StepOutcome, WorkflowDefinition, WorkflowStep,
 };
 use wfe::traits::step::{StepBody, StepExecutionContext};
-use wfe::WorkflowHostBuilder;
 use wfe_core::test_support::{
     InMemoryLockProvider, InMemoryPersistenceProvider, InMemoryQueueProvider,
 };
-
 
 /// Step 1: succeeds normally.
 #[derive(Default)]
@@ -32,9 +30,7 @@ struct FailingStep;
 #[async_trait]
 impl StepBody for FailingStep {
     async fn run(&mut self, _ctx: &StepExecutionContext<'_>) -> wfe_core::Result<ExecutionResult> {
-        Err(wfe_core::WfeError::StepExecution(
-            "Step2 failed".into(),
-        ))
+        Err(wfe_core::WfeError::StepExecution("Step2 failed".into()))
     }
 }
 
@@ -86,7 +82,8 @@ async fn compensation_step_runs_on_failure() {
         .use_persistence(persistence.clone() as Arc<dyn wfe_core::traits::PersistenceProvider>)
         .use_lock_provider(lock as Arc<dyn wfe_core::traits::DistributedLockProvider>)
         .use_queue_provider(queue as Arc<dyn wfe_core::traits::QueueProvider>)
-        .build().unwrap();
+        .build()
+        .unwrap();
 
     let def = build_compensation_definition();
     host.register_step::<SucceedingStep>().await;

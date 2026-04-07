@@ -1,4 +1,4 @@
-use wfe_yaml::types::{parse_type_string, SchemaType};
+use wfe_yaml::types::{SchemaType, parse_type_string};
 
 #[test]
 fn parse_all_primitives() {

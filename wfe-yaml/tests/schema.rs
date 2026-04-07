@@ -17,10 +17,7 @@ workflow:
     assert_eq!(parsed.workflow.version, 1);
     assert_eq!(parsed.workflow.steps.len(), 1);
     assert_eq!(parsed.workflow.steps[0].name, "hello");
-    assert_eq!(
-        parsed.workflow.steps[0].step_type.as_deref(),
-        Some("shell")
-    );
+    assert_eq!(parsed.workflow.steps[0].step_type.as_deref(), Some("shell"));
 }
 
 #[test]
@@ -263,20 +260,14 @@ workflow:
     let parsed: YamlWorkflow = serde_yaml::from_str(yaml).unwrap();
     assert_eq!(parsed.workflow.inputs.len(), 3);
     assert_eq!(parsed.workflow.inputs.get("repo_url").unwrap(), "string");
-    assert_eq!(
-        parsed.workflow.inputs.get("tags").unwrap(),
-        "list<string>"
-    );
+    assert_eq!(parsed.workflow.inputs.get("tags").unwrap(), "list<string>");
     assert_eq!(parsed.workflow.inputs.get("verbose").unwrap(), "bool?");
     assert_eq!(parsed.workflow.outputs.len(), 2);
     assert_eq!(
         parsed.workflow.outputs.get("artifact_path").unwrap(),
         "string"
     );
-    assert_eq!(
-        parsed.workflow.outputs.get("exit_code").unwrap(),
-        "integer"
-    );
+    assert_eq!(parsed.workflow.outputs.get("exit_code").unwrap(), "integer");
 }
 
 #[test]

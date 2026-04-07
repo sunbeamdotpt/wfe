@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 
 use wfe_core::models::service::{ReadinessCheck, ReadinessProbe, ServiceDefinition, ServicePort};
-use wfe_core::traits::step::StepBody;
 use wfe_core::traits::ServiceProvider;
-use wfe_kubernetes::config::{ClusterConfig, KubernetesStepConfig};
-use wfe_kubernetes::namespace;
+use wfe_core::traits::step::StepBody;
+use wfe_kubernetes::KubernetesServiceProvider;
 use wfe_kubernetes::cleanup;
 use wfe_kubernetes::client;
-use wfe_kubernetes::KubernetesServiceProvider;
+use wfe_kubernetes::config::{ClusterConfig, KubernetesStepConfig};
+use wfe_kubernetes::namespace;
 
 /// Path to the Lima sunbeam VM kubeconfig.
 fn kubeconfig_path() -> String {
@@ -64,10 +64,14 @@ async fn namespace_create_and_delete() {
     let client = client::create_client(&config).await.unwrap();
     let ns = "wfe-test-ns-lifecycle";
 
-    namespace::ensure_namespace(&client, ns, "test-wf").await.unwrap();
+    namespace::ensure_namespace(&client, ns, "test-wf")
+        .await
+        .unwrap();
 
     // Idempotent — creating again should succeed.
-    namespace::ensure_namespace(&client, ns, "test-wf").await.unwrap();
+    namespace::ensure_namespace(&client, ns, "test-wf")
+        .await
+        .unwrap();
 
     namespace::delete_namespace(&client, ns).await.unwrap();
 }
@@ -107,10 +111,12 @@ async fn run_echo_job() {
     assert!(result.proceed);
 
     let output = result.output_data.unwrap();
-    assert!(output["echo-step.stdout"]
-        .as_str()
-        .unwrap()
-        .contains("hello from k8s"));
+    assert!(
+        output["echo-step.stdout"]
+            .as_str()
+            .unwrap()
+            .contains("hello from k8s")
+    );
     assert_eq!(output["echo-step.exit_code"], 0);
 
     // Cleanup namespace.
@@ -132,8 +138,7 @@ async fn run_job_with_wfe_output() {
     let mut step =
         wfe_kubernetes::KubernetesStep::new(step_cfg, config.clone(), k8s_client.clone());
 
-    let instance =
-        wfe_core::models::WorkflowInstance::new("output-wf", 1, serde_json::json!({}));
+    let instance = wfe_core::models::WorkflowInstance::new("output-wf", 1, serde_json::json!({}));
     let mut ws = wfe_core::models::WorkflowStep::new(0, "alpine-output");
     ws.name = Some("output-step".into());
     let pointer = wfe_core::models::ExecutionPointer::new(0);
@@ -250,8 +255,7 @@ async fn run_job_with_timeout() {
     let mut step =
         wfe_kubernetes::KubernetesStep::new(step_cfg, config.clone(), k8s_client.clone());
 
-    let instance =
-        wfe_core::models::WorkflowInstance::new("timeout-wf", 1, serde_json::json!({}));
+    let instance = wfe_core::models::WorkflowInstance::new("timeout-wf", 1, serde_json::json!({}));
     let mut ws = wfe_core::models::WorkflowStep::new(0, "alpine-timeout");
     ws.name = Some("timeout-step".into());
     let pointer = wfe_core::models::ExecutionPointer::new(0);
@@ -484,7 +488,10 @@ async fn service_provider_provision_duplicate_name_fails() {
     };
 
     // First provision succeeds.
-    let endpoints = provider.provision(workflow_id, &[svc.clone()]).await.unwrap();
+    let endpoints = provider
+        .provision(workflow_id, &[svc.clone()])
+        .await
+        .unwrap();
     assert_eq!(endpoints.len(), 1);
 
     // Second provision with same name should fail (pod already exists).
@@ -505,7 +512,9 @@ async fn service_provider_provision_service_object_conflict() {
 
     let workflow_id = &unique_id("svc-conflict");
     let ns = namespace::namespace_name(&config.namespace_prefix, workflow_id);
-    namespace::ensure_namespace(&k8s_client, &ns, workflow_id).await.unwrap();
+    namespace::ensure_namespace(&k8s_client, &ns, workflow_id)
+        .await
+        .unwrap();
 
     // Pre-create just the K8s Service (not the pod).
     let svc_def = nginx_service();

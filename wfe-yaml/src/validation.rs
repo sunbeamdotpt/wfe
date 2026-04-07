@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::error::YamlWorkflowError;
 use crate::schema::{WorkflowSpec, YamlCombinator, YamlComparison, YamlCondition, YamlStep};
-use crate::types::{parse_type_string, SchemaType};
+use crate::types::{SchemaType, parse_type_string};
 
 /// Validate a parsed workflow spec.
 pub fn validate(spec: &WorkflowSpec) -> Result<(), YamlWorkflowError> {
@@ -494,11 +494,7 @@ fn validate_field_path(
                 return Err(YamlWorkflowError::Validation(format!(
                     "Condition references unknown input field '{field_name}'. \
                      Available inputs: [{}]",
-                    spec.inputs
-                        .keys()
-                        .cloned()
-                        .collect::<Vec<_>>()
-                        .join(", ")
+                    spec.inputs.keys().cloned().collect::<Vec<_>>().join(", ")
                 )));
             }
         }
@@ -509,11 +505,7 @@ fn validate_field_path(
                 return Err(YamlWorkflowError::Validation(format!(
                     "Condition references unknown output field '{field_name}'. \
                      Available outputs: [{}]",
-                    spec.outputs
-                        .keys()
-                        .cloned()
-                        .collect::<Vec<_>>()
-                        .join(", ")
+                    spec.outputs.keys().cloned().collect::<Vec<_>>().join(", ")
                 )));
             }
         }

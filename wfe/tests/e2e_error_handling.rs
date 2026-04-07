@@ -4,15 +4,14 @@ use std::time::Duration;
 use async_trait::async_trait;
 
 use wfe::models::{
-    ErrorBehavior, ExecutionResult, PointerStatus, StepOutcome, WorkflowDefinition,
-    WorkflowStatus, WorkflowStep,
+    ErrorBehavior, ExecutionResult, PointerStatus, StepOutcome, WorkflowDefinition, WorkflowStatus,
+    WorkflowStep,
 };
 use wfe::traits::step::{StepBody, StepExecutionContext};
 use wfe::{WorkflowHostBuilder, run_workflow_sync};
 use wfe_core::test_support::{
     InMemoryLockProvider, InMemoryPersistenceProvider, InMemoryQueueProvider,
 };
-
 
 /// A step that fails on the first attempt but succeeds on retry.
 /// Uses retry_count on the execution pointer to track attempts.

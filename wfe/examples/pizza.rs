@@ -43,11 +43,11 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+use wfe::WorkflowHostBuilder;
 use wfe::builder::WorkflowBuilder;
 use wfe::models::*;
-use wfe::traits::step::{StepBody, StepExecutionContext};
 use wfe::test_support::*;
-use wfe::WorkflowHostBuilder;
+use wfe::traits::step::{StepBody, StepExecutionContext};
 
 // =============================================================================
 // Workflow Data
@@ -217,10 +217,7 @@ impl StepBody for AddToppings {
     async fn run(&mut self, ctx: &StepExecutionContext<'_>) -> wfe::Result<ExecutionResult> {
         if let Some(item) = ctx.item {
             let pizza: Pizza = serde_json::from_value(item.clone()).unwrap_or_default();
-            println!(
-                "[AddToppings] Layering: {}",
-                pizza.toppings.join(", ")
-            );
+            println!("[AddToppings] Layering: {}", pizza.toppings.join(", "));
             if let Some(ref instructions) = pizza.special_instructions {
                 println!("[AddToppings] Special: {}", instructions);
             }
@@ -334,7 +331,10 @@ impl StepBody for DispatchDriver {
         let order: PizzaOrder = serde_json::from_value(ctx.workflow.data.clone())?;
         println!(
             "[DispatchDriver] Driver en route to {}",
-            order.delivery_address.as_deref().unwrap_or("unknown address")
+            order
+                .delivery_address
+                .as_deref()
+                .unwrap_or("unknown address")
         );
         Ok(ExecutionResult::next())
     }
@@ -347,10 +347,7 @@ struct RingCounterBell;
 impl StepBody for RingCounterBell {
     async fn run(&mut self, ctx: &StepExecutionContext<'_>) -> wfe::Result<ExecutionResult> {
         let order: PizzaOrder = serde_json::from_value(ctx.workflow.data.clone())?;
-        println!(
-            "[RingCounterBell] DING! Order for {}!",
-            order.customer_name
-        );
+        println!("[RingCounterBell] DING! Order for {}!", order.customer_name);
         Ok(ExecutionResult::next())
     }
 }
@@ -386,54 +383,51 @@ fn build_pizza_workflow() -> WorkflowDefinition {
     WorkflowBuilder::<PizzaOrder>::new()
         // 1. Validate the order
         .start_with::<ValidateOrder>()
-            .name("Validate Order")
-
+        .name("Validate Order")
         // 2. Charge payment (saga: refund if anything fails downstream)
         .then::<ChargePayment>()
-            .name("Charge Payment")
-            .compensate_with::<RefundPayment>()
-
+        .name("Charge Payment")
+        .compensate_with::<RefundPayment>()
         // 3. Prep toppings in parallel
-        .parallel(|p| p
-            .branch(|b| { b.add_step(std::any::type_name::<MakeSauce>()); })
-            .branch(|b| { b.add_step(std::any::type_name::<GrateCheese>()); })
-            .branch(|b| { b.add_step(std::any::type_name::<ChopVegetables>()); })
-        )
-
+        .parallel(|p| {
+            p.branch(|b| {
+                b.add_step(std::any::type_name::<MakeSauce>());
+            })
+            .branch(|b| {
+                b.add_step(std::any::type_name::<GrateCheese>());
+            })
+            .branch(|b| {
+                b.add_step(std::any::type_name::<ChopVegetables>());
+            })
+        })
         // 4. Assemble each pizza (with quality check that retries)
         .then::<StretchDough>()
-            .name("Stretch Dough")
+        .name("Stretch Dough")
         .then::<AddToppings>()
-            .name("Add Toppings")
+        .name("Add Toppings")
         .then::<QualityCheck>()
-            .name("Quality Check")
-            .on_error(ErrorBehavior::Retry {
-                interval: Duration::from_millis(100),
-                max_retries: 3,
-            })
-
+        .name("Quality Check")
+        .on_error(ErrorBehavior::Retry {
+            interval: Duration::from_millis(100),
+            max_retries: 3,
+        })
         // 5. Fire into the oven
         .then::<FireOven>()
-            .name("Fire Oven")
-
+        .name("Fire Oven")
         // 6. Wait for oven timer (external event)
         .wait_for("oven.timer", "oven-1")
-            .name("Wait for Oven Timer")
-
+        .name("Wait for Oven Timer")
         // 7. Let pizzas cool (delay)
         .delay(Duration::from_millis(50))
-            .name("Cooling Rest")
-
+        .name("Cooling Rest")
         // 8. Delivery decision
         .then::<CheckIfDelivery>()
-            .name("Check Delivery")
+        .name("Check Delivery")
         .then::<DispatchDriver>()
-            .name("Dispatch or Pickup")
-
+        .name("Dispatch or Pickup")
         // 9. Done!
         .then::<CompleteOrder>()
-            .name("Complete Order")
-
+        .name("Complete Order")
         .end_workflow()
         .build("pizza-workflow", 1)
 }
@@ -542,7 +536,10 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         match instance.status {
             WorkflowStatus::Complete | WorkflowStatus::Terminated => break instance,
             _ if tokio::time::Instant::now() > deadline => {
-                println!("\nWorkflow still running after timeout. Status: {:?}", instance.status);
+                println!(
+                    "\nWorkflow still running after timeout. Status: {:?}",
+                    instance.status
+                );
                 break instance;
             }
             _ => tokio::time::sleep(Duration::from_millis(100)).await,

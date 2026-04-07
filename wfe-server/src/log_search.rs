@@ -304,8 +304,8 @@ mod tests {
     // ── OpenSearch integration tests ────────────────────────────────
 
     fn opensearch_url() -> Option<String> {
-        let url = std::env::var("WFE_SEARCH_URL")
-            .unwrap_or_else(|_| "http://localhost:9200".to_string());
+        let url =
+            std::env::var("WFE_SEARCH_URL").unwrap_or_else(|_| "http://localhost:9200".to_string());
         // Quick TCP probe to check if OpenSearch is reachable.
         let addr = url
             .strip_prefix("http://")
@@ -340,10 +340,7 @@ mod tests {
     /// Delete the test index to start clean.
     async fn cleanup_index(url: &str) {
         let client = reqwest::Client::new();
-        let _ = client
-            .delete(format!("{url}/{LOG_INDEX}"))
-            .send()
-            .await;
+        let _ = client.delete(format!("{url}/{LOG_INDEX}")).send().await;
     }
 
     #[tokio::test]
@@ -375,18 +372,37 @@ mod tests {
         index.ensure_index().await.unwrap();
 
         // Index some log chunks.
-        let chunk = make_test_chunk("wf-search-1", "build", LogStreamType::Stdout, "compiling wfe-core v1.5.0");
+        let chunk = make_test_chunk(
+            "wf-search-1",
+            "build",
+            LogStreamType::Stdout,
+            "compiling wfe-core v1.5.0",
+        );
         index.index_chunk(&chunk).await.unwrap();
 
-        let chunk = make_test_chunk("wf-search-1", "build", LogStreamType::Stderr, "warning: unused variable");
+        let chunk = make_test_chunk(
+            "wf-search-1",
+            "build",
+            LogStreamType::Stderr,
+            "warning: unused variable",
+        );
         index.index_chunk(&chunk).await.unwrap();
 
-        let chunk = make_test_chunk("wf-search-1", "test", LogStreamType::Stdout, "test result: ok. 79 passed");
+        let chunk = make_test_chunk(
+            "wf-search-1",
+            "test",
+            LogStreamType::Stdout,
+            "test result: ok. 79 passed",
+        );
         index.index_chunk(&chunk).await.unwrap();
 
         // OpenSearch needs a refresh to make docs searchable.
         let client = reqwest::Client::new();
-        client.post(format!("{url}/{LOG_INDEX}/_refresh")).send().await.unwrap();
+        client
+            .post(format!("{url}/{LOG_INDEX}/_refresh"))
+            .send()
+            .await
+            .unwrap();
 
         // Search by text.
         let (results, total) = index
@@ -456,12 +472,21 @@ mod tests {
 
         // Index 5 chunks.
         for i in 0..5 {
-            let chunk = make_test_chunk("wf-page", "build", LogStreamType::Stdout, &format!("line {i}"));
+            let chunk = make_test_chunk(
+                "wf-page",
+                "build",
+                LogStreamType::Stdout,
+                &format!("line {i}"),
+            );
             index.index_chunk(&chunk).await.unwrap();
         }
 
         let client = reqwest::Client::new();
-        client.post(format!("{url}/{LOG_INDEX}/_refresh")).send().await.unwrap();
+        client
+            .post(format!("{url}/{LOG_INDEX}/_refresh"))
+            .send()
+            .await
+            .unwrap();
 
         // Get first 2.
         let (results, total) = index
@@ -506,11 +531,20 @@ mod tests {
         let index = LogSearchIndex::new(&url).unwrap();
         index.ensure_index().await.unwrap();
 
-        let chunk = make_test_chunk("wf-fields", "clippy", LogStreamType::Stderr, "error: type mismatch");
+        let chunk = make_test_chunk(
+            "wf-fields",
+            "clippy",
+            LogStreamType::Stderr,
+            "error: type mismatch",
+        );
         index.index_chunk(&chunk).await.unwrap();
 
         let client = reqwest::Client::new();
-        client.post(format!("{url}/{LOG_INDEX}/_refresh")).send().await.unwrap();
+        client
+            .post(format!("{url}/{LOG_INDEX}/_refresh"))
+            .send()
+            .await
+            .unwrap();
 
         let (results, _) = index
             .search("type mismatch", None, None, None, 0, 10)

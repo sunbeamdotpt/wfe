@@ -8,21 +8,20 @@ use wfe_core::models::ExecutionResult;
 use wfe_core::traits::step::{StepBody, StepExecutionContext};
 
 use wfe_containerd_protos::containerd::services::containers::v1::{
-    containers_client::ContainersClient, Container, CreateContainerRequest,
-    DeleteContainerRequest, container::Runtime,
+    Container, CreateContainerRequest, DeleteContainerRequest, container::Runtime,
+    containers_client::ContainersClient,
 };
 use wfe_containerd_protos::containerd::services::content::v1::{
-    content_client::ContentClient, ReadContentRequest,
+    ReadContentRequest, content_client::ContentClient,
 };
 use wfe_containerd_protos::containerd::services::images::v1::{
-    images_client::ImagesClient, GetImageRequest,
+    GetImageRequest, images_client::ImagesClient,
 };
 use wfe_containerd_protos::containerd::services::snapshots::v1::{
-    snapshots_client::SnapshotsClient, MountsRequest, PrepareSnapshotRequest,
+    MountsRequest, PrepareSnapshotRequest, snapshots_client::SnapshotsClient,
 };
 use wfe_containerd_protos::containerd::services::tasks::v1::{
-    tasks_client::TasksClient, CreateTaskRequest, DeleteTaskRequest, StartRequest,
-    WaitRequest,
+    CreateTaskRequest, DeleteTaskRequest, StartRequest, WaitRequest, tasks_client::TasksClient,
 };
 use wfe_containerd_protos::containerd::services::version::v1::version_client::VersionClient;
 
@@ -49,10 +48,7 @@ impl ContainerdStep {
     /// TCP/HTTP endpoints.
     pub(crate) async fn connect(addr: &str) -> Result<Channel, WfeError> {
         let channel = if addr.starts_with('/') || addr.starts_with("unix://") {
-            let socket_path = addr
-                .strip_prefix("unix://")
-                .unwrap_or(addr)
-                .to_string();
+            let socket_path = addr.strip_prefix("unix://").unwrap_or(addr).to_string();
 
             if !Path::new(&socket_path).exists() {
                 return Err(WfeError::StepExecution(format!(
@@ -61,9 +57,7 @@ impl ContainerdStep {
             }
 
             Endpoint::try_from("http://[::]:50051")
-                .map_err(|e| {
-                    WfeError::StepExecution(format!("failed to create endpoint: {e}"))
-                })?
+                .map_err(|e| WfeError::StepExecution(format!("failed to create endpoint: {e}")))?
                 .connect_with_connector(tower::service_fn(move |_: Uri| {
                     let path = socket_path.clone();
                     async move {
@@ -112,20 +106,14 @@ impl ContainerdStep {
     /// `ctr image pull` or `nerdctl pull`.
     ///
     /// TODO: implement full image pull via TransferService or content ingest.
-    async fn ensure_image(
-        channel: &Channel,
-        image: &str,
-        namespace: &str,
-    ) -> Result<(), WfeError> {
+    async fn ensure_image(channel: &Channel, image: &str, namespace: &str) -> Result<(), WfeError> {
         let mut client = ImagesClient::new(channel.clone());
 
         let mut req = tonic::Request::new(GetImageRequest {
             name: image.to_string(),
         });
-        req.metadata_mut().insert(
-            "containerd-namespace",
-            namespace.parse().unwrap(),
-        );
+        req.metadata_mut()
+            .insert("containerd-namespace", namespace.parse().unwrap());
 
         match client.get(req).await {
             Ok(_) => Ok(()),
@@ -151,20 +139,24 @@ impl ContainerdStep {
         image: &str,
         namespace: &str,
     ) -> Result<String, WfeError> {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
 
         // 1. Get the image record to find the manifest digest.
         let mut images_client = ImagesClient::new(channel.clone());
         let req = Self::with_namespace(
-            GetImageRequest { name: image.to_string() },
+            GetImageRequest {
+                name: image.to_string(),
+            },
             namespace,
         );
-        let image_resp = images_client.get(req).await.map_err(|e| {
-            WfeError::StepExecution(format!("failed to get image '{image}': {e}"))
-        })?;
-        let img = image_resp.into_inner().image.ok_or_else(|| {
-            WfeError::StepExecution(format!("image '{image}' has no record"))
-        })?;
+        let image_resp = images_client
+            .get(req)
+            .await
+            .map_err(|e| WfeError::StepExecution(format!("failed to get image '{image}': {e}")))?;
+        let img = image_resp
+            .into_inner()
+            .image
+            .ok_or_else(|| WfeError::StepExecution(format!("image '{image}' has no record")))?;
         let target = img.target.ok_or_else(|| {
             WfeError::StepExecution(format!("image '{image}' has no target descriptor"))
         })?;
@@ -188,22 +180,26 @@ impl ContainerdStep {
             let manifests = manifest_json["manifests"].as_array().ok_or_else(|| {
                 WfeError::StepExecution("image index has no manifests array".to_string())
             })?;
-            let platform_manifest = manifests.iter().find(|m| {
-                m.get("platform")
-                    .and_then(|p| p.get("architecture"))
-                    .and_then(|a| a.as_str())
-                    == Some(oci_arch)
-            }).ok_or_else(|| {
-                WfeError::StepExecution(format!(
-                    "no manifest for architecture '{oci_arch}' in image index"
-                ))
-            })?;
+            let platform_manifest = manifests
+                .iter()
+                .find(|m| {
+                    m.get("platform")
+                        .and_then(|p| p.get("architecture"))
+                        .and_then(|a| a.as_str())
+                        == Some(oci_arch)
+                })
+                .ok_or_else(|| {
+                    WfeError::StepExecution(format!(
+                        "no manifest for architecture '{oci_arch}' in image index"
+                    ))
+                })?;
             let digest = platform_manifest["digest"].as_str().ok_or_else(|| {
                 WfeError::StepExecution("platform manifest has no digest".to_string())
             })?;
             let bytes = Self::read_content(channel, digest, namespace).await?;
-            serde_json::from_slice(&bytes)
-                .map_err(|e| WfeError::StepExecution(format!("failed to parse platform manifest: {e}")))?
+            serde_json::from_slice(&bytes).map_err(|e| {
+                WfeError::StepExecution(format!("failed to parse platform manifest: {e}"))
+            })?
         } else {
             manifest_json
         };
@@ -211,9 +207,7 @@ impl ContainerdStep {
         // 3. Get the config digest from the manifest.
         let config_digest = manifest_json["config"]["digest"]
             .as_str()
-            .ok_or_else(|| {
-                WfeError::StepExecution("manifest has no config.digest".to_string())
-            })?;
+            .ok_or_else(|| WfeError::StepExecution("manifest has no config.digest".to_string()))?;
 
         // 4. Read the image config.
         let config_bytes = Self::read_content(channel, config_digest, namespace).await?;
@@ -239,9 +233,9 @@ impl ContainerdStep {
             .to_string();
 
         for diff_id in &diff_ids[1..] {
-            let diff = diff_id.as_str().ok_or_else(|| {
-                WfeError::StepExecution("diff_id is not a string".to_string())
-            })?;
+            let diff = diff_id
+                .as_str()
+                .ok_or_else(|| WfeError::StepExecution("diff_id is not a string".to_string()))?;
             let mut hasher = Sha256::new();
             hasher.update(format!("{chain_id} {diff}"));
             chain_id = format!("sha256:{:x}", hasher.finalize());
@@ -269,9 +263,11 @@ impl ContainerdStep {
             namespace,
         );
 
-        let mut stream = client.read(req).await.map_err(|e| {
-            WfeError::StepExecution(format!("failed to read content {digest}: {e}"))
-        })?.into_inner();
+        let mut stream = client
+            .read(req)
+            .await
+            .map_err(|e| WfeError::StepExecution(format!("failed to read content {digest}: {e}")))?
+            .into_inner();
 
         let mut data = Vec::new();
         while let Some(chunk) = stream.next().await {
@@ -288,10 +284,7 @@ impl ContainerdStep {
     ///
     /// The spec is serialized as JSON and wrapped in a protobuf Any with
     /// the containerd OCI spec type URL.
-    pub(crate) fn build_oci_spec(
-        &self,
-        merged_env: &HashMap<String, String>,
-    ) -> prost_types::Any {
+    pub(crate) fn build_oci_spec(&self, merged_env: &HashMap<String, String>) -> prost_types::Any {
         // Build the args array for the process.
         let args: Vec<String> = if let Some(ref run) = self.config.run {
             vec!["/bin/sh".to_string(), "-c".to_string(), run.clone()]
@@ -302,10 +295,7 @@ impl ContainerdStep {
         };
 
         // Build env in KEY=VALUE form.
-        let env: Vec<String> = merged_env
-            .iter()
-            .map(|(k, v)| format!("{k}={v}"))
-            .collect();
+        let env: Vec<String> = merged_env.iter().map(|(k, v)| format!("{k}={v}")).collect();
 
         // Build mounts.
         let mut mounts = vec![
@@ -360,10 +350,20 @@ impl ContainerdStep {
         // capability set so tools like apt-get work. Non-root gets nothing.
         let caps = if uid == 0 {
             serde_json::json!([
-                "CAP_AUDIT_WRITE", "CAP_CHOWN", "CAP_DAC_OVERRIDE",
-                "CAP_FOWNER", "CAP_FSETID", "CAP_KILL", "CAP_MKNOD",
-                "CAP_NET_BIND_SERVICE", "CAP_NET_RAW", "CAP_SETFCAP",
-                "CAP_SETGID", "CAP_SETPCAP", "CAP_SETUID", "CAP_SYS_CHROOT",
+                "CAP_AUDIT_WRITE",
+                "CAP_CHOWN",
+                "CAP_DAC_OVERRIDE",
+                "CAP_FOWNER",
+                "CAP_FSETID",
+                "CAP_KILL",
+                "CAP_MKNOD",
+                "CAP_NET_BIND_SERVICE",
+                "CAP_NET_RAW",
+                "CAP_SETFCAP",
+                "CAP_SETGID",
+                "CAP_SETPCAP",
+                "CAP_SETUID",
+                "CAP_SYS_CHROOT",
             ])
         } else {
             serde_json::json!([])
@@ -405,10 +405,9 @@ impl ContainerdStep {
     /// Inject a `containerd-namespace` header into a tonic request.
     pub(crate) fn with_namespace<T>(req: T, namespace: &str) -> tonic::Request<T> {
         let mut request = tonic::Request::new(req);
-        request.metadata_mut().insert(
-            "containerd-namespace",
-            namespace.parse().unwrap(),
-        );
+        request
+            .metadata_mut()
+            .insert("containerd-namespace", namespace.parse().unwrap());
         request
     }
 
@@ -492,8 +491,7 @@ impl ContainerdStep {
             match snapshots_client.mounts(mounts_req).await {
                 Ok(resp) => resp.into_inner().mounts,
                 Err(_) => {
-                    let parent =
-                        Self::resolve_image_chain_id(&channel, image, namespace).await?;
+                    let parent = Self::resolve_image_chain_id(&channel, image, namespace).await?;
                     let prepare_req = Self::with_namespace(
                         PrepareSnapshotRequest {
                             snapshotter: DEFAULT_SNAPSHOTTER.to_string(),
@@ -531,9 +529,10 @@ impl ContainerdStep {
             },
             namespace,
         );
-        tasks_client.create(create_task_req).await.map_err(|e| {
-            WfeError::StepExecution(format!("failed to create service task: {e}"))
-        })?;
+        tasks_client
+            .create(create_task_req)
+            .await
+            .map_err(|e| WfeError::StepExecution(format!("failed to create service task: {e}")))?;
 
         let start_req = Self::with_namespace(
             StartRequest {
@@ -542,9 +541,10 @@ impl ContainerdStep {
             },
             namespace,
         );
-        tasks_client.start(start_req).await.map_err(|e| {
-            WfeError::StepExecution(format!("failed to start service task: {e}"))
-        })?;
+        tasks_client
+            .start(start_req)
+            .await
+            .map_err(|e| WfeError::StepExecution(format!("failed to start service task: {e}")))?;
 
         tracing::info!(container_id = %container_id, image = %image, "service container started");
         Ok(())
@@ -701,9 +701,10 @@ impl StepBody for ContainerdStep {
             namespace,
         );
 
-        containers_client.create(create_req).await.map_err(|e| {
-            WfeError::StepExecution(format!("failed to create container: {e}"))
-        })?;
+        containers_client
+            .create(create_req)
+            .await
+            .map_err(|e| WfeError::StepExecution(format!("failed to create container: {e}")))?;
 
         // 6. Prepare snapshot with the image's layers as parent.
         let mut snapshots_client = SnapshotsClient::new(channel.clone());
@@ -723,7 +724,8 @@ impl StepBody for ContainerdStep {
                 Err(_) => {
                     // Resolve the image's chain ID to use as snapshot parent.
                     let parent = if should_check {
-                        Self::resolve_image_chain_id(&channel, &self.config.image, namespace).await?
+                        Self::resolve_image_chain_id(&channel, &self.config.image, namespace)
+                            .await?
                     } else {
                         String::new()
                     };
@@ -741,9 +743,7 @@ impl StepBody for ContainerdStep {
                         .prepare(prepare_req)
                         .await
                         .map_err(|e| {
-                            WfeError::StepExecution(format!(
-                                "failed to prepare snapshot: {e}"
-                            ))
+                            WfeError::StepExecution(format!("failed to prepare snapshot: {e}"))
                         })?
                         .into_inner()
                         .mounts
@@ -758,9 +758,8 @@ impl StepBody for ContainerdStep {
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|_| std::env::temp_dir());
         let tmp_dir = io_base.join(format!("wfe-io-{container_id}"));
-        std::fs::create_dir_all(&tmp_dir).map_err(|e| {
-            WfeError::StepExecution(format!("failed to create IO temp dir: {e}"))
-        })?;
+        std::fs::create_dir_all(&tmp_dir)
+            .map_err(|e| WfeError::StepExecution(format!("failed to create IO temp dir: {e}")))?;
 
         let stdout_path = tmp_dir.join("stdout");
         let stderr_path = tmp_dir.join("stderr");
@@ -802,9 +801,10 @@ impl StepBody for ContainerdStep {
             namespace,
         );
 
-        tasks_client.create(create_task_req).await.map_err(|e| {
-            WfeError::StepExecution(format!("failed to create task: {e}"))
-        })?;
+        tasks_client
+            .create(create_task_req)
+            .await
+            .map_err(|e| WfeError::StepExecution(format!("failed to create task: {e}")))?;
 
         // Start the task.
         let start_req = Self::with_namespace(
@@ -815,9 +815,10 @@ impl StepBody for ContainerdStep {
             namespace,
         );
 
-        tasks_client.start(start_req).await.map_err(|e| {
-            WfeError::StepExecution(format!("failed to start task: {e}"))
-        })?;
+        tasks_client
+            .start(start_req)
+            .await
+            .map_err(|e| WfeError::StepExecution(format!("failed to start task: {e}")))?;
 
         tracing::info!(container_id = %container_id, "task started");
 
@@ -836,12 +837,7 @@ impl StepBody for ContainerdStep {
                 Ok(result) => result,
                 Err(_) => {
                     // Attempt cleanup before returning timeout error.
-                    let _ = Self::cleanup(
-                        &channel,
-                        &container_id,
-                        namespace,
-                    )
-                    .await;
+                    let _ = Self::cleanup(&channel, &container_id, namespace).await;
                     let _ = std::fs::remove_dir_all(&tmp_dir);
                     return Err(WfeError::StepExecution(format!(
                         "container execution timed out after {timeout_ms}ms"
@@ -887,8 +883,13 @@ impl StepBody for ContainerdStep {
 
         // 13. Parse outputs and build result.
         let parsed = Self::parse_outputs(&stdout_content);
-        let output_data =
-            Self::build_output_data(step_name, &stdout_content, &stderr_content, exit_code, &parsed);
+        let output_data = Self::build_output_data(
+            step_name,
+            &stdout_content,
+            &stderr_content,
+            exit_code,
+            &parsed,
+        );
 
         Ok(ExecutionResult {
             proceed: true,
@@ -927,9 +928,7 @@ impl ContainerdStep {
         containers_client
             .delete(del_container_req)
             .await
-            .map_err(|e| {
-                WfeError::StepExecution(format!("failed to delete container: {e}"))
-            })?;
+            .map_err(|e| WfeError::StepExecution(format!("failed to delete container: {e}")))?;
 
         Ok(())
     }
@@ -1013,10 +1012,7 @@ mod tests {
         let stdout = "##wfe[output url=https://example.com?a=1&b=2]\n";
         let outputs = ContainerdStep::parse_outputs(stdout);
         assert_eq!(outputs.len(), 1);
-        assert_eq!(
-            outputs.get("url").unwrap(),
-            "https://example.com?a=1&b=2"
-        );
+        assert_eq!(outputs.get("url").unwrap(), "https://example.com?a=1&b=2");
     }
 
     #[test]
@@ -1043,13 +1039,7 @@ mod tests {
     #[test]
     fn build_output_data_basic() {
         let parsed = HashMap::from([("result".to_string(), "success".to_string())]);
-        let data = ContainerdStep::build_output_data(
-            "my_step",
-            "hello world\n",
-            "",
-            0,
-            &parsed,
-        );
+        let data = ContainerdStep::build_output_data("my_step", "hello world\n", "", 0, &parsed);
 
         let obj = data.as_object().unwrap();
         assert_eq!(obj.get("result").unwrap(), "success");
@@ -1060,13 +1050,7 @@ mod tests {
 
     #[test]
     fn build_output_data_no_parsed_outputs() {
-        let data = ContainerdStep::build_output_data(
-            "step1",
-            "out",
-            "err",
-            1,
-            &HashMap::new(),
-        );
+        let data = ContainerdStep::build_output_data("step1", "out", "err", 1, &HashMap::new());
 
         let obj = data.as_object().unwrap();
         assert_eq!(obj.len(), 3); // stdout, stderr, exit_code
@@ -1150,7 +1134,11 @@ mod tests {
     fn build_oci_spec_with_command() {
         let mut config = minimal_config();
         config.run = None;
-        config.command = Some(vec!["echo".to_string(), "hello".to_string(), "world".to_string()]);
+        config.command = Some(vec![
+            "echo".to_string(),
+            "hello".to_string(),
+            "world".to_string(),
+        ]);
         let step = ContainerdStep::new(config);
         let spec = step.build_oci_spec(&HashMap::new());
 
@@ -1227,10 +1215,8 @@ mod tests {
         // 3 default + 2 user = 5
         assert_eq!(mounts.len(), 5);
 
-        let bind_mounts: Vec<&serde_json::Value> = mounts
-            .iter()
-            .filter(|m| m["type"] == "bind")
-            .collect();
+        let bind_mounts: Vec<&serde_json::Value> =
+            mounts.iter().filter(|m| m["type"] == "bind").collect();
         assert_eq!(bind_mounts.len(), 2);
 
         let ro_mount = bind_mounts
@@ -1274,10 +1260,9 @@ mod tests {
 
     #[tokio::test]
     async fn connect_to_missing_unix_socket_with_scheme_returns_error() {
-        let err =
-            ContainerdStep::connect("unix:///tmp/nonexistent-wfe-containerd-test.sock")
-                .await
-                .unwrap_err();
+        let err = ContainerdStep::connect("unix:///tmp/nonexistent-wfe-containerd-test.sock")
+            .await
+            .unwrap_err();
         let msg = format!("{err}");
         assert!(
             msg.contains("socket not found"),
@@ -1304,9 +1289,11 @@ mod tests {
         let config = minimal_config();
         let step = ContainerdStep::new(config);
         assert_eq!(step.config.image, "alpine:3.18");
-        assert_eq!(step.config.containerd_addr, "/run/containerd/containerd.sock");
+        assert_eq!(
+            step.config.containerd_addr,
+            "/run/containerd/containerd.sock"
+        );
     }
-
 }
 
 /// Integration tests that require a live containerd daemon.
@@ -1323,9 +1310,7 @@ mod e2e_tests {
             )
         });
 
-        let socket_path = addr
-            .strip_prefix("unix://")
-            .unwrap_or(addr.as_str());
+        let socket_path = addr.strip_prefix("unix://").unwrap_or(addr.as_str());
 
         if Path::new(socket_path).exists() {
             Some(addr)
@@ -1350,6 +1335,9 @@ mod e2e_tests {
 
         assert!(!version.version.is_empty(), "version should not be empty");
         assert!(!version.revision.is_empty(), "revision should not be empty");
-        eprintln!("containerd version={} revision={}", version.version, version.revision);
+        eprintln!(
+            "containerd version={} revision={}",
+            version.version, version.revision
+        );
     }
 }

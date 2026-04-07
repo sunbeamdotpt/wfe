@@ -53,7 +53,8 @@ async fn linear_three_step_workflow_completes() {
         .use_persistence(persistence.clone() as Arc<dyn wfe_core::traits::PersistenceProvider>)
         .use_lock_provider(lock as Arc<dyn wfe_core::traits::DistributedLockProvider>)
         .use_queue_provider(queue as Arc<dyn wfe_core::traits::QueueProvider>)
-        .build().unwrap();
+        .build()
+        .unwrap();
 
     host.register_step::<IncrementStep>().await;
     host.register_workflow_definition(def).await;

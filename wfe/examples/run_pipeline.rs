@@ -18,9 +18,9 @@ use std::time::Duration;
 
 use serde_json::json;
 
-use wfe::models::WorkflowStatus;
-use wfe::test_support::{InMemoryLockProvider, InMemoryQueueProvider, InMemoryPersistenceProvider};
 use wfe::WorkflowHostBuilder;
+use wfe::models::WorkflowStatus;
+use wfe::test_support::{InMemoryLockProvider, InMemoryPersistenceProvider, InMemoryQueueProvider};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -30,7 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_timer(tracing_subscriber::fmt::time::uptime())
         .with_env_filter(
             std::env::var("RUST_LOG")
-                .unwrap_or_else(|_| "wfe_core=info,wfe=info,run_pipeline=info".into())
+                .unwrap_or_else(|_| "wfe_core=info,wfe=info,run_pipeline=info".into()),
         )
         .init();
 
@@ -40,9 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("usage: run_pipeline <workflows.yaml>");
 
     // Read config from WFE_CONFIG env var (JSON map), merged over sensible defaults.
-    let cwd = std::env::current_dir()?
-        .to_string_lossy()
-        .to_string();
+    let cwd = std::env::current_dir()?.to_string_lossy().to_string();
 
     // Defaults for every ((var)) referenced in the YAML.
     let mut config: HashMap<String, serde_json::Value> = HashMap::from([
@@ -151,7 +149,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Print workflow data (contains outputs from all steps).
     if let Some(obj) = final_instance.data.as_object() {
         println!("\nKey outputs:");
-        for key in ["version", "all_tests_passed", "coverage", "published", "released"] {
+        for key in [
+            "version",
+            "all_tests_passed",
+            "coverage",
+            "published",
+            "released",
+        ] {
             if let Some(val) = obj.get(key) {
                 println!("  {key}: {val}");
             }

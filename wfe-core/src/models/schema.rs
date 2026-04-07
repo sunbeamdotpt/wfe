@@ -63,9 +63,7 @@ pub fn parse_type(s: &str) -> crate::Result<SchemaType> {
         "integer" => Ok(SchemaType::Integer),
         "bool" => Ok(SchemaType::Bool),
         "any" => Ok(SchemaType::Any),
-        _ => Err(crate::WfeError::StepExecution(format!(
-            "Unknown type: {s}"
-        ))),
+        _ => Err(crate::WfeError::StepExecution(format!("Unknown type: {s}"))),
     }
 }
 
@@ -110,8 +108,7 @@ pub fn validate_value(value: &serde_json::Value, expected: &SchemaType) -> Resul
         SchemaType::List(inner) => {
             if let Some(arr) = value.as_array() {
                 for (i, item) in arr.iter().enumerate() {
-                    validate_value(item, inner)
-                        .map_err(|e| format!("list element [{i}]: {e}"))?;
+                    validate_value(item, inner).map_err(|e| format!("list element [{i}]: {e}"))?;
                 }
                 Ok(())
             } else {
@@ -121,8 +118,7 @@ pub fn validate_value(value: &serde_json::Value, expected: &SchemaType) -> Resul
         SchemaType::Map(inner) => {
             if let Some(obj) = value.as_object() {
                 for (key, val) in obj {
-                    validate_value(val, inner)
-                        .map_err(|e| format!("map key \"{key}\": {e}"))?;
+                    validate_value(val, inner).map_err(|e| format!("map key \"{key}\": {e}"))?;
                 }
                 Ok(())
             } else {

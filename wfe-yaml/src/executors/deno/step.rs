@@ -1,7 +1,7 @@
 use async_trait::async_trait;
+use wfe_core::WfeError;
 use wfe_core::models::ExecutionResult;
 use wfe_core::traits::step::{StepBody, StepExecutionContext};
-use wfe_core::WfeError;
 
 use super::config::DenoConfig;
 use super::ops::workflow::StepOutputs;
@@ -95,7 +95,9 @@ impl StepBody for DenoStep {
 /// Check if the source code uses ES module syntax or top-level await.
 fn needs_module_evaluation(source: &str) -> bool {
     // Top-level await requires module evaluation. ES import/export also require it.
-    source.contains("import ") || source.contains("import(") || source.contains("export ")
+    source.contains("import ")
+        || source.contains("import(")
+        || source.contains("export ")
         || source.contains("await ")
 }
 
@@ -191,9 +193,8 @@ async fn run_module_inner(
         "wfe:///inline-module.js".to_string()
     };
 
-    let specifier = deno_core::ModuleSpecifier::parse(&module_url).map_err(|e| {
-        WfeError::StepExecution(format!("Invalid module URL '{module_url}': {e}"))
-    })?;
+    let specifier = deno_core::ModuleSpecifier::parse(&module_url)
+        .map_err(|e| WfeError::StepExecution(format!("Invalid module URL '{module_url}': {e}")))?;
 
     let module_id = runtime
         .load_main_es_module_from_code(&specifier, source.to_string())

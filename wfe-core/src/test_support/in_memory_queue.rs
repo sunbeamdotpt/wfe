@@ -4,9 +4,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::sync::Mutex;
 
+use crate::Result;
 use crate::models::QueueType;
 use crate::traits::QueueProvider;
-use crate::Result;
 
 /// An in-memory implementation of `QueueProvider` for testing.
 #[derive(Debug, Clone)]

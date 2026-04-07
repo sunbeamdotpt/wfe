@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
+use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use serde::Deserialize;
 use tokio::sync::RwLock;
 use tonic::{Request, Status};
@@ -99,7 +99,10 @@ impl AuthState {
         let resp: JwksResponse = reqwest::get(uri).await?.json().await?;
         let mut cache = self.jwks.write().await;
         *cache = Some(JwksCache { keys: resp.keys });
-        tracing::debug!(key_count = cache.as_ref().unwrap().keys.len(), "JWKS refreshed");
+        tracing::debug!(
+            key_count = cache.as_ref().unwrap().keys.len(),
+            "JWKS refreshed"
+        );
         Ok(())
     }
 
@@ -128,7 +131,9 @@ impl AuthState {
     /// Validate a JWT against the cached JWKS (synchronous — for use in interceptors).
     /// Shared logic used by both `check()` and `make_interceptor()`.
     fn validate_jwt_cached(&self, token: &str) -> Result<(), Status> {
-        let cache = self.jwks.try_read()
+        let cache = self
+            .jwks
+            .try_read()
             .map_err(|_| Status::unavailable("JWKS refresh in progress"))?;
         let jwks = cache
             .as_ref()
@@ -228,9 +233,7 @@ fn extract_bearer_token<T>(request: &Request<T>) -> Result<&str, Status> {
 }
 
 /// Map JWK key algorithm to jsonwebtoken Algorithm.
-fn key_algorithm_to_jwt_algorithm(
-    ka: jsonwebtoken::jwk::KeyAlgorithm,
-) -> Option<Algorithm> {
+fn key_algorithm_to_jwt_algorithm(ka: jsonwebtoken::jwk::KeyAlgorithm) -> Option<Algorithm> {
     use jsonwebtoken::jwk::KeyAlgorithm as KA;
     match ka {
         KA::RS256 => Some(Algorithm::RS256),
@@ -473,7 +476,7 @@ mod tests {
         issuer: &str,
         audience: Option<&str>,
     ) -> (Vec<jsonwebtoken::jwk::Jwk>, String) {
-        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
         use rsa::RsaPrivateKey;
 
         let mut rng = rand::thread_rng();
@@ -498,8 +501,7 @@ mod tests {
         let pem = private_key
             .to_pkcs1_pem(rsa::pkcs1::LineEnding::LF)
             .unwrap();
-        let encoding_key =
-            jsonwebtoken::EncodingKey::from_rsa_pem(pem.as_bytes()).unwrap();
+        let encoding_key = jsonwebtoken::EncodingKey::from_rsa_pem(pem.as_bytes()).unwrap();
 
         let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
         header.kid = Some("test-key-1".to_string());
@@ -684,9 +686,18 @@ mod tests {
     #[test]
     fn key_algorithm_mapping() {
         use jsonwebtoken::jwk::KeyAlgorithm as KA;
-        assert_eq!(key_algorithm_to_jwt_algorithm(KA::RS256), Some(Algorithm::RS256));
-        assert_eq!(key_algorithm_to_jwt_algorithm(KA::ES256), Some(Algorithm::ES256));
-        assert_eq!(key_algorithm_to_jwt_algorithm(KA::EdDSA), Some(Algorithm::EdDSA));
+        assert_eq!(
+            key_algorithm_to_jwt_algorithm(KA::RS256),
+            Some(Algorithm::RS256)
+        );
+        assert_eq!(
+            key_algorithm_to_jwt_algorithm(KA::ES256),
+            Some(Algorithm::ES256)
+        );
+        assert_eq!(
+            key_algorithm_to_jwt_algorithm(KA::EdDSA),
+            Some(Algorithm::EdDSA)
+        );
         // HS256 should be rejected (symmetric algorithm).
         assert_eq!(key_algorithm_to_jwt_algorithm(KA::HS256), None);
         assert_eq!(key_algorithm_to_jwt_algorithm(KA::HS384), None);

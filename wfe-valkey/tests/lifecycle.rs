@@ -17,8 +17,9 @@ async fn publish_subscribe_round_trip() {
     }
 
     let prefix = format!("wfe_test_{}", uuid::Uuid::new_v4().simple());
-    let publisher =
-        wfe_valkey::ValkeyLifecyclePublisher::new("redis://localhost:6379", &prefix).await.unwrap();
+    let publisher = wfe_valkey::ValkeyLifecyclePublisher::new("redis://localhost:6379", &prefix)
+        .await
+        .unwrap();
 
     let instance_id = "wf-lifecycle-test-1";
     let channel = format!("{}:lifecycle:{}", prefix, instance_id);
@@ -42,12 +43,7 @@ async fn publish_subscribe_round_trip() {
     // Small delay to ensure the subscription is active before publishing.
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    let event = LifecycleEvent::new(
-        instance_id,
-        "def-1",
-        1,
-        LifecycleEventType::Started,
-    );
+    let event = LifecycleEvent::new(instance_id, "def-1", 1, LifecycleEventType::Started);
     publisher.publish(event).await.unwrap();
 
     // Wait for the message with a timeout.
@@ -71,8 +67,9 @@ async fn publish_to_all_channel() {
     }
 
     let prefix = format!("wfe_test_{}", uuid::Uuid::new_v4().simple());
-    let publisher =
-        wfe_valkey::ValkeyLifecyclePublisher::new("redis://localhost:6379", &prefix).await.unwrap();
+    let publisher = wfe_valkey::ValkeyLifecyclePublisher::new("redis://localhost:6379", &prefix)
+        .await
+        .unwrap();
 
     let all_channel = format!("{}:lifecycle:all", prefix);
 
@@ -93,12 +90,7 @@ async fn publish_to_all_channel() {
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    let event = LifecycleEvent::new(
-        "wf-all-test",
-        "def-1",
-        1,
-        LifecycleEventType::Completed,
-    );
+    let event = LifecycleEvent::new("wf-all-test", "def-1", 1, LifecycleEventType::Completed);
     publisher.publish(event).await.unwrap();
 
     let received = tokio::time::timeout(Duration::from_secs(5), rx.recv())

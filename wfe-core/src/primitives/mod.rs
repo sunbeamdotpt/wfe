@@ -45,7 +45,7 @@ mod test_helpers {
             workflow,
             cancellation_token: CancellationToken::new(),
             host_context: None,
-                log_sink: None,
+            log_sink: None,
         }
     }
 

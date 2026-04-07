@@ -17,18 +17,9 @@ macro_rules! queue_suite {
             #[tokio::test]
             async fn enqueue_dequeue_fifo() {
                 let provider = ($factory)().await;
-                provider
-                    .queue_work("a", QueueType::Workflow)
-                    .await
-                    .unwrap();
-                provider
-                    .queue_work("b", QueueType::Workflow)
-                    .await
-                    .unwrap();
-                provider
-                    .queue_work("c", QueueType::Workflow)
-                    .await
-                    .unwrap();
+                provider.queue_work("a", QueueType::Workflow).await.unwrap();
+                provider.queue_work("b", QueueType::Workflow).await.unwrap();
+                provider.queue_work("c", QueueType::Workflow).await.unwrap();
 
                 assert_eq!(
                     provider
@@ -94,16 +85,20 @@ macro_rules! queue_suite {
                 );
 
                 // Both should now be empty
-                assert!(provider
-                    .dequeue_work(QueueType::Event)
-                    .await
-                    .unwrap()
-                    .is_none());
-                assert!(provider
-                    .dequeue_work(QueueType::Workflow)
-                    .await
-                    .unwrap()
-                    .is_none());
+                assert!(
+                    provider
+                        .dequeue_work(QueueType::Event)
+                        .await
+                        .unwrap()
+                        .is_none()
+                );
+                assert!(
+                    provider
+                        .dequeue_work(QueueType::Workflow)
+                        .await
+                        .unwrap()
+                        .is_none()
+                );
             }
         }
     };

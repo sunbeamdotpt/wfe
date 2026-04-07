@@ -6,9 +6,9 @@ use k8s_openapi::api::batch::v1::Job;
 use k8s_openapi::api::core::v1::Pod;
 use kube::api::{ListParams, PostParams};
 use kube::{Api, Client};
+use wfe_core::WfeError;
 use wfe_core::models::ExecutionResult;
 use wfe_core::traits::step::{StepBody, StepExecutionContext};
-use wfe_core::WfeError;
 
 use crate::cleanup::delete_job;
 use crate::config::{ClusterConfig, KubernetesStepConfig};
@@ -86,13 +86,7 @@ impl StepBody for KubernetesStep {
         let env_overrides = extract_workflow_env(&context.workflow.data);
 
         // 4. Build Job manifest.
-        let job_manifest = build_job(
-            &self.config,
-            &step_name,
-            &ns,
-            &env_overrides,
-            &self.cluster,
-        );
+        let job_manifest = build_job(&self.config, &step_name, &ns, &env_overrides, &self.cluster);
         let job_name = job_manifest
             .metadata
             .name
@@ -111,7 +105,15 @@ impl StepBody for KubernetesStep {
         let result = if let Some(timeout_ms) = self.config.timeout_ms {
             match tokio::time::timeout(
                 Duration::from_millis(timeout_ms),
-                self.execute_job(&client, &ns, &job_name, &step_name, definition_id, workflow_id, context),
+                self.execute_job(
+                    &client,
+                    &ns,
+                    &job_name,
+                    &step_name,
+                    definition_id,
+                    workflow_id,
+                    context,
+                ),
             )
             .await
             {
@@ -125,8 +127,16 @@ impl StepBody for KubernetesStep {
                 }
             }
         } else {
-            self.execute_job(&client, &ns, &job_name, &step_name, definition_id, workflow_id, context)
-                .await
+            self.execute_job(
+                &client,
+                &ns,
+                &job_name,
+                &step_name,
+                definition_id,
+                workflow_id,
+                context,
+            )
+            .await
         };
 
         // Always attempt cleanup.
@@ -205,9 +215,7 @@ async fn wait_for_job_pod(
             .list(&ListParams::default().labels(&selector))
             .await
             .map_err(|e| {
-                WfeError::StepExecution(format!(
-                    "failed to list pods for job '{job_name}': {e}"
-                ))
+                WfeError::StepExecution(format!("failed to list pods for job '{job_name}': {e}"))
             })?;
 
         if let Some(pod) = pod_list.items.first() {
@@ -236,9 +244,10 @@ async fn wait_for_job_completion(
 
     // Poll Job status.
     for _ in 0..600 {
-        let job = jobs.get(job_name).await.map_err(|e| {
-            WfeError::StepExecution(format!("failed to get job '{job_name}': {e}"))
-        })?;
+        let job = jobs
+            .get(job_name)
+            .await
+            .map_err(|e| WfeError::StepExecution(format!("failed to get job '{job_name}': {e}")))?;
 
         if let Some(status) = &job.status {
             if let Some(conditions) = &status.conditions {
@@ -352,9 +361,6 @@ mod tests {
         let data = serde_json::json!({"config": {"nested": true}});
         let env = extract_workflow_env(&data);
         // Nested object serialized as JSON string.
-        assert_eq!(
-            env.get("CONFIG"),
-            Some(&r#"{"nested":true}"#.to_string())
-        );
+        assert_eq!(env.get("CONFIG"), Some(&r#"{"nested":true}"#.to_string()));
     }
 }

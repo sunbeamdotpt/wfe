@@ -109,8 +109,12 @@ mod tests {
     #[tokio::test]
     async fn write_and_read_history() {
         let store = LogStore::new();
-        store.write_chunk(make_chunk("wf-1", 0, "build", "line 1\n")).await;
-        store.write_chunk(make_chunk("wf-1", 0, "build", "line 2\n")).await;
+        store
+            .write_chunk(make_chunk("wf-1", 0, "build", "line 1\n"))
+            .await;
+        store
+            .write_chunk(make_chunk("wf-1", 0, "build", "line 2\n"))
+            .await;
 
         let history = store.get_history("wf-1", None);
         assert_eq!(history.len(), 2);
@@ -121,8 +125,12 @@ mod tests {
     #[tokio::test]
     async fn history_filtered_by_step() {
         let store = LogStore::new();
-        store.write_chunk(make_chunk("wf-1", 0, "build", "build log\n")).await;
-        store.write_chunk(make_chunk("wf-1", 1, "test", "test log\n")).await;
+        store
+            .write_chunk(make_chunk("wf-1", 0, "build", "build log\n"))
+            .await;
+        store
+            .write_chunk(make_chunk("wf-1", 1, "test", "test log\n"))
+            .await;
 
         let build_only = store.get_history("wf-1", Some(0));
         assert_eq!(build_only.len(), 1);
@@ -144,7 +152,9 @@ mod tests {
         let store = LogStore::new();
         let mut rx = store.subscribe("wf-1");
 
-        store.write_chunk(make_chunk("wf-1", 0, "build", "hello\n")).await;
+        store
+            .write_chunk(make_chunk("wf-1", 0, "build", "hello\n"))
+            .await;
 
         let received = rx.recv().await.unwrap();
         assert_eq!(received.data, b"hello\n");
@@ -157,8 +167,12 @@ mod tests {
         let mut rx1 = store.subscribe("wf-1");
         let mut rx2 = store.subscribe("wf-2");
 
-        store.write_chunk(make_chunk("wf-1", 0, "build", "wf1 log\n")).await;
-        store.write_chunk(make_chunk("wf-2", 0, "test", "wf2 log\n")).await;
+        store
+            .write_chunk(make_chunk("wf-1", 0, "build", "wf1 log\n"))
+            .await;
+        store
+            .write_chunk(make_chunk("wf-2", 0, "test", "wf2 log\n"))
+            .await;
 
         let e1 = rx1.recv().await.unwrap();
         assert_eq!(e1.workflow_id, "wf-1");
@@ -171,7 +185,9 @@ mod tests {
     async fn no_subscribers_does_not_error() {
         let store = LogStore::new();
         // No subscribers — should not panic.
-        store.write_chunk(make_chunk("wf-1", 0, "build", "orphan log\n")).await;
+        store
+            .write_chunk(make_chunk("wf-1", 0, "build", "orphan log\n"))
+            .await;
         // History should still be stored.
         assert_eq!(store.get_history("wf-1", None).len(), 1);
     }
@@ -182,7 +198,9 @@ mod tests {
         let mut rx1 = store.subscribe("wf-1");
         let mut rx2 = store.subscribe("wf-1");
 
-        store.write_chunk(make_chunk("wf-1", 0, "build", "shared\n")).await;
+        store
+            .write_chunk(make_chunk("wf-1", 0, "build", "shared\n"))
+            .await;
 
         let e1 = rx1.recv().await.unwrap();
         let e2 = rx2.recv().await.unwrap();

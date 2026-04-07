@@ -1,10 +1,10 @@
-use futures::io::AsyncBufReadExt;
 use futures::StreamExt;
+use futures::io::AsyncBufReadExt;
 use k8s_openapi::api::core::v1::Pod;
 use kube::api::LogParams;
 use kube::{Api, Client};
-use wfe_core::traits::log_sink::{LogChunk, LogSink, LogStreamType};
 use wfe_core::WfeError;
+use wfe_core::traits::log_sink::{LogChunk, LogSink, LogStreamType};
 
 /// Stream logs from a pod container, optionally forwarding to a LogSink.
 ///
@@ -29,9 +29,7 @@ pub async fn stream_logs(
     };
 
     let stream = pods.log_stream(pod_name, &params).await.map_err(|e| {
-        WfeError::StepExecution(format!(
-            "failed to stream logs from pod '{pod_name}': {e}"
-        ))
+        WfeError::StepExecution(format!("failed to stream logs from pod '{pod_name}': {e}"))
     })?;
 
     let mut stdout = String::new();

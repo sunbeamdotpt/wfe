@@ -96,15 +96,13 @@ impl ModuleLoader for WfeModuleLoader {
 
         // Relative or bare path — resolve against referrer.
         // This handles ./foo, ../foo, and /foo (absolute path on same origin, e.g. esm.sh redirects)
-        if specifier.starts_with("./")
-            || specifier.starts_with("../")
-            || specifier.starts_with('/')
+        if specifier.starts_with("./") || specifier.starts_with("../") || specifier.starts_with('/')
         {
             let base = ModuleSpecifier::parse(referrer)
                 .map_err(|e| JsErrorBox::generic(format!("Invalid referrer '{referrer}': {e}")))?;
-            let resolved = base
-                .join(specifier)
-                .map_err(|e| JsErrorBox::generic(format!("Failed to resolve '{specifier}': {e}")))?;
+            let resolved = base.join(specifier).map_err(|e| {
+                JsErrorBox::generic(format!("Failed to resolve '{specifier}': {e}"))
+            })?;
 
             // Check permissions based on scheme.
             match resolved.scheme() {
@@ -172,11 +170,9 @@ impl ModuleLoader for WfeModuleLoader {
                             .map_err(|e| JsErrorBox::new("PermissionError", e.to_string()))?;
                     }
 
-                    let response = reqwest::get(&url)
-                        .await
-                        .map_err(|e| {
-                            JsErrorBox::generic(format!("Failed to fetch module '{url}': {e}"))
-                        })?;
+                    let response = reqwest::get(&url).await.map_err(|e| {
+                        JsErrorBox::generic(format!("Failed to fetch module '{url}': {e}"))
+                    })?;
 
                     if !response.status().is_success() {
                         return Err(JsErrorBox::generic(format!(
@@ -224,9 +220,10 @@ impl ModuleLoader for WfeModuleLoader {
                                 &specifier,
                                 None,
                             ))),
-                            Err(e) => ModuleLoadResponse::Sync(Err(JsErrorBox::generic(
-                                format!("Failed to read module '{}': {e}", path.display()),
-                            ))),
+                            Err(e) => ModuleLoadResponse::Sync(Err(JsErrorBox::generic(format!(
+                                "Failed to read module '{}': {e}",
+                                path.display()
+                            )))),
                         }
                     }
                     Err(e) => ModuleLoadResponse::Sync(Err(e)),
@@ -274,7 +271,11 @@ mod tests {
             ..Default::default()
         });
         let result = loader
-            .resolve("npm:lodash@4", "ext:wfe/bootstrap.js", ResolutionKind::Import)
+            .resolve(
+                "npm:lodash@4",
+                "ext:wfe/bootstrap.js",
+                ResolutionKind::Import,
+            )
             .unwrap();
         assert_eq!(result.as_str(), "https://esm.sh/lodash@4");
     }
@@ -304,7 +305,12 @@ mod tests {
             ResolutionKind::Import,
         );
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Permission denied"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Permission denied")
+        );
     }
 
     #[test]
@@ -320,10 +326,12 @@ mod tests {
             ResolutionKind::DynamicImport,
         );
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Dynamic import is not allowed"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Dynamic import is not allowed")
+        );
     }
 
     #[test]
@@ -361,11 +369,7 @@ mod tests {
             ..Default::default()
         });
         let result = loader
-            .resolve(
-                "./helper.js",
-                "file:///tmp/main.js",
-                ResolutionKind::Import,
-            )
+            .resolve("./helper.js", "file:///tmp/main.js", ResolutionKind::Import)
             .unwrap();
         assert_eq!(result.as_str(), "file:///tmp/helper.js");
     }

@@ -1,5 +1,5 @@
-use crate::models::condition::{ComparisonOp, FieldComparison, StepCondition};
 use crate::WfeError;
+use crate::models::condition::{ComparisonOp, FieldComparison, StepCondition};
 
 /// Evaluate a step condition against workflow data.
 ///
@@ -29,10 +29,7 @@ impl From<WfeError> for EvalError {
     }
 }
 
-fn evaluate_inner(
-    condition: &StepCondition,
-    data: &serde_json::Value,
-) -> Result<bool, EvalError> {
+fn evaluate_inner(condition: &StepCondition, data: &serde_json::Value) -> Result<bool, EvalError> {
     match condition {
         StepCondition::All(conditions) => {
             for c in conditions {
@@ -582,22 +579,14 @@ mod tests {
     #[test]
     fn not_true_becomes_false() {
         let data = json!({"a": 1});
-        let cond = StepCondition::Not(Box::new(comp(
-            ".a",
-            ComparisonOp::Equals,
-            Some(json!(1)),
-        )));
+        let cond = StepCondition::Not(Box::new(comp(".a", ComparisonOp::Equals, Some(json!(1)))));
         assert!(!evaluate(&cond, &data).unwrap());
     }
 
     #[test]
     fn not_false_becomes_true() {
         let data = json!({"a": 99});
-        let cond = StepCondition::Not(Box::new(comp(
-            ".a",
-            ComparisonOp::Equals,
-            Some(json!(1)),
-        )));
+        let cond = StepCondition::Not(Box::new(comp(".a", ComparisonOp::Equals, Some(json!(1)))));
         assert!(evaluate(&cond, &data).unwrap());
     }
 
@@ -639,11 +628,7 @@ mod tests {
                 comp(".a", ComparisonOp::Equals, Some(json!(1))),
                 comp(".a", ComparisonOp::Equals, Some(json!(99))),
             ]),
-            StepCondition::Not(Box::new(comp(
-                ".c",
-                ComparisonOp::Equals,
-                Some(json!(99)),
-            ))),
+            StepCondition::Not(Box::new(comp(".c", ComparisonOp::Equals, Some(json!(99))))),
         ]);
         assert!(evaluate(&cond, &data).unwrap());
     }
@@ -742,7 +727,13 @@ mod tests {
         let data = json!({"score": 3.14});
         assert!(evaluate(&comp(".score", ComparisonOp::Gt, Some(json!(3.0))), &data).unwrap());
         assert!(evaluate(&comp(".score", ComparisonOp::Lt, Some(json!(4.0))), &data).unwrap());
-        assert!(!evaluate(&comp(".score", ComparisonOp::Equals, Some(json!(3.0))), &data).unwrap());
+        assert!(
+            !evaluate(
+                &comp(".score", ComparisonOp::Equals, Some(json!(3.0))),
+                &data
+            )
+            .unwrap()
+        );
     }
 
     #[test]

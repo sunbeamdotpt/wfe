@@ -174,10 +174,7 @@ pub fn load(cli: &Cli) -> ServerConfig {
 
     // Persistence override.
     if let Some(ref backend) = cli.persistence {
-        let url = cli
-            .db_url
-            .clone()
-            .unwrap_or_else(|| "wfe.db".to_string());
+        let url = cli.db_url.clone().unwrap_or_else(|| "wfe.db".to_string());
         config.persistence = match backend.as_str() {
             "postgres" => PersistenceConfig::Postgres { url },
             _ => PersistenceConfig::Sqlite { path: url },
@@ -231,7 +228,10 @@ mod tests {
         let config = ServerConfig::default();
         assert_eq!(config.grpc_addr, "0.0.0.0:50051".parse().unwrap());
         assert_eq!(config.http_addr, "0.0.0.0:8080".parse().unwrap());
-        assert!(matches!(config.persistence, PersistenceConfig::Sqlite { .. }));
+        assert!(matches!(
+            config.persistence,
+            PersistenceConfig::Sqlite { .. }
+        ));
         assert!(matches!(config.queue, QueueConfig::InMemory));
         assert!(config.search.is_none());
         assert!(config.auth.tokens.is_empty());
@@ -270,11 +270,17 @@ version = 1
 "#;
         let config: ServerConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.grpc_addr, "127.0.0.1:9090".parse().unwrap());
-        assert!(matches!(config.persistence, PersistenceConfig::Postgres { .. }));
+        assert!(matches!(
+            config.persistence,
+            PersistenceConfig::Postgres { .. }
+        ));
         assert!(matches!(config.queue, QueueConfig::Valkey { .. }));
         assert!(config.search.is_some());
         assert_eq!(config.auth.tokens.len(), 2);
-        assert_eq!(config.auth.webhook_secrets.get("github").unwrap(), "mysecret");
+        assert_eq!(
+            config.auth.webhook_secrets.get("github").unwrap(),
+            "mysecret"
+        );
         assert_eq!(config.webhook.triggers.len(), 1);
         assert_eq!(config.webhook.triggers[0].workflow_id, "ci");
     }
@@ -295,8 +301,12 @@ version = 1
         };
         let config = load(&cli);
         assert_eq!(config.grpc_addr, "127.0.0.1:9999".parse().unwrap());
-        assert!(matches!(config.persistence, PersistenceConfig::Postgres { ref url } if url == "postgres://db/wfe"));
-        assert!(matches!(config.queue, QueueConfig::Valkey { ref url } if url == "redis://valkey:6379"));
+        assert!(
+            matches!(config.persistence, PersistenceConfig::Postgres { ref url } if url == "postgres://db/wfe")
+        );
+        assert!(
+            matches!(config.queue, QueueConfig::Valkey { ref url } if url == "redis://valkey:6379")
+        );
         assert_eq!(config.search.unwrap().url, "http://os:9200");
         assert_eq!(config.workflows_dir.unwrap(), PathBuf::from("/workflows"));
         assert_eq!(config.auth.tokens, vec!["tok1", "tok2"]);
@@ -317,7 +327,10 @@ version = 1
             auth_tokens: None,
         };
         let config = load(&cli);
-        assert!(matches!(config.persistence, PersistenceConfig::Postgres { .. }));
+        assert!(matches!(
+            config.persistence,
+            PersistenceConfig::Postgres { .. }
+        ));
     }
 
     // ── Security regression tests ──
@@ -358,6 +371,9 @@ commit = "$.head_commit.id"
 "#;
         let config: WebhookConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.triggers[0].data_mapping.len(), 2);
-        assert_eq!(config.triggers[0].data_mapping["repo"], "$.repository.full_name");
+        assert_eq!(
+            config.triggers[0].data_mapping["repo"],
+            "$.repository.full_name"
+        );
     }
 }

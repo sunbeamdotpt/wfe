@@ -1,7 +1,7 @@
 use async_trait::async_trait;
+use wfe_core::WfeError;
 use wfe_core::models::ExecutionResult;
 use wfe_core::traits::step::{StepBody, StepExecutionContext};
-use wfe_core::WfeError;
 
 use crate::rustup::config::{RustupCommand, RustupConfig};
 
@@ -26,7 +26,8 @@ impl RustupStep {
     fn build_install_command(&self) -> tokio::process::Command {
         let mut cmd = tokio::process::Command::new("sh");
         // Pipe rustup-init through sh with non-interactive flag.
-        let mut script = "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y".to_string();
+        let mut script =
+            "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y".to_string();
 
         if let Some(ref profile) = self.config.profile {
             script.push_str(&format!(" --profile {profile}"));
@@ -112,7 +113,10 @@ impl RustupStep {
 
 #[async_trait]
 impl StepBody for RustupStep {
-    async fn run(&mut self, context: &StepExecutionContext<'_>) -> wfe_core::Result<ExecutionResult> {
+    async fn run(
+        &mut self,
+        context: &StepExecutionContext<'_>,
+    ) -> wfe_core::Result<ExecutionResult> {
         let step_name = context.step.name.as_deref().unwrap_or("unknown");
         let subcmd = self.config.command.as_str();
 
@@ -133,9 +137,9 @@ impl StepBody for RustupStep {
                 }
             }
         } else {
-            cmd.output()
-                .await
-                .map_err(|e| WfeError::StepExecution(format!("Failed to spawn rustup {subcmd}: {e}")))?
+            cmd.output().await.map_err(|e| {
+                WfeError::StepExecution(format!("Failed to spawn rustup {subcmd}: {e}"))
+            })?
         };
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -189,7 +193,11 @@ mod tests {
         let cmd = step.build_command();
         let prog = cmd.as_std().get_program().to_str().unwrap();
         assert_eq!(prog, "sh");
-        let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_str().unwrap()).collect();
+        let args: Vec<_> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_str().unwrap())
+            .collect();
         assert_eq!(args[0], "-c");
         assert!(args[1].contains("rustup.rs"));
         assert!(args[1].contains("-y"));
@@ -202,7 +210,11 @@ mod tests {
         config.default_toolchain = Some("nightly".to_string());
         let step = RustupStep::new(config);
         let cmd = step.build_command();
-        let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_str().unwrap()).collect();
+        let args: Vec<_> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_str().unwrap())
+            .collect();
         assert!(args[1].contains("--profile minimal"));
         assert!(args[1].contains("--default-toolchain nightly"));
     }
@@ -213,7 +225,11 @@ mod tests {
         config.extra_args = vec!["--no-modify-path".to_string()];
         let step = RustupStep::new(config);
         let cmd = step.build_command();
-        let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_str().unwrap()).collect();
+        let args: Vec<_> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_str().unwrap())
+            .collect();
         assert!(args[1].contains("--no-modify-path"));
     }
 
@@ -233,8 +249,21 @@ mod tests {
         let cmd = step.build_command();
         let prog = cmd.as_std().get_program().to_str().unwrap();
         assert_eq!(prog, "rustup");
-        let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_str().unwrap()).collect();
-        assert_eq!(args, vec!["toolchain", "install", "nightly-2024-06-01", "--profile", "minimal"]);
+        let args: Vec<_> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_str().unwrap())
+            .collect();
+        assert_eq!(
+            args,
+            vec![
+                "toolchain",
+                "install",
+                "nightly-2024-06-01",
+                "--profile",
+                "minimal"
+            ]
+        );
     }
 
     #[test]
@@ -251,7 +280,11 @@ mod tests {
         };
         let step = RustupStep::new(config);
         let cmd = step.build_command();
-        let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_str().unwrap()).collect();
+        let args: Vec<_> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_str().unwrap())
+            .collect();
         assert_eq!(args, vec!["toolchain", "install", "stable", "--force"]);
     }
 
@@ -271,8 +304,22 @@ mod tests {
         let cmd = step.build_command();
         let prog = cmd.as_std().get_program().to_str().unwrap();
         assert_eq!(prog, "rustup");
-        let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_str().unwrap()).collect();
-        assert_eq!(args, vec!["component", "add", "clippy", "rustfmt", "--toolchain", "nightly"]);
+        let args: Vec<_> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_str().unwrap())
+            .collect();
+        assert_eq!(
+            args,
+            vec![
+                "component",
+                "add",
+                "clippy",
+                "rustfmt",
+                "--toolchain",
+                "nightly"
+            ]
+        );
     }
 
     #[test]
@@ -289,7 +336,11 @@ mod tests {
         };
         let step = RustupStep::new(config);
         let cmd = step.build_command();
-        let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_str().unwrap()).collect();
+        let args: Vec<_> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_str().unwrap())
+            .collect();
         assert_eq!(args, vec!["component", "add", "rust-src"]);
     }
 
@@ -309,8 +360,21 @@ mod tests {
         let cmd = step.build_command();
         let prog = cmd.as_std().get_program().to_str().unwrap();
         assert_eq!(prog, "rustup");
-        let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_str().unwrap()).collect();
-        assert_eq!(args, vec!["target", "add", "wasm32-unknown-unknown", "--toolchain", "stable"]);
+        let args: Vec<_> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_str().unwrap())
+            .collect();
+        assert_eq!(
+            args,
+            vec![
+                "target",
+                "add",
+                "wasm32-unknown-unknown",
+                "--toolchain",
+                "stable"
+            ]
+        );
     }
 
     #[test]
@@ -330,8 +394,20 @@ mod tests {
         };
         let step = RustupStep::new(config);
         let cmd = step.build_command();
-        let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_str().unwrap()).collect();
-        assert_eq!(args, vec!["target", "add", "wasm32-unknown-unknown", "aarch64-linux-android"]);
+        let args: Vec<_> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_str().unwrap())
+            .collect();
+        assert_eq!(
+            args,
+            vec![
+                "target",
+                "add",
+                "wasm32-unknown-unknown",
+                "aarch64-linux-android"
+            ]
+        );
     }
 
     #[test]
@@ -348,10 +424,21 @@ mod tests {
         };
         let step = RustupStep::new(config);
         let cmd = step.build_command();
-        let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_str().unwrap()).collect();
+        let args: Vec<_> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_str().unwrap())
+            .collect();
         assert_eq!(
             args,
-            vec!["target", "add", "x86_64-unknown-linux-musl", "--toolchain", "nightly", "--force"]
+            vec![
+                "target",
+                "add",
+                "x86_64-unknown-linux-musl",
+                "--toolchain",
+                "nightly",
+                "--force"
+            ]
         );
     }
 }

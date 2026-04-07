@@ -229,7 +229,10 @@ mod tests {
 
     #[test]
     fn subcommand_args_nextest_has_run() {
-        assert_eq!(CargoCommand::Nextest.subcommand_args(), vec!["nextest", "run"]);
+        assert_eq!(
+            CargoCommand::Nextest.subcommand_args(),
+            vec!["nextest", "run"]
+        );
     }
 
     #[test]
@@ -241,8 +244,14 @@ mod tests {
     fn install_package_external_tools() {
         assert_eq!(CargoCommand::Audit.install_package(), Some("cargo-audit"));
         assert_eq!(CargoCommand::Deny.install_package(), Some("cargo-deny"));
-        assert_eq!(CargoCommand::Nextest.install_package(), Some("cargo-nextest"));
-        assert_eq!(CargoCommand::LlvmCov.install_package(), Some("cargo-llvm-cov"));
+        assert_eq!(
+            CargoCommand::Nextest.install_package(),
+            Some("cargo-nextest")
+        );
+        assert_eq!(
+            CargoCommand::LlvmCov.install_package(),
+            Some("cargo-llvm-cov")
+        );
     }
 
     #[test]

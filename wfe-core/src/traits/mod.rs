@@ -1,12 +1,12 @@
 pub mod lifecycle;
 pub mod lock;
-pub mod service;
 pub mod log_sink;
 pub mod middleware;
 pub mod persistence;
 pub mod queue;
 pub mod registry;
 pub mod search;
+pub mod service;
 pub mod step;
 
 pub use lifecycle::LifecyclePublisher;

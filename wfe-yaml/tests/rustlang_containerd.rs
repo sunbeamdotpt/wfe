@@ -55,9 +55,19 @@ async fn run_yaml_workflow_with_config(
 ) -> wfe::models::WorkflowInstance {
     let compiled = load_single_workflow_from_str(yaml, config).unwrap();
     for step in &compiled.definition.steps {
-        eprintln!("  step: {:?} type={} config={:?}", step.name, step.step_type, step.step_config);
+        eprintln!(
+            "  step: {:?} type={} config={:?}",
+            step.name, step.step_type, step.step_config
+        );
     }
-    eprintln!("  factories: {:?}", compiled.step_factories.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>());
+    eprintln!(
+        "  factories: {:?}",
+        compiled
+            .step_factories
+            .iter()
+            .map(|(k, _)| k.clone())
+            .collect::<Vec<_>>()
+    );
 
     let persistence = Arc::new(InMemoryPersistenceProvider::new());
     let lock = Arc::new(InMemoryLockProvider::new());
@@ -197,7 +207,9 @@ fn make_config(
 #[tokio::test]
 #[ignore = "requires containerd daemon"]
 async fn minimal_echo_in_containerd_via_workflow() {
-    let _ = tracing_subscriber::fmt().with_env_filter("wfe_containerd=debug,wfe_core::executor=debug").try_init();
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter("wfe_containerd=debug,wfe_core::executor=debug")
+        .try_init();
     let Some(addr) = containerd_addr() else {
         eprintln!("SKIP: containerd not available");
         return;
@@ -237,10 +249,7 @@ async fn minimal_echo_in_containerd_via_workflow() {
     eprintln!("Status: {:?}, Data: {:?}", instance.status, instance.data);
     assert_eq!(instance.status, WorkflowStatus::Complete);
     let data = instance.data.as_object().unwrap();
-    assert_eq!(
-        data.get("echo.status").and_then(|v| v.as_str()),
-        Some("ok"),
-    );
+    assert_eq!(data.get("echo.status").and_then(|v| v.as_str()), Some("ok"),);
 }
 
 // ---------------------------------------------------------------------------
@@ -259,79 +268,129 @@ async fn full_rust_pipeline_in_container() {
     let rustup_home = shared_tempdir("rustup");
     let workspace = shared_tempdir("workspace");
 
-    let config = make_config(
-        &addr,
-        &cargo_home,
-        &rustup_home,
-        Some(&workspace),
-    );
+    let config = make_config(&addr, &cargo_home, &rustup_home, Some(&workspace));
 
     let steps = [
         containerd_step_yaml(
-            "install-rust", "host", "if-not-present", "10m", None, false,
+            "install-rust",
+            "host",
+            "if-not-present",
+            "10m",
+            None,
+            false,
             "          apt-get update && apt-get install -y curl gcc pkg-config libssl-dev\n\
              \x20         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable",
         ),
         containerd_step_yaml(
-            "install-tools", "host", "never", "10m", None, false,
+            "install-tools",
+            "host",
+            "never",
+            "10m",
+            None,
+            false,
             "          rustup component add clippy rustfmt llvm-tools-preview\n\
              \x20         cargo install cargo-audit cargo-deny cargo-nextest cargo-llvm-cov",
         ),
         containerd_step_yaml(
-            "create-project", "host", "never", "2m", None, true,
+            "create-project",
+            "host",
+            "never",
+            "2m",
+            None,
+            true,
             "          cargo init /workspace/test-crate --name test-crate\n\
              \x20         cd /workspace/test-crate\n\
              \x20         echo '#[cfg(test)] mod tests { #[test] fn it_works() { assert_eq!(2+2,4); } }' >> src/main.rs",
         ),
         containerd_step_yaml(
-            "cargo-fmt", "none", "never", "2m",
-            Some("/workspace/test-crate"), true,
+            "cargo-fmt",
+            "none",
+            "never",
+            "2m",
+            Some("/workspace/test-crate"),
+            true,
             "          cargo fmt -- --check || cargo fmt",
         ),
         containerd_step_yaml(
-            "cargo-check", "none", "never", "5m",
-            Some("/workspace/test-crate"), true,
+            "cargo-check",
+            "none",
+            "never",
+            "5m",
+            Some("/workspace/test-crate"),
+            true,
             "          cargo check",
         ),
         containerd_step_yaml(
-            "cargo-clippy", "none", "never", "5m",
-            Some("/workspace/test-crate"), true,
+            "cargo-clippy",
+            "none",
+            "never",
+            "5m",
+            Some("/workspace/test-crate"),
+            true,
             "          cargo clippy -- -D warnings",
         ),
         containerd_step_yaml(
-            "cargo-test", "none", "never", "5m",
-            Some("/workspace/test-crate"), true,
+            "cargo-test",
+            "none",
+            "never",
+            "5m",
+            Some("/workspace/test-crate"),
+            true,
             "          cargo test",
         ),
         containerd_step_yaml(
-            "cargo-build", "none", "never", "5m",
-            Some("/workspace/test-crate"), true,
+            "cargo-build",
+            "none",
+            "never",
+            "5m",
+            Some("/workspace/test-crate"),
+            true,
             "          cargo build --release",
         ),
         containerd_step_yaml(
-            "cargo-nextest", "none", "never", "5m",
-            Some("/workspace/test-crate"), true,
+            "cargo-nextest",
+            "none",
+            "never",
+            "5m",
+            Some("/workspace/test-crate"),
+            true,
             "          cargo nextest run",
         ),
         containerd_step_yaml(
-            "cargo-llvm-cov", "none", "never", "5m",
-            Some("/workspace/test-crate"), true,
+            "cargo-llvm-cov",
+            "none",
+            "never",
+            "5m",
+            Some("/workspace/test-crate"),
+            true,
             "          cargo llvm-cov --summary-only",
         ),
         containerd_step_yaml(
-            "cargo-audit", "host", "never", "5m",
-            Some("/workspace/test-crate"), true,
+            "cargo-audit",
+            "host",
+            "never",
+            "5m",
+            Some("/workspace/test-crate"),
+            true,
             "          cargo audit || true",
         ),
         containerd_step_yaml(
-            "cargo-deny", "none", "never", "5m",
-            Some("/workspace/test-crate"), true,
+            "cargo-deny",
+            "none",
+            "never",
+            "5m",
+            Some("/workspace/test-crate"),
+            true,
             "          cargo deny init\n\
              \x20         cargo deny check || true",
         ),
         containerd_step_yaml(
-            "cargo-doc", "none", "never", "5m",
-            Some("/workspace/test-crate"), true,
+            "cargo-doc",
+            "none",
+            "never",
+            "5m",
+            Some("/workspace/test-crate"),
+            true,
             "          cargo doc --no-deps",
         ),
     ];

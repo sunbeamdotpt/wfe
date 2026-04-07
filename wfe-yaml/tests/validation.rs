@@ -12,7 +12,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("at least one step"),
         "Expected 'at least one step' error, got: {err}"
@@ -30,7 +33,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("type") && err.contains("parallel"),
         "Expected error about missing type or parallel, got: {err}"
@@ -54,7 +60,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("cannot have both"),
         "Expected 'cannot have both' error, got: {err}"
@@ -79,7 +88,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("Duplicate step name") && err.contains("deploy"),
         "Expected duplicate name error, got: {err}"
@@ -100,7 +112,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("config.run") || err.contains("config.file"),
         "Expected error about missing run/file, got: {err}"
@@ -119,7 +134,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("config"),
         "Expected error about missing config, got: {err}"
@@ -142,7 +160,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("panic"),
         "Expected error mentioning invalid type, got: {err}"
@@ -165,7 +186,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("crash"),
         "Expected error mentioning invalid type, got: {err}"
@@ -185,7 +209,11 @@ workflow:
         run: echo hello
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
-    assert!(result.is_ok(), "Valid workflow should pass, got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Valid workflow should pass, got: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -203,7 +231,11 @@ workflow:
             run: echo a
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
-    assert!(result.is_ok(), "Valid parallel workflow should pass, got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Valid parallel workflow should pass, got: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -225,7 +257,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("Duplicate step name"),
         "Expected duplicate name error for hook, got: {err}"
@@ -250,7 +285,11 @@ workflow:
           run: echo ok
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
-    assert!(result.is_ok(), "Valid on_success hook should pass, got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Valid on_success hook should pass, got: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -271,7 +310,11 @@ workflow:
           run: cleanup.sh
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
-    assert!(result.is_ok(), "Valid ensure hook should pass, got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Valid ensure hook should pass, got: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -320,7 +363,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("Duplicate step name") && err.contains("task-a"),
         "Expected duplicate name in parallel children, got: {err}"
@@ -341,7 +387,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("config"),
         "Expected error about missing config, got: {err}"
@@ -362,7 +411,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("config.workflow"),
         "Expected error about missing config.workflow, got: {err}"
@@ -382,7 +434,11 @@ workflow:
         workflow: child-wf
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
-    assert!(result.is_ok(), "Valid workflow step should pass, got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Valid workflow step should pass, got: {:?}",
+        result.err()
+    );
 }
 
 // --- Multi-workflow validation tests ---
@@ -407,7 +463,11 @@ workflows:
           run: cargo test
 "#;
     let result = load_workflow_from_str(yaml, &HashMap::new());
-    assert!(result.is_ok(), "Valid multi-workflow should pass, got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Valid multi-workflow should pass, got: {:?}",
+        result.err()
+    );
     assert_eq!(result.unwrap().len(), 2);
 }
 
@@ -432,7 +492,10 @@ workflows:
 "#;
     let result = load_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("Duplicate workflow ID"),
         "Expected duplicate workflow ID error, got: {err}"
@@ -461,7 +524,10 @@ workflows:
 "#;
     let result = load_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("Cannot specify both"),
         "Expected error about both workflow and workflows, got: {err}"
@@ -476,7 +542,10 @@ something_else:
 "#;
     let result = load_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("Must specify either"),
         "Expected error about missing workflow/workflows, got: {err}"
@@ -490,7 +559,10 @@ workflows: []
 "#;
     let result = load_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("empty"),
         "Expected error about empty workflows, got: {err}"
@@ -520,7 +592,10 @@ workflows:
 "#;
     let result = load_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("Circular workflow reference"),
         "Expected circular reference error, got: {err}"
@@ -541,7 +616,10 @@ workflows:
 "#;
     let result = load_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("Circular workflow reference"),
         "Expected circular reference error, got: {err}"
@@ -568,7 +646,11 @@ workflows:
           run: echo working
 "#;
     let result = load_workflow_from_str(yaml, &HashMap::new());
-    assert!(result.is_ok(), "Valid workflow reference should pass, got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Valid workflow reference should pass, got: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -585,7 +667,11 @@ workflow:
         workflow: some-external-wf
 "#;
     let result = load_workflow_from_str(yaml, &HashMap::new());
-    assert!(result.is_ok(), "External workflow ref should not error, got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "External workflow ref should not error, got: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -609,7 +695,10 @@ workflows:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("Expected single workflow"),
         "Expected single workflow error, got: {err}"
@@ -631,7 +720,11 @@ workflows:
           run: echo hello
 "#;
     let result = load_workflow_from_str(yaml, &HashMap::new());
-    assert!(result.is_ok(), "Single workflow in multi-mode should pass, got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Single workflow in multi-mode should pass, got: {:?}",
+        result.err()
+    );
     assert_eq!(result.unwrap().len(), 1);
 }
 
@@ -662,7 +755,11 @@ workflows:
           run: echo gamma
 "#;
     let result = load_workflow_from_str(yaml, &HashMap::new());
-    assert!(result.is_ok(), "Multiple independent workflows should pass, got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Multiple independent workflows should pass, got: {:?}",
+        result.err()
+    );
     assert_eq!(result.unwrap().len(), 3);
 }
 
@@ -686,7 +783,11 @@ workflows:
           run: echo working
 "#;
     let result = load_workflow_from_str(yaml, &HashMap::new());
-    assert!(result.is_ok(), "Cross-referenced workflows should pass, got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Cross-referenced workflows should pass, got: {:?}",
+        result.err()
+    );
 }
 
 // --- Cycle detection edge cases ---
@@ -719,7 +820,10 @@ workflows:
 "#;
     let result = load_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("Circular workflow reference"),
         "Expected circular reference error for 3-node cycle, got: {err}"
@@ -753,7 +857,11 @@ workflows:
           run: echo done
 "#;
     let result = load_workflow_from_str(yaml, &HashMap::new());
-    assert!(result.is_ok(), "Linear chain should not be a cycle, got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Linear chain should not be a cycle, got: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -794,7 +902,11 @@ workflows:
           run: echo done
 "#;
     let result = load_workflow_from_str(yaml, &HashMap::new());
-    assert!(result.is_ok(), "Diamond dependency should not be a cycle, got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Diamond dependency should not be a cycle, got: {:?}",
+        result.err()
+    );
 }
 
 // --- Deno step validation ---
@@ -811,7 +923,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("Deno") && err.contains("config"),
         "Expected Deno config error, got: {err}"
@@ -833,7 +948,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("Deno") && (err.contains("script") || err.contains("file")),
         "Expected Deno script/file error, got: {err}"
@@ -854,7 +972,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("BuildKit") && err.contains("config"),
         "Expected BuildKit config error, got: {err}"
@@ -875,7 +996,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("dockerfile"),
         "Expected dockerfile error, got: {err}"
@@ -896,7 +1020,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("context"),
         "Expected context error, got: {err}"
@@ -919,7 +1046,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("push") && err.contains("tags"),
         "Expected push/tags error, got: {err}"
@@ -970,7 +1100,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("Containerd") && err.contains("config"),
         "Expected Containerd config error, got: {err}"
@@ -991,11 +1124,11 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
-    assert!(
-        err.contains("image"),
-        "Expected image error, got: {err}"
-    );
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
+    assert!(err.contains("image"), "Expected image error, got: {err}");
 }
 
 #[test]
@@ -1012,7 +1145,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("run") || err.contains("command"),
         "Expected run/command error, got: {err}"
@@ -1037,7 +1173,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("cannot have both"),
         "Expected 'cannot have both' error, got: {err}"
@@ -1060,7 +1199,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("network") && err.contains("overlay"),
         "Expected invalid network error, got: {err}"
@@ -1111,7 +1253,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("pull") && err.contains("aggressive"),
         "Expected invalid pull policy error, got: {err}"
@@ -1190,7 +1335,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("config"),
         "Expected config error for invalid hook, got: {err}"
@@ -1214,7 +1362,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("config"),
         "Expected config error for invalid on_success hook, got: {err}"
@@ -1238,7 +1389,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("config"),
         "Expected config error for invalid ensure hook, got: {err}"
@@ -1261,7 +1415,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("config"),
         "Expected config error for deeply nested invalid step, got: {err}"
@@ -1301,7 +1458,10 @@ workflows:
 "#;
     let result = load_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("Circular workflow reference"),
         "Expected circular reference from hooks, got: {err}"
@@ -1339,7 +1499,10 @@ workflows:
 "#;
     let result = load_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("Circular workflow reference"),
         "Expected circular reference from ensure hooks, got: {err}"
@@ -1371,7 +1534,10 @@ workflows:
 "#;
     let result = load_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("Circular workflow reference"),
         "Expected circular reference from parallel blocks, got: {err}"
@@ -1394,7 +1560,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("Unknown step type") && err.contains("terraform"),
         "Expected unknown step type error, got: {err}"
@@ -1408,7 +1577,10 @@ fn load_workflow_from_nonexistent_file_returns_io_error() {
     let path = std::path::Path::new("/tmp/nonexistent_wfe_test_file.yaml");
     let result = wfe_yaml::load_workflow(path, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("IO error") || err.contains("No such file"),
         "Expected IO error, got: {err}"
@@ -1435,7 +1607,11 @@ workflow:
         equals: true
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
-    assert!(result.is_ok(), "Field path to known input should pass, got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Field path to known input should pass, got: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -1458,7 +1634,11 @@ workflow:
         equals: success
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
-    assert!(result.is_ok(), "Field path to known output should pass, got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Field path to known output should pass, got: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -1480,7 +1660,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("unknown input field") && err.contains("nonexistent"),
         "Expected unknown input field error, got: {err}"
@@ -1508,7 +1691,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("unknown output field") && err.contains("missing"),
         "Expected unknown output field error, got: {err}"
@@ -1534,7 +1720,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("gt/gte/lt/lte") && err.contains("number/integer"),
         "Expected type mismatch error, got: {err}"
@@ -1559,7 +1748,11 @@ workflow:
         gt: 5
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
-    assert!(result.is_ok(), "gt on number should pass, got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "gt on number should pass, got: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -1581,7 +1774,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("contains") && err.contains("string/list"),
         "Expected type mismatch error for contains, got: {err}"
@@ -1606,7 +1802,11 @@ workflow:
         contains: needle
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
-    assert!(result.is_ok(), "contains on string should pass, got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "contains on string should pass, got: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -1627,7 +1827,11 @@ workflow:
         contains: release
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
-    assert!(result.is_ok(), "contains on list should pass, got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "contains on list should pass, got: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -1649,7 +1853,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("is_null/is_not_null") && err.contains("optional"),
         "Expected type mismatch error for is_null, got: {err}"
@@ -1674,7 +1881,11 @@ workflow:
         is_null: true
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
-    assert!(result.is_ok(), "is_null on optional should pass, got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "is_null on optional should pass, got: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -1693,7 +1904,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("never produced") && err.contains("result"),
         "Expected unused output error, got: {err}"
@@ -1717,7 +1931,11 @@ workflow:
         - name: result
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
-    assert!(result.is_ok(), "Output produced by step should pass, got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Output produced by step should pass, got: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -1734,7 +1952,11 @@ workflow:
         run: echo hi
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
-    assert!(result.is_ok(), "No outputs schema should not cause error, got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "No outputs schema should not cause error, got: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -1780,7 +2002,10 @@ workflow:
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("inputs") && err.contains("outputs"),
         "Expected error about invalid path segment, got: {err}"
@@ -1826,9 +2051,12 @@ workflow:
     let main_path = dir.path().join("main.yaml");
     std::fs::write(&main_path, &main_yaml).unwrap();
 
-    let result =
-        wfe_yaml::load_workflow_with_includes(&main_yaml, &main_path, &HashMap::new());
-    assert!(result.is_ok(), "Include single file should work, got: {:?}", result.err());
+    let result = wfe_yaml::load_workflow_with_includes(&main_yaml, &main_path, &HashMap::new());
+    assert!(
+        result.is_ok(),
+        "Include single file should work, got: {:?}",
+        result.err()
+    );
     let workflows = result.unwrap();
     assert_eq!(workflows.len(), 2);
     let ids: Vec<&str> = workflows.iter().map(|w| w.definition.id.as_str()).collect();
@@ -1887,9 +2115,12 @@ workflow:
     let main_path = dir.path().join("main.yaml");
     std::fs::write(&main_path, main_yaml).unwrap();
 
-    let result =
-        wfe_yaml::load_workflow_with_includes(main_yaml, &main_path, &HashMap::new());
-    assert!(result.is_ok(), "Include multiple files should work, got: {:?}", result.err());
+    let result = wfe_yaml::load_workflow_with_includes(main_yaml, &main_path, &HashMap::new());
+    assert!(
+        result.is_ok(),
+        "Include multiple files should work, got: {:?}",
+        result.err()
+    );
     let workflows = result.unwrap();
     assert_eq!(workflows.len(), 3);
 }
@@ -1931,9 +2162,12 @@ workflow:
     let main_path = dir.path().join("main.yaml");
     std::fs::write(&main_path, main_yaml).unwrap();
 
-    let result =
-        wfe_yaml::load_workflow_with_includes(main_yaml, &main_path, &HashMap::new());
-    assert!(result.is_ok(), "Override should work, got: {:?}", result.err());
+    let result = wfe_yaml::load_workflow_with_includes(main_yaml, &main_path, &HashMap::new());
+    assert!(
+        result.is_ok(),
+        "Override should work, got: {:?}",
+        result.err()
+    );
     let workflows = result.unwrap();
     // Only 1 workflow since main takes precedence over included
     assert_eq!(workflows.len(), 1);
@@ -1972,10 +2206,12 @@ workflow:
     let main_path = dir.path().join("main.yaml");
     std::fs::write(&main_path, main_yaml).unwrap();
 
-    let result =
-        wfe_yaml::load_workflow_with_includes(main_yaml, &main_path, &HashMap::new());
+    let result = wfe_yaml::load_workflow_with_includes(main_yaml, &main_path, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("nonexistent") || err.contains("not found") || err.contains("No such file"),
         "Expected file not found error, got: {err}"
@@ -2018,10 +2254,12 @@ workflow:
 
     let a_path = dir.path().join("a.yaml");
 
-    let result =
-        wfe_yaml::load_workflow_with_includes(a_yaml, &a_path, &HashMap::new());
+    let result = wfe_yaml::load_workflow_with_includes(a_yaml, &a_path, &HashMap::new());
     assert!(result.is_err());
-    let err = match result { Err(e) => e.to_string(), Ok(_) => panic!("expected error") };
+    let err = match result {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected error"),
+    };
     assert!(
         err.contains("Circular include"),
         "Expected circular include error, got: {err}"
@@ -2053,7 +2291,11 @@ workflow:
             equals: true
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
-    assert!(result.is_ok(), "equals should work on all types, got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "equals should work on all types, got: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -2074,7 +2316,11 @@ workflow:
         gte: 10
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
-    assert!(result.is_ok(), "gte on integer should pass, got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "gte on integer should pass, got: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -2096,5 +2342,9 @@ workflow:
         gt: 5
 "#;
     let result = load_single_workflow_from_str(yaml, &HashMap::new());
-    assert!(result.is_ok(), "any type should allow gt, got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "any type should allow gt, got: {:?}",
+        result.err()
+    );
 }

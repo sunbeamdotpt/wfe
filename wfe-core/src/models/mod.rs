@@ -1,7 +1,6 @@
 pub mod condition;
 pub mod error_behavior;
 pub mod event;
-pub mod service;
 pub mod execution_error;
 pub mod execution_pointer;
 pub mod execution_result;
@@ -10,6 +9,7 @@ pub mod poll_config;
 pub mod queue_type;
 pub mod scheduled_command;
 pub mod schema;
+pub mod service;
 pub mod status;
 pub mod workflow_definition;
 pub mod workflow_instance;
@@ -25,9 +25,11 @@ pub use poll_config::{HttpMethod, PollCondition, PollEndpointConfig};
 pub use queue_type::QueueType;
 pub use scheduled_command::{CommandName, ScheduledCommand};
 pub use schema::{SchemaType, WorkflowSchema};
+pub use service::{
+    ReadinessCheck, ReadinessProbe, ServiceDefinition, ServiceEndpoint, ServicePort,
+};
 pub use status::{PointerStatus, WorkflowStatus};
 pub use workflow_definition::{StepOutcome, WorkflowDefinition, WorkflowStep};
-pub use service::{ReadinessCheck, ReadinessProbe, ServiceDefinition, ServiceEndpoint, ServicePort};
 pub use workflow_instance::WorkflowInstance;
 
 /// Serde helper for `Option<Duration>` as milliseconds.

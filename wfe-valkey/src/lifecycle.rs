@@ -28,10 +28,7 @@ impl LifecyclePublisher for ValkeyLifecyclePublisher {
         let mut conn = self.conn.clone();
         let json = serde_json::to_string(&event)?;
 
-        let instance_channel = format!(
-            "{}:lifecycle:{}",
-            self.prefix, event.workflow_instance_id
-        );
+        let instance_channel = format!("{}:lifecycle:{}", self.prefix, event.workflow_instance_id);
         let all_channel = format!("{}:lifecycle:all", self.prefix);
 
         // Publish to the instance-specific channel.

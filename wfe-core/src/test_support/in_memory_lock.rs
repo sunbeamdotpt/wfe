@@ -4,8 +4,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::sync::Mutex;
 
-use crate::traits::DistributedLockProvider;
 use crate::Result;
+use crate::traits::DistributedLockProvider;
 
 /// An in-memory implementation of `DistributedLockProvider` for testing.
 #[derive(Debug, Clone)]

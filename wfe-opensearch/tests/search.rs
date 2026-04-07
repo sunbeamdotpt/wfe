@@ -1,6 +1,6 @@
 use chrono::Utc;
-use opensearch::http::transport::Transport;
 use opensearch::OpenSearch;
+use opensearch::http::transport::Transport;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use uuid::Uuid;
@@ -60,7 +60,7 @@ async fn cleanup(provider: &OpenSearchIndex) {
         .client()
         .indices()
         .delete(opensearch::indices::IndicesDeleteParts::Index(&[
-            provider.index_name(),
+            provider.index_name()
         ]))
         .send()
         .await;
@@ -164,7 +164,10 @@ async fn index_multiple_and_paginate() {
     refresh_index(&provider).await;
 
     // Search all, but skip 2 and take 2
-    let page = provider.search("Paginated workflow", 2, 2, &[]).await.unwrap();
+    let page = provider
+        .search("Paginated workflow", 2, 2, &[])
+        .await
+        .unwrap();
 
     assert_eq!(page.total, 5);
     assert_eq!(page.data.len(), 2);

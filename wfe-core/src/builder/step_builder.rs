@@ -67,7 +67,10 @@ impl<D: WorkflowData> StepBuilder<D> {
     }
 
     /// Chain an inline function step.
-    pub fn then_fn(mut self, f: impl Fn() -> ExecutionResult + Send + Sync + 'static) -> StepBuilder<D> {
+    pub fn then_fn(
+        mut self,
+        f: impl Fn() -> ExecutionResult + Send + Sync + 'static,
+    ) -> StepBuilder<D> {
         let next_id = self.builder.add_step(std::any::type_name::<InlineStep>());
         self.builder.wire_outcome(self.step_id, next_id, None);
         self.builder.last_step = Some(next_id);
@@ -77,7 +80,9 @@ impl<D: WorkflowData> StepBuilder<D> {
 
     /// Insert a WaitFor step.
     pub fn wait_for(mut self, event_name: &str, event_key: &str) -> StepBuilder<D> {
-        let next_id = self.builder.add_step(std::any::type_name::<primitives::wait_for::WaitForStep>());
+        let next_id = self
+            .builder
+            .add_step(std::any::type_name::<primitives::wait_for::WaitForStep>());
         self.builder.wire_outcome(self.step_id, next_id, None);
         self.builder.last_step = Some(next_id);
         self.builder.steps[next_id].step_config = Some(serde_json::json!({
@@ -89,7 +94,9 @@ impl<D: WorkflowData> StepBuilder<D> {
 
     /// Insert a Delay step.
     pub fn delay(mut self, duration: std::time::Duration) -> StepBuilder<D> {
-        let next_id = self.builder.add_step(std::any::type_name::<primitives::delay::DelayStep>());
+        let next_id = self
+            .builder
+            .add_step(std::any::type_name::<primitives::delay::DelayStep>());
         self.builder.wire_outcome(self.step_id, next_id, None);
         self.builder.last_step = Some(next_id);
         self.builder.steps[next_id].step_config = Some(serde_json::json!({
@@ -104,7 +111,9 @@ impl<D: WorkflowData> StepBuilder<D> {
         mut self,
         build_children: impl FnOnce(&mut WorkflowBuilder<D>),
     ) -> StepBuilder<D> {
-        let if_id = self.builder.add_step(std::any::type_name::<primitives::if_step::IfStep>());
+        let if_id = self
+            .builder
+            .add_step(std::any::type_name::<primitives::if_step::IfStep>());
         self.builder.wire_outcome(self.step_id, if_id, None);
 
         // Build children
@@ -126,7 +135,9 @@ impl<D: WorkflowData> StepBuilder<D> {
         mut self,
         build_children: impl FnOnce(&mut WorkflowBuilder<D>),
     ) -> StepBuilder<D> {
-        let while_id = self.builder.add_step(std::any::type_name::<primitives::while_step::WhileStep>());
+        let while_id = self
+            .builder
+            .add_step(std::any::type_name::<primitives::while_step::WhileStep>());
         self.builder.wire_outcome(self.step_id, while_id, None);
 
         let before_count = self.builder.steps.len();
@@ -146,7 +157,9 @@ impl<D: WorkflowData> StepBuilder<D> {
         mut self,
         build_children: impl FnOnce(&mut WorkflowBuilder<D>),
     ) -> StepBuilder<D> {
-        let fe_id = self.builder.add_step(std::any::type_name::<primitives::foreach_step::ForEachStep>());
+        let fe_id = self
+            .builder
+            .add_step(std::any::type_name::<primitives::foreach_step::ForEachStep>());
         self.builder.wire_outcome(self.step_id, fe_id, None);
 
         let before_count = self.builder.steps.len();
@@ -162,11 +175,10 @@ impl<D: WorkflowData> StepBuilder<D> {
     }
 
     /// Insert a Saga container step with child steps.
-    pub fn saga(
-        mut self,
-        build_children: impl FnOnce(&mut WorkflowBuilder<D>),
-    ) -> StepBuilder<D> {
-        let saga_id = self.builder.add_step(std::any::type_name::<primitives::saga_container::SagaContainerStep>());
+    pub fn saga(mut self, build_children: impl FnOnce(&mut WorkflowBuilder<D>)) -> StepBuilder<D> {
+        let saga_id = self.builder.add_step(std::any::type_name::<
+            primitives::saga_container::SagaContainerStep,
+        >());
         self.builder.steps[saga_id].saga = true;
         self.builder.wire_outcome(self.step_id, saga_id, None);
 
@@ -187,7 +199,9 @@ impl<D: WorkflowData> StepBuilder<D> {
         mut self,
         build_branches: impl FnOnce(ParallelBuilder<D>) -> ParallelBuilder<D>,
     ) -> StepBuilder<D> {
-        let seq_id = self.builder.add_step(std::any::type_name::<primitives::sequence::SequenceStep>());
+        let seq_id = self
+            .builder
+            .add_step(std::any::type_name::<primitives::sequence::SequenceStep>());
         self.builder.wire_outcome(self.step_id, seq_id, None);
 
         let pb = ParallelBuilder {
@@ -213,10 +227,7 @@ impl<D: WorkflowData> StepBuilder<D> {
 
 impl<D: WorkflowData> ParallelBuilder<D> {
     /// Add a parallel branch.
-    pub fn branch(
-        mut self,
-        build_branch: impl FnOnce(&mut WorkflowBuilder<D>),
-    ) -> Self {
+    pub fn branch(mut self, build_branch: impl FnOnce(&mut WorkflowBuilder<D>)) -> Self {
         let before_count = self.builder.steps.len();
         build_branch(&mut self.builder);
         let after_count = self.builder.steps.len();
