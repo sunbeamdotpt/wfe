@@ -59,7 +59,10 @@ impl ExecutionResult {
     }
 
     /// Create child branches for parallel/foreach execution.
-    pub fn branch(values: Vec<serde_json::Value>, persistence_data: Option<serde_json::Value>) -> Self {
+    pub fn branch(
+        values: Vec<serde_json::Value>,
+        persistence_data: Option<serde_json::Value>,
+    ) -> Self {
         Self {
             proceed: false,
             branch_values: Some(values),
@@ -137,7 +140,11 @@ mod tests {
 
     #[test]
     fn branch_creates_child_values() {
-        let values = vec![serde_json::json!(1), serde_json::json!(2), serde_json::json!(3)];
+        let values = vec![
+            serde_json::json!(1),
+            serde_json::json!(2),
+            serde_json::json!(3),
+        ];
         let result = ExecutionResult::branch(values.clone(), None);
         assert!(!result.proceed);
         assert_eq!(result.branch_values, Some(values));
@@ -181,7 +188,8 @@ mod tests {
 
     #[test]
     fn serde_round_trip() {
-        let result = ExecutionResult::sleep(Duration::from_secs(30), Some(serde_json::json!({"x": 1})));
+        let result =
+            ExecutionResult::sleep(Duration::from_secs(30), Some(serde_json::json!({"x": 1})));
         let json = serde_json::to_string(&result).unwrap();
         let deserialized: ExecutionResult = serde_json::from_str(&json).unwrap();
         assert_eq!(result.proceed, deserialized.proceed);

@@ -130,7 +130,10 @@ mod tests {
 
         let result = step.run(&ctx).await.unwrap();
         assert!(!result.proceed);
-        assert_eq!(result.branch_values, Some(vec![json!(1), json!(2), json!(3)]));
+        assert_eq!(
+            result.branch_values,
+            Some(vec![json!(1), json!(2), json!(3)])
+        );
     }
 
     #[tokio::test]

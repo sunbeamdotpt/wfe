@@ -136,13 +136,11 @@ mod tests {
 
     #[test]
     fn step_condition_any_serde_round_trip() {
-        let condition = StepCondition::Any(vec![
-            StepCondition::Comparison(FieldComparison {
-                field: ".x".to_string(),
-                operator: ComparisonOp::IsNull,
-                value: None,
-            }),
-        ]);
+        let condition = StepCondition::Any(vec![StepCondition::Comparison(FieldComparison {
+            field: ".x".to_string(),
+            operator: ComparisonOp::IsNull,
+            value: None,
+        })]);
         let json_str = serde_json::to_string(&condition).unwrap();
         let deserialized: StepCondition = serde_json::from_str(&json_str).unwrap();
         assert_eq!(condition, deserialized);
@@ -150,13 +148,11 @@ mod tests {
 
     #[test]
     fn step_condition_none_serde_round_trip() {
-        let condition = StepCondition::None(vec![
-            StepCondition::Comparison(FieldComparison {
-                field: ".err".to_string(),
-                operator: ComparisonOp::IsNotNull,
-                value: None,
-            }),
-        ]);
+        let condition = StepCondition::None(vec![StepCondition::Comparison(FieldComparison {
+            field: ".err".to_string(),
+            operator: ComparisonOp::IsNotNull,
+            value: None,
+        })]);
         let json_str = serde_json::to_string(&condition).unwrap();
         let deserialized: StepCondition = serde_json::from_str(&json_str).unwrap();
         assert_eq!(condition, deserialized);

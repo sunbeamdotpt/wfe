@@ -3,12 +3,12 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
+use wfe_core::WfeError;
 use wfe_core::executor::{StepRegistry, WorkflowExecutor};
 use wfe_core::traits::{
     DistributedLockProvider, LifecyclePublisher, PersistenceProvider, QueueProvider, SearchIndex,
     ServiceProvider,
 };
-use wfe_core::WfeError;
 
 use crate::host::WorkflowHost;
 use crate::registry::InMemoryWorkflowRegistry;
@@ -86,13 +86,20 @@ impl WorkflowHostBuilder {
     /// Returns an error if persistence, lock_provider, or queue_provider have not been set.
     pub fn build(self) -> wfe_core::Result<WorkflowHost> {
         let persistence = self.persistence.ok_or_else(|| {
-            WfeError::Other("PersistenceProvider is required. Call .use_persistence() before .build().".into())
+            WfeError::Other(
+                "PersistenceProvider is required. Call .use_persistence() before .build().".into(),
+            )
         })?;
         let lock_provider = self.lock_provider.ok_or_else(|| {
-            WfeError::Other("DistributedLockProvider is required. Call .use_lock_provider() before .build().".into())
+            WfeError::Other(
+                "DistributedLockProvider is required. Call .use_lock_provider() before .build()."
+                    .into(),
+            )
         })?;
         let queue_provider = self.queue_provider.ok_or_else(|| {
-            WfeError::Other("QueueProvider is required. Call .use_queue_provider() before .build().".into())
+            WfeError::Other(
+                "QueueProvider is required. Call .use_queue_provider() before .build().".into(),
+            )
         })?;
 
         let mut executor = WorkflowExecutor::new(

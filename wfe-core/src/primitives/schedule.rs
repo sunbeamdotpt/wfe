@@ -60,7 +60,10 @@ mod tests {
         let result = step.run(&ctx).await.unwrap();
         assert!(!result.proceed);
         assert_eq!(result.sleep_for, Some(Duration::from_secs(30)));
-        assert_eq!(result.persistence_data, Some(json!({"children_active": true})));
+        assert_eq!(
+            result.persistence_data,
+            Some(json!({"children_active": true}))
+        );
     }
 
     #[tokio::test]
@@ -101,6 +104,9 @@ mod tests {
         let ctx = make_context(&pointer, &wf_step, &workflow);
         let result = step.run(&ctx).await.unwrap();
         assert!(!result.proceed);
-        assert_eq!(result.persistence_data, Some(json!({"children_active": true})));
+        assert_eq!(
+            result.persistence_data,
+            Some(json!({"children_active": true}))
+        );
     }
 }

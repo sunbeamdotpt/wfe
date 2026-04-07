@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
+use axum::Json;
 use axum::body::Bytes;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
-use axum::Json;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
@@ -107,7 +107,11 @@ pub async fn handle_github_webhook(
     // Publish as event (for workflows waiting on events).
     if let Err(e) = state
         .host
-        .publish_event(&forge_event.event_name, &forge_event.event_key, forge_event.data.clone())
+        .publish_event(
+            &forge_event.event_name,
+            &forge_event.event_key,
+            forge_event.data.clone(),
+        )
         .await
     {
         tracing::error!(error = %e, "failed to publish forge event");
@@ -208,7 +212,11 @@ pub async fn handle_gitea_webhook(
 
     if let Err(e) = state
         .host
-        .publish_event(&forge_event.event_name, &forge_event.event_key, forge_event.data.clone())
+        .publish_event(
+            &forge_event.event_name,
+            &forge_event.event_key,
+            forge_event.data.clone(),
+        )
         .await
     {
         tracing::error!(error = %e, "failed to publish forge event");
@@ -362,10 +370,7 @@ fn map_forge_event(event_type: &str, payload: &serde_json::Value) -> ForgeEvent 
 
 /// Extract data fields from payload using simple JSONPath-like mapping.
 /// Supports `$.field.nested` syntax.
-fn map_trigger_data(
-    trigger: &WebhookTrigger,
-    payload: &serde_json::Value,
-) -> serde_json::Value {
+fn map_trigger_data(trigger: &WebhookTrigger, payload: &serde_json::Value) -> serde_json::Value {
     let mut data = serde_json::Map::new();
     for (key, path) in &trigger.data_mapping {
         if let Some(value) = resolve_json_path(payload, path) {
@@ -376,7 +381,10 @@ fn map_trigger_data(
 }
 
 /// Resolve a simple JSONPath expression like `$.repository.full_name`.
-fn resolve_json_path<'a>(value: &'a serde_json::Value, path: &str) -> Option<&'a serde_json::Value> {
+fn resolve_json_path<'a>(
+    value: &'a serde_json::Value,
+    path: &str,
+) -> Option<&'a serde_json::Value> {
     let path = path.strip_prefix("$.").unwrap_or(path);
     let mut current = value;
     for segment in path.split('.') {

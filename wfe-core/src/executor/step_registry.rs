@@ -17,7 +17,8 @@ impl StepRegistry {
     /// Register a step type using its full type name as the key.
     pub fn register<S: StepBody + Default + 'static>(&mut self) {
         let key = std::any::type_name::<S>().to_string();
-        self.factories.insert(key, Box::new(|| Box::new(S::default())));
+        self.factories
+            .insert(key, Box::new(|| Box::new(S::default())));
     }
 
     /// Register a step factory with an explicit key and factory function.

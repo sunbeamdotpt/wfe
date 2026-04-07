@@ -13,11 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_server(true)
         .build_client(true)
         .file_descriptor_set_path(&descriptor_path)
-        .compile_with_config(
-            prost_config,
-            &proto_files,
-            &["proto"],
-        )?;
+        .compile_with_config(prost_config, &proto_files, &["proto"])?;
 
     Ok(())
 }

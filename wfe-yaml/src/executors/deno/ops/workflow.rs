@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use deno_core::op2;
 use deno_core::OpState;
+use deno_core::op2;
 
 /// Workflow data available to the script via `inputs()`.
 pub struct WorkflowInputs {
@@ -28,11 +28,7 @@ pub fn op_inputs(state: &mut OpState) -> serde_json::Value {
 
 /// Stores a key/value pair in the step outputs.
 #[op2]
-pub fn op_output(
-    state: &mut OpState,
-    #[string] key: String,
-    #[serde] value: serde_json::Value,
-) {
+pub fn op_output(state: &mut OpState, #[string] key: String, #[serde] value: serde_json::Value) {
     let outputs = state.borrow_mut::<StepOutputs>();
     outputs.map.insert(key, value);
 }
@@ -56,7 +52,8 @@ pub async fn op_read_file(
     {
         let s = state.borrow();
         let checker = s.borrow::<super::super::permissions::PermissionChecker>();
-        checker.check_read(&path)
+        checker
+            .check_read(&path)
             .map_err(|e| deno_error::JsErrorBox::new("PermissionError", e.to_string()))?;
     }
     tokio::fs::read_to_string(&path)
@@ -66,7 +63,13 @@ pub async fn op_read_file(
 
 deno_core::extension!(
     wfe_ops,
-    ops = [op_inputs, op_output, op_log, op_read_file, super::http::op_fetch],
+    ops = [
+        op_inputs,
+        op_output,
+        op_log,
+        op_read_file,
+        super::http::op_fetch
+    ],
     esm_entry_point = "ext:wfe/bootstrap.js",
     esm = ["ext:wfe/bootstrap.js" = "src/executors/deno/js/bootstrap.js"],
 );

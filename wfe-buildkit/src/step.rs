@@ -9,9 +9,9 @@ use wfe_buildkit_protos::moby::buildkit::v1::control_client::ControlClient;
 use wfe_buildkit_protos::moby::buildkit::v1::{
     CacheOptions, CacheOptionsEntry, Exporter, SolveRequest, StatusRequest,
 };
+use wfe_core::WfeError;
 use wfe_core::models::ExecutionResult;
 use wfe_core::traits::step::{StepBody, StepExecutionContext};
-use wfe_core::WfeError;
 
 use crate::config::BuildkitConfig;
 
@@ -45,10 +45,7 @@ impl BuildkitStep {
         tracing::info!(addr = %addr, "connecting to BuildKit daemon");
 
         let channel = if addr.starts_with("unix://") {
-            let socket_path = addr
-                .strip_prefix("unix://")
-                .unwrap()
-                .to_string();
+            let socket_path = addr.strip_prefix("unix://").unwrap().to_string();
 
             // Verify the socket exists before attempting connection.
             if !Path::new(&socket_path).exists() {
@@ -60,9 +57,7 @@ impl BuildkitStep {
             // tonic requires a dummy URI for Unix sockets; the actual path
             // is provided via the connector.
             Endpoint::try_from("http://[::]:50051")
-                .map_err(|e| {
-                    WfeError::StepExecution(format!("failed to create endpoint: {e}"))
-                })?
+                .map_err(|e| WfeError::StepExecution(format!("failed to create endpoint: {e}")))?
                 .connect_with_connector(tower::service_fn(move |_: Uri| {
                     let path = socket_path.clone();
                     async move {
@@ -231,10 +226,7 @@ impl BuildkitStep {
         let context_name = "context";
         let dockerfile_name = "dockerfile";
 
-        frontend_attrs.insert(
-            "context".to_string(),
-            format!("local://{context_name}"),
-        );
+        frontend_attrs.insert("context".to_string(), format!("local://{context_name}"));
         frontend_attrs.insert(
             format!("local-sessionid:{context_name}"),
             session_id.clone(),
@@ -276,20 +268,18 @@ impl BuildkitStep {
         // The x-docker-expose-session-uuid header tells buildkitd which
         // session owns the local sources. The x-docker-expose-session-grpc-method
         // header lists the gRPC methods the session implements.
-        if let Ok(key) =
-            "x-docker-expose-session-uuid"
-                .parse::<tonic::metadata::MetadataKey<tonic::metadata::Ascii>>()
-            && let Ok(val) = session_id
-                .parse::<tonic::metadata::MetadataValue<tonic::metadata::Ascii>>()
+        if let Ok(key) = "x-docker-expose-session-uuid"
+            .parse::<tonic::metadata::MetadataKey<tonic::metadata::Ascii>>()
+            && let Ok(val) =
+                session_id.parse::<tonic::metadata::MetadataValue<tonic::metadata::Ascii>>()
         {
             metadata.insert(key, val);
         }
 
         // Advertise the filesync method so the daemon knows it can request
         // local file content from our session.
-        if let Ok(key) =
-            "x-docker-expose-session-grpc-method"
-                .parse::<tonic::metadata::MetadataKey<tonic::metadata::Ascii>>()
+        if let Ok(key) = "x-docker-expose-session-grpc-method"
+            .parse::<tonic::metadata::MetadataKey<tonic::metadata::Ascii>>()
         {
             if let Ok(val) = "/moby.filesync.v1.FileSync/DiffCopy"
                 .parse::<tonic::metadata::MetadataValue<tonic::metadata::Ascii>>()
@@ -598,7 +588,8 @@ mod tests {
 
     #[test]
     fn parse_digest_with_digest_prefix() {
-        let output = "digest: sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef\n";
+        let output =
+            "digest: sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef\n";
         let digest = parse_digest(output);
         assert_eq!(
             digest,
@@ -630,8 +621,7 @@ mod tests {
 
     #[test]
     fn parse_digest_wrong_prefix() {
-        let output =
-            "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
+        let output = "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
         assert_eq!(parse_digest(output), None);
     }
 
@@ -651,7 +641,10 @@ mod tests {
 "#;
         assert_eq!(
             parse_digest(output),
-            Some("sha256:aabbccdd0011223344556677aabbccdd0011223344556677aabbccdd00112233".to_string())
+            Some(
+                "sha256:aabbccdd0011223344556677aabbccdd0011223344556677aabbccdd00112233"
+                    .to_string()
+            )
         );
     }
 
@@ -659,9 +652,7 @@ mod tests {
     fn parse_digest_first_match_wins() {
         let hash1 = "a".repeat(64);
         let hash2 = "b".repeat(64);
-        let output = format!(
-            "exporting manifest sha256:{hash1}\ndigest: sha256:{hash2}"
-        );
+        let output = format!("exporting manifest sha256:{hash1}\ndigest: sha256:{hash2}");
         let digest = parse_digest(&output).unwrap();
         assert_eq!(digest, format!("sha256:{hash1}"));
     }
@@ -806,10 +797,7 @@ mod tests {
             exporters[0].attrs.get("name"),
             Some(&"myapp:latest,myapp:v1.0".to_string())
         );
-        assert_eq!(
-            exporters[0].attrs.get("push"),
-            Some(&"true".to_string())
-        );
+        assert_eq!(exporters[0].attrs.get("push"), Some(&"true".to_string()));
     }
 
     #[test]

@@ -117,8 +117,7 @@ fn render_module(module_path: &str, items: &[(&Item, &str)], krate: &Crate) -> S
         items
             .iter()
             .find(|(item, kind)| {
-                *kind == "Modules"
-                    && item.name.as_deref() == module_path.split("::").last()
+                *kind == "Modules" && item.name.as_deref() == module_path.split("::").last()
             })
             .and_then(|(item, _)| item.docs.as_ref())
             .map(|d| first_sentence(d))
@@ -136,8 +135,15 @@ fn render_module(module_path: &str, items: &[(&Item, &str)], krate: &Crate) -> S
     }
 
     let kind_order = [
-        "Modules", "Structs", "Enums", "Traits", "Functions",
-        "Type Aliases", "Constants", "Statics", "Macros",
+        "Modules",
+        "Structs",
+        "Enums",
+        "Traits",
+        "Functions",
+        "Type Aliases",
+        "Constants",
+        "Statics",
+        "Macros",
     ];
 
     for kind in &kind_order {
@@ -266,16 +272,15 @@ fn render_signature(item: &Item, krate: &Crate) -> Option<String> {
             }
             Some(sig)
         }
-        ItemEnum::TypeAlias(ta) => {
-            Some(format!("pub type {name} = {}", render_type(&ta.type_, krate)))
-        }
-        ItemEnum::Constant { type_, const_: c } => {
-            Some(format!(
-                "pub const {name}: {} = {}",
-                render_type(type_, krate),
-                c.value.as_deref().unwrap_or("...")
-            ))
-        }
+        ItemEnum::TypeAlias(ta) => Some(format!(
+            "pub type {name} = {}",
+            render_type(&ta.type_, krate)
+        )),
+        ItemEnum::Constant { type_, const_: c } => Some(format!(
+            "pub const {name}: {} = {}",
+            render_type(type_, krate),
+            c.value.as_deref().unwrap_or("...")
+        )),
         ItemEnum::Macro(_) => Some(format!("macro_rules! {name} {{ ... }}")),
         _ => None,
     }
@@ -309,7 +314,11 @@ fn render_type(ty: &Type, krate: &Crate) -> String {
         }
         Type::Generic(name) => name.clone(),
         Type::Primitive(name) => name.clone(),
-        Type::BorrowedRef { lifetime, is_mutable, type_ } => {
+        Type::BorrowedRef {
+            lifetime,
+            is_mutable,
+            type_,
+        } => {
             let mut s = String::from("&");
             if let Some(lt) = lifetime {
                 s.push_str(lt);
@@ -346,7 +355,12 @@ fn render_type(ty: &Type, krate: &Crate) -> String {
                 .collect();
             format!("impl {}", rendered.join(" + "))
         }
-        Type::QualifiedPath { name, self_type, trait_, .. } => {
+        Type::QualifiedPath {
+            name,
+            self_type,
+            trait_,
+            ..
+        } => {
             let self_str = render_type(self_type, krate);
             if let Some(t) = trait_ {
                 format!("<{self_str} as {}>::{name}", t.path)
@@ -417,11 +431,17 @@ mod tests {
             deprecation: None,
             inner: ItemEnum::Function(Function {
                 sig: FunctionSignature {
-                    inputs: params.into_iter().map(|(n, t)| (n.to_string(), t)).collect(),
+                    inputs: params
+                        .into_iter()
+                        .map(|(n, t)| (n.to_string(), t))
+                        .collect(),
                     output,
                     is_c_variadic: false,
                 },
-                generics: Generics { params: vec![], where_predicates: vec![] },
+                generics: Generics {
+                    params: vec![],
+                    where_predicates: vec![],
+                },
                 header: FunctionHeader {
                     is_const: false,
                     is_unsafe: false,
@@ -446,7 +466,10 @@ mod tests {
             deprecation: None,
             inner: ItemEnum::Struct(Struct {
                 kind: StructKind::Unit,
-                generics: Generics { params: vec![], where_predicates: vec![] },
+                generics: Generics {
+                    params: vec![],
+                    where_predicates: vec![],
+                },
                 impls: vec![],
             }),
         }
@@ -464,7 +487,10 @@ mod tests {
             attrs: vec![],
             deprecation: None,
             inner: ItemEnum::Enum(Enum {
-                generics: Generics { params: vec![], where_predicates: vec![] },
+                generics: Generics {
+                    params: vec![],
+                    where_predicates: vec![],
+                },
                 variants: vec![],
                 has_stripped_variants: false,
                 impls: vec![],
@@ -488,7 +514,10 @@ mod tests {
                 is_unsafe: false,
                 is_dyn_compatible: true,
                 items: vec![],
-                generics: Generics { params: vec![], where_predicates: vec![] },
+                generics: Generics {
+                    params: vec![],
+                    where_predicates: vec![],
+                },
                 bounds: vec![],
                 implementations: vec![],
             }),
@@ -540,35 +569,57 @@ mod tests {
     #[test]
     fn render_type_tuple() {
         let krate = empty_crate();
-        let ty = Type::Tuple(vec![Type::Primitive("u32".into()), Type::Primitive("String".into())]);
+        let ty = Type::Tuple(vec![
+            Type::Primitive("u32".into()),
+            Type::Primitive("String".into()),
+        ]);
         assert_eq!(render_type(&ty, &krate), "(u32, String)");
     }
 
     #[test]
     fn render_type_slice() {
         let krate = empty_crate();
-        assert_eq!(render_type(&Type::Slice(Box::new(Type::Primitive("u8".into()))), &krate), "[u8]");
+        assert_eq!(
+            render_type(&Type::Slice(Box::new(Type::Primitive("u8".into()))), &krate),
+            "[u8]"
+        );
     }
 
     #[test]
     fn render_type_array() {
         let krate = empty_crate();
-        let ty = Type::Array { type_: Box::new(Type::Primitive("u8".into())), len: "32".into() };
+        let ty = Type::Array {
+            type_: Box::new(Type::Primitive("u8".into())),
+            len: "32".into(),
+        };
         assert_eq!(render_type(&ty, &krate), "[u8; 32]");
     }
 
     #[test]
     fn render_type_raw_pointer() {
         let krate = empty_crate();
-        let ty = Type::RawPointer { is_mutable: true, type_: Box::new(Type::Primitive("u8".into())) };
+        let ty = Type::RawPointer {
+            is_mutable: true,
+            type_: Box::new(Type::Primitive("u8".into())),
+        };
         assert_eq!(render_type(&ty, &krate), "*mut u8");
     }
 
     #[test]
     fn render_function_signature() {
         let krate = empty_crate();
-        let item = make_function("add", vec![("a", Type::Primitive("u32".into())), ("b", Type::Primitive("u32".into()))], Some(Type::Primitive("u32".into())));
-        assert_eq!(render_signature(&item, &krate).unwrap(), "fn add(a: u32, b: u32) -> u32");
+        let item = make_function(
+            "add",
+            vec![
+                ("a", Type::Primitive("u32".into())),
+                ("b", Type::Primitive("u32".into())),
+            ],
+            Some(Type::Primitive("u32".into())),
+        );
+        assert_eq!(
+            render_signature(&item, &krate).unwrap(),
+            "fn add(a: u32, b: u32) -> u32"
+        );
     }
 
     #[test]
@@ -581,25 +632,51 @@ mod tests {
     #[test]
     fn render_struct_signature() {
         let krate = empty_crate();
-        assert_eq!(render_signature(&make_struct("MyStruct"), &krate).unwrap(), "pub struct MyStruct;");
+        assert_eq!(
+            render_signature(&make_struct("MyStruct"), &krate).unwrap(),
+            "pub struct MyStruct;"
+        );
     }
 
     #[test]
     fn render_enum_signature() {
         let krate = empty_crate();
-        assert_eq!(render_signature(&make_enum("Color"), &krate).unwrap(), "pub enum Color {  }");
+        assert_eq!(
+            render_signature(&make_enum("Color"), &krate).unwrap(),
+            "pub enum Color {  }"
+        );
     }
 
     #[test]
     fn render_trait_signature() {
         let krate = empty_crate();
-        assert_eq!(render_signature(&make_trait("Drawable"), &krate).unwrap(), "pub trait Drawable");
+        assert_eq!(
+            render_signature(&make_trait("Drawable"), &krate).unwrap(),
+            "pub trait Drawable"
+        );
     }
 
     #[test]
     fn item_kind_labels() {
-        assert_eq!(item_kind_label(&ItemEnum::Module(Module { is_crate: false, items: vec![], is_stripped: false })), Some("Modules"));
-        assert_eq!(item_kind_label(&ItemEnum::Struct(Struct { kind: StructKind::Unit, generics: Generics { params: vec![], where_predicates: vec![] }, impls: vec![] })), Some("Structs"));
+        assert_eq!(
+            item_kind_label(&ItemEnum::Module(Module {
+                is_crate: false,
+                items: vec![],
+                is_stripped: false
+            })),
+            Some("Modules")
+        );
+        assert_eq!(
+            item_kind_label(&ItemEnum::Struct(Struct {
+                kind: StructKind::Unit,
+                generics: Generics {
+                    params: vec![],
+                    where_predicates: vec![]
+                },
+                impls: vec![]
+            })),
+            Some("Structs")
+        );
     }
 
     #[test]
@@ -613,7 +690,14 @@ mod tests {
         let func = make_function("hello", vec![], None);
         let id = Id(1);
         krate.index.insert(id.clone(), func);
-        krate.paths.insert(id, ItemSummary { crate_id: 0, path: vec!["my_crate".into(), "hello".into()], kind: ItemKind::Function });
+        krate.paths.insert(
+            id,
+            ItemSummary {
+                crate_id: 0,
+                path: vec!["my_crate".into(), "hello".into()],
+                kind: ItemKind::Function,
+            },
+        );
 
         let files = transform_to_mdx(&krate);
         assert_eq!(files.len(), 1);
@@ -628,11 +712,25 @@ mod tests {
         let mut krate = empty_crate();
         let func = make_function("do_thing", vec![], None);
         krate.index.insert(Id(1), func);
-        krate.paths.insert(Id(1), ItemSummary { crate_id: 0, path: vec!["mc".into(), "do_thing".into()], kind: ItemKind::Function });
+        krate.paths.insert(
+            Id(1),
+            ItemSummary {
+                crate_id: 0,
+                path: vec!["mc".into(), "do_thing".into()],
+                kind: ItemKind::Function,
+            },
+        );
 
         let st = make_struct("Widget");
         krate.index.insert(Id(2), st);
-        krate.paths.insert(Id(2), ItemSummary { crate_id: 0, path: vec!["mc".into(), "Widget".into()], kind: ItemKind::Struct });
+        krate.paths.insert(
+            Id(2),
+            ItemSummary {
+                crate_id: 0,
+                path: vec!["mc".into(), "Widget".into()],
+                kind: ItemKind::Struct,
+            },
+        );
 
         let files = transform_to_mdx(&krate);
         assert_eq!(files.len(), 1);
@@ -654,7 +752,11 @@ mod tests {
             links: HashMap::new(),
             attrs: vec![],
             deprecation: None,
-            inner: ItemEnum::Module(Module { is_crate: true, items: vec![Id(1)], is_stripped: false }),
+            inner: ItemEnum::Module(Module {
+                is_crate: true,
+                items: vec![Id(1)],
+                is_stripped: false,
+            }),
         };
         krate.root = Id(0);
         krate.index.insert(Id(0), root_module);
@@ -662,12 +764,23 @@ mod tests {
         // Add a function so the module generates a file.
         let func = make_function("f", vec![], None);
         krate.index.insert(Id(1), func);
-        krate.paths.insert(Id(1), ItemSummary { crate_id: 0, path: vec!["f".into()], kind: ItemKind::Function });
+        krate.paths.insert(
+            Id(1),
+            ItemSummary {
+                crate_id: 0,
+                path: vec!["f".into()],
+                kind: ItemKind::Function,
+            },
+        );
 
         let files = transform_to_mdx(&krate);
         // The root module's description in frontmatter should have escaped quotes.
         let index = files.iter().find(|f| f.path == "index.mdx").unwrap();
-        assert!(index.content.contains("\\\"quoted\\\""), "content: {}", index.content);
+        assert!(
+            index.content.contains("\\\"quoted\\\""),
+            "content: {}",
+            index.content
+        );
     }
 
     #[test]
@@ -677,7 +790,9 @@ mod tests {
             path: "Option".into(),
             id: Id(99),
             args: Some(Box::new(rustdoc_types::GenericArgs::AngleBracketed {
-                args: vec![rustdoc_types::GenericArg::Type(Type::Primitive("u32".into()))],
+                args: vec![rustdoc_types::GenericArg::Type(Type::Primitive(
+                    "u32".into(),
+                ))],
                 constraints: vec![],
             })),
         });
@@ -687,13 +802,15 @@ mod tests {
     #[test]
     fn render_type_impl_trait() {
         let krate = empty_crate();
-        let ty = Type::ImplTrait(vec![
-            rustdoc_types::GenericBound::TraitBound {
-                trait_: rustdoc_types::Path { path: "Display".into(), id: Id(99), args: None },
-                generic_params: vec![],
-                modifier: rustdoc_types::TraitBoundModifier::None,
+        let ty = Type::ImplTrait(vec![rustdoc_types::GenericBound::TraitBound {
+            trait_: rustdoc_types::Path {
+                path: "Display".into(),
+                id: Id(99),
+                args: None,
             },
-        ]);
+            generic_params: vec![],
+            modifier: rustdoc_types::TraitBoundModifier::None,
+        }]);
         assert_eq!(render_type(&ty, &krate), "impl Display");
     }
 
@@ -702,7 +819,11 @@ mod tests {
         let krate = empty_crate();
         let ty = Type::DynTrait(rustdoc_types::DynTrait {
             traits: vec![rustdoc_types::PolyTrait {
-                trait_: rustdoc_types::Path { path: "Error".into(), id: Id(99), args: None },
+                trait_: rustdoc_types::Path {
+                    path: "Error".into(),
+                    id: Id(99),
+                    args: None,
+                },
                 generic_params: vec![],
             }],
             lifetime: None,
@@ -720,7 +841,12 @@ mod tests {
                 is_c_variadic: false,
             },
             generic_params: vec![],
-            header: FunctionHeader { is_const: false, is_unsafe: false, is_async: false, abi: Abi::Rust },
+            header: FunctionHeader {
+                is_const: false,
+                is_unsafe: false,
+                is_async: false,
+                abi: Abi::Rust,
+            },
         }));
         assert_eq!(render_type(&ty, &krate), "fn(u32) -> bool");
     }
@@ -728,7 +854,10 @@ mod tests {
     #[test]
     fn render_type_const_pointer() {
         let krate = empty_crate();
-        let ty = Type::RawPointer { is_mutable: false, type_: Box::new(Type::Primitive("u8".into())) };
+        let ty = Type::RawPointer {
+            is_mutable: false,
+            type_: Box::new(Type::Primitive("u8".into())),
+        };
         assert_eq!(render_type(&ty, &krate), "*const u8");
     }
 
@@ -743,9 +872,16 @@ mod tests {
         let krate = empty_crate();
         let ty = Type::QualifiedPath {
             name: "Item".into(),
-            args: Box::new(rustdoc_types::GenericArgs::AngleBracketed { args: vec![], constraints: vec![] }),
+            args: Box::new(rustdoc_types::GenericArgs::AngleBracketed {
+                args: vec![],
+                constraints: vec![],
+            }),
             self_type: Box::new(Type::Generic("T".into())),
-            trait_: Some(rustdoc_types::Path { path: "Iterator".into(), id: Id(99), args: None }),
+            trait_: Some(rustdoc_types::Path {
+                path: "Iterator".into(),
+                id: Id(99),
+                args: None,
+            }),
         };
         assert_eq!(render_type(&ty, &krate), "<T as Iterator>::Item");
     }
@@ -753,74 +889,137 @@ mod tests {
     #[test]
     fn item_kind_label_all_variants() {
         // Test the remaining untested variants
-        assert_eq!(item_kind_label(&ItemEnum::Enum(Enum {
-            generics: Generics { params: vec![], where_predicates: vec![] },
-            variants: vec![], has_stripped_variants: false, impls: vec![],
-        })), Some("Enums"));
-        assert_eq!(item_kind_label(&ItemEnum::Trait(Trait {
-            is_auto: false, is_unsafe: false, is_dyn_compatible: true,
-            items: vec![], generics: Generics { params: vec![], where_predicates: vec![] },
-            bounds: vec![], implementations: vec![],
-        })), Some("Traits"));
+        assert_eq!(
+            item_kind_label(&ItemEnum::Enum(Enum {
+                generics: Generics {
+                    params: vec![],
+                    where_predicates: vec![]
+                },
+                variants: vec![],
+                has_stripped_variants: false,
+                impls: vec![],
+            })),
+            Some("Enums")
+        );
+        assert_eq!(
+            item_kind_label(&ItemEnum::Trait(Trait {
+                is_auto: false,
+                is_unsafe: false,
+                is_dyn_compatible: true,
+                items: vec![],
+                generics: Generics {
+                    params: vec![],
+                    where_predicates: vec![]
+                },
+                bounds: vec![],
+                implementations: vec![],
+            })),
+            Some("Traits")
+        );
         assert_eq!(item_kind_label(&ItemEnum::Macro("".into())), Some("Macros"));
-        assert_eq!(item_kind_label(&ItemEnum::Static(rustdoc_types::Static {
-            type_: Type::Primitive("u32".into()),
-            is_mutable: false,
-            is_unsafe: false,
-            expr: String::new(),
-        })), Some("Statics"));
+        assert_eq!(
+            item_kind_label(&ItemEnum::Static(rustdoc_types::Static {
+                type_: Type::Primitive("u32".into()),
+                is_mutable: false,
+                is_unsafe: false,
+                expr: String::new(),
+            })),
+            Some("Statics")
+        );
         // Impl blocks should be skipped
-        assert_eq!(item_kind_label(&ItemEnum::Impl(rustdoc_types::Impl {
-            is_unsafe: false, generics: Generics { params: vec![], where_predicates: vec![] },
-            provided_trait_methods: vec![], trait_: None, for_: Type::Primitive("u32".into()),
-            items: vec![], is_negative: false, is_synthetic: false,
-            blanket_impl: None,
-        })), None);
+        assert_eq!(
+            item_kind_label(&ItemEnum::Impl(rustdoc_types::Impl {
+                is_unsafe: false,
+                generics: Generics {
+                    params: vec![],
+                    where_predicates: vec![]
+                },
+                provided_trait_methods: vec![],
+                trait_: None,
+                for_: Type::Primitive("u32".into()),
+                items: vec![],
+                is_negative: false,
+                is_synthetic: false,
+                blanket_impl: None,
+            })),
+            None
+        );
     }
 
     #[test]
     fn render_constant_signature() {
         let krate = empty_crate();
         let item = Item {
-            id: Id(5), crate_id: 0,
-            name: Some("MAX_SIZE".into()), span: None,
-            visibility: Visibility::Public, docs: None,
-            links: HashMap::new(), attrs: vec![], deprecation: None,
+            id: Id(5),
+            crate_id: 0,
+            name: Some("MAX_SIZE".into()),
+            span: None,
+            visibility: Visibility::Public,
+            docs: None,
+            links: HashMap::new(),
+            attrs: vec![],
+            deprecation: None,
             inner: ItemEnum::Constant {
                 type_: Type::Primitive("usize".into()),
-                const_: rustdoc_types::Constant { expr: "1024".into(), value: Some("1024".into()), is_literal: true },
+                const_: rustdoc_types::Constant {
+                    expr: "1024".into(),
+                    value: Some("1024".into()),
+                    is_literal: true,
+                },
             },
         };
-        assert_eq!(render_signature(&item, &krate).unwrap(), "pub const MAX_SIZE: usize = 1024");
+        assert_eq!(
+            render_signature(&item, &krate).unwrap(),
+            "pub const MAX_SIZE: usize = 1024"
+        );
     }
 
     #[test]
     fn render_type_alias_signature() {
         let krate = empty_crate();
         let item = Item {
-            id: Id(6), crate_id: 0,
-            name: Some("Result".into()), span: None,
-            visibility: Visibility::Public, docs: None,
-            links: HashMap::new(), attrs: vec![], deprecation: None,
+            id: Id(6),
+            crate_id: 0,
+            name: Some("Result".into()),
+            span: None,
+            visibility: Visibility::Public,
+            docs: None,
+            links: HashMap::new(),
+            attrs: vec![],
+            deprecation: None,
             inner: ItemEnum::TypeAlias(rustdoc_types::TypeAlias {
                 type_: Type::Primitive("u32".into()),
-                generics: Generics { params: vec![], where_predicates: vec![] },
+                generics: Generics {
+                    params: vec![],
+                    where_predicates: vec![],
+                },
             }),
         };
-        assert_eq!(render_signature(&item, &krate).unwrap(), "pub type Result = u32");
+        assert_eq!(
+            render_signature(&item, &krate).unwrap(),
+            "pub type Result = u32"
+        );
     }
 
     #[test]
     fn render_macro_signature() {
         let krate = empty_crate();
         let item = Item {
-            id: Id(7), crate_id: 0,
-            name: Some("my_macro".into()), span: None,
-            visibility: Visibility::Public, docs: None,
-            links: HashMap::new(), attrs: vec![], deprecation: None,
+            id: Id(7),
+            crate_id: 0,
+            name: Some("my_macro".into()),
+            span: None,
+            visibility: Visibility::Public,
+            docs: None,
+            links: HashMap::new(),
+            attrs: vec![],
+            deprecation: None,
             inner: ItemEnum::Macro("macro body".into()),
         };
-        assert_eq!(render_signature(&item, &krate).unwrap(), "macro_rules! my_macro { ... }");
+        assert_eq!(
+            render_signature(&item, &krate).unwrap(),
+            "macro_rules! my_macro { ... }"
+        );
     }
 
     #[test]
@@ -839,9 +1038,15 @@ mod tests {
     #[test]
     fn write_mdx_files_creates_directories() {
         let tmp = tempfile::tempdir().unwrap();
-        let files = vec![MdxFile { path: "nested/module.mdx".into(), content: "# Test\n".into() }];
+        let files = vec![MdxFile {
+            path: "nested/module.mdx".into(),
+            content: "# Test\n".into(),
+        }];
         write_mdx_files(&files, tmp.path()).unwrap();
         assert!(tmp.path().join("nested/module.mdx").exists());
-        assert_eq!(std::fs::read_to_string(tmp.path().join("nested/module.mdx")).unwrap(), "# Test\n");
+        assert_eq!(
+            std::fs::read_to_string(tmp.path().join("nested/module.mdx")).unwrap(),
+            "# Test\n"
+        );
     }
 }

@@ -18,9 +18,17 @@ pub enum LifecycleEventType {
     Suspended,
     Completed,
     Terminated,
-    Error { message: String },
-    StepStarted { step_id: usize, step_name: Option<String> },
-    StepCompleted { step_id: usize, step_name: Option<String> },
+    Error {
+        message: String,
+    },
+    StepStarted {
+        step_id: usize,
+        step_name: Option<String>,
+    },
+    StepCompleted {
+        step_id: usize,
+        step_name: Option<String>,
+    },
 }
 
 impl LifecycleEvent {
@@ -56,7 +64,10 @@ mod tests {
         let event = LifecycleEvent::new("wf-1", "def-1", 1, LifecycleEventType::Started);
         let json = serde_json::to_string(&event).unwrap();
         let deserialized: LifecycleEvent = serde_json::from_str(&json).unwrap();
-        assert_eq!(event.workflow_instance_id, deserialized.workflow_instance_id);
+        assert_eq!(
+            event.workflow_instance_id,
+            deserialized.workflow_instance_id
+        );
         assert_eq!(event.event_type, deserialized.event_type);
     }
 

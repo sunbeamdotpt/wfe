@@ -4,11 +4,9 @@ use std::time::Duration;
 use async_trait::async_trait;
 use serde_json::json;
 
-use wfe::models::{
-    ExecutionResult, StepOutcome, WorkflowDefinition, WorkflowStatus, WorkflowStep,
-};
-use wfe::traits::step::{StepBody, StepExecutionContext};
 use wfe::WorkflowHostBuilder;
+use wfe::models::{ExecutionResult, StepOutcome, WorkflowDefinition, WorkflowStatus, WorkflowStep};
+use wfe::traits::step::{StepBody, StepExecutionContext};
 use wfe_core::primitives::sub_workflow::SubWorkflowStep;
 use wfe_core::test_support::{
     InMemoryLockProvider, InMemoryPersistenceProvider, InMemoryQueueProvider,

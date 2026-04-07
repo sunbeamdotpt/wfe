@@ -1,7 +1,7 @@
 use async_trait::async_trait;
+use wfe_core::WfeError;
 use wfe_core::models::ExecutionResult;
 use wfe_core::traits::step::{StepBody, StepExecutionContext};
-use wfe_core::WfeError;
 
 use crate::cargo::config::{CargoCommand, CargoConfig};
 
@@ -88,7 +88,10 @@ impl CargoStep {
     /// Ensures an external cargo tool is installed before running it.
     /// For built-in cargo subcommands, this is a no-op.
     async fn ensure_tool_available(&self) -> Result<(), WfeError> {
-        let (binary, package) = match (self.config.command.binary_name(), self.config.command.install_package()) {
+        let (binary, package) = match (
+            self.config.command.binary_name(),
+            self.config.command.install_package(),
+        ) {
             (Some(b), Some(p)) => (b, p),
             _ => return Ok(()),
         };
@@ -117,9 +120,11 @@ impl CargoStep {
                 .stderr(std::process::Stdio::piped())
                 .output()
                 .await
-                .map_err(|e| WfeError::StepExecution(format!(
-                    "Failed to add llvm-tools-preview component: {e}"
-                )))?;
+                .map_err(|e| {
+                    WfeError::StepExecution(format!(
+                        "Failed to add llvm-tools-preview component: {e}"
+                    ))
+                })?;
 
             if !component.status.success() {
                 let stderr = String::from_utf8_lossy(&component.stderr);
@@ -135,9 +140,7 @@ impl CargoStep {
             .stderr(std::process::Stdio::piped())
             .output()
             .await
-            .map_err(|e| WfeError::StepExecution(format!(
-                "Failed to install {package}: {e}"
-            )))?;
+            .map_err(|e| WfeError::StepExecution(format!("Failed to install {package}: {e}")))?;
 
         if !install.status.success() {
             let stderr = String::from_utf8_lossy(&install.stderr);
@@ -162,17 +165,16 @@ impl CargoStep {
         let doc_dir = std::path::Path::new(working_dir).join("target/doc");
 
         let json_path = std::fs::read_dir(&doc_dir)
-            .map_err(|e| WfeError::StepExecution(format!(
-                "failed to read target/doc: {e}"
-            )))?
+            .map_err(|e| WfeError::StepExecution(format!("failed to read target/doc: {e}")))?
             .filter_map(|entry| entry.ok())
-            .find(|entry| {
-                entry.path().extension().is_some_and(|ext| ext == "json")
-            })
+            .find(|entry| entry.path().extension().is_some_and(|ext| ext == "json"))
             .map(|entry| entry.path())
-            .ok_or_else(|| WfeError::StepExecution(
-                "no JSON file found in target/doc/ — did rustdoc --output-format json succeed?".to_string()
-            ))?;
+            .ok_or_else(|| {
+                WfeError::StepExecution(
+                    "no JSON file found in target/doc/ — did rustdoc --output-format json succeed?"
+                        .to_string(),
+                )
+            })?;
 
         tracing::info!(path = %json_path.display(), "reading rustdoc JSON");
 
@@ -180,20 +182,20 @@ impl CargoStep {
             WfeError::StepExecution(format!("failed to read {}: {e}", json_path.display()))
         })?;
 
-        let krate: rustdoc_types::Crate = serde_json::from_str(&json_content).map_err(|e| {
-            WfeError::StepExecution(format!("failed to parse rustdoc JSON: {e}"))
-        })?;
+        let krate: rustdoc_types::Crate = serde_json::from_str(&json_content)
+            .map_err(|e| WfeError::StepExecution(format!("failed to parse rustdoc JSON: {e}")))?;
 
         let mdx_files = transform_to_mdx(&krate);
 
-        let output_dir = self.config.output_dir
+        let output_dir = self
+            .config
+            .output_dir
             .as_deref()
             .unwrap_or("target/doc/mdx");
         let output_path = std::path::Path::new(working_dir).join(output_dir);
 
-        write_mdx_files(&mdx_files, &output_path).map_err(|e| {
-            WfeError::StepExecution(format!("failed to write MDX files: {e}"))
-        })?;
+        write_mdx_files(&mdx_files, &output_path)
+            .map_err(|e| WfeError::StepExecution(format!("failed to write MDX files: {e}")))?;
 
         let file_count = mdx_files.len();
         tracing::info!(
@@ -214,7 +216,10 @@ impl CargoStep {
         outputs.insert(
             "mdx.files".to_string(),
             serde_json::Value::Array(
-                file_paths.into_iter().map(serde_json::Value::String).collect(),
+                file_paths
+                    .into_iter()
+                    .map(serde_json::Value::String)
+                    .collect(),
             ),
         );
 
@@ -224,7 +229,10 @@ impl CargoStep {
 
 #[async_trait]
 impl StepBody for CargoStep {
-    async fn run(&mut self, context: &StepExecutionContext<'_>) -> wfe_core::Result<ExecutionResult> {
+    async fn run(
+        &mut self,
+        context: &StepExecutionContext<'_>,
+    ) -> wfe_core::Result<ExecutionResult> {
         let step_name = context.step.name.as_deref().unwrap_or("unknown");
         let subcmd = self.config.command.as_str();
 
@@ -248,9 +256,9 @@ impl StepBody for CargoStep {
                 }
             }
         } else {
-            cmd.output()
-                .await
-                .map_err(|e| WfeError::StepExecution(format!("Failed to spawn cargo {subcmd}: {e}")))?
+            cmd.output().await.map_err(|e| {
+                WfeError::StepExecution(format!("Failed to spawn cargo {subcmd}: {e}"))
+            })?
         };
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -317,7 +325,11 @@ mod tests {
         let cmd = step.build_command();
         let prog = cmd.as_std().get_program().to_str().unwrap();
         assert_eq!(prog, "cargo");
-        let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_str().unwrap()).collect();
+        let args: Vec<_> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_str().unwrap())
+            .collect();
         assert_eq!(args, vec!["build"]);
     }
 
@@ -329,7 +341,11 @@ mod tests {
         let cmd = step.build_command();
         let prog = cmd.as_std().get_program().to_str().unwrap();
         assert_eq!(prog, "rustup");
-        let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_str().unwrap()).collect();
+        let args: Vec<_> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_str().unwrap())
+            .collect();
         assert_eq!(args, vec!["run", "nightly", "cargo", "test"]);
     }
 
@@ -340,8 +356,15 @@ mod tests {
         config.features = vec!["feat1".to_string(), "feat2".to_string()];
         let step = CargoStep::new(config);
         let cmd = step.build_command();
-        let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_str().unwrap()).collect();
-        assert_eq!(args, vec!["check", "-p", "my-crate", "--features", "feat1,feat2"]);
+        let args: Vec<_> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_str().unwrap())
+            .collect();
+        assert_eq!(
+            args,
+            vec!["check", "-p", "my-crate", "--features", "feat1,feat2"]
+        );
     }
 
     #[test]
@@ -351,8 +374,20 @@ mod tests {
         config.target = Some("aarch64-unknown-linux-gnu".to_string());
         let step = CargoStep::new(config);
         let cmd = step.build_command();
-        let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_str().unwrap()).collect();
-        assert_eq!(args, vec!["build", "--release", "--target", "aarch64-unknown-linux-gnu"]);
+        let args: Vec<_> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_str().unwrap())
+            .collect();
+        assert_eq!(
+            args,
+            vec![
+                "build",
+                "--release",
+                "--target",
+                "aarch64-unknown-linux-gnu"
+            ]
+        );
     }
 
     #[test]
@@ -364,10 +399,23 @@ mod tests {
         config.extra_args = vec!["--".to_string(), "-D".to_string(), "warnings".to_string()];
         let step = CargoStep::new(config);
         let cmd = step.build_command();
-        let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_str().unwrap()).collect();
+        let args: Vec<_> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_str().unwrap())
+            .collect();
         assert_eq!(
             args,
-            vec!["clippy", "--all-features", "--no-default-features", "--profile", "dev", "--", "-D", "warnings"]
+            vec![
+                "clippy",
+                "--all-features",
+                "--no-default-features",
+                "--profile",
+                "dev",
+                "--",
+                "-D",
+                "warnings"
+            ]
         );
     }
 
@@ -377,17 +425,29 @@ mod tests {
         config.extra_args = vec!["--check".to_string()];
         let step = CargoStep::new(config);
         let cmd = step.build_command();
-        let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_str().unwrap()).collect();
+        let args: Vec<_> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_str().unwrap())
+            .collect();
         assert_eq!(args, vec!["fmt", "--check"]);
     }
 
     #[test]
     fn build_command_publish_dry_run() {
         let mut config = minimal_config(CargoCommand::Publish);
-        config.extra_args = vec!["--dry-run".to_string(), "--registry".to_string(), "my-reg".to_string()];
+        config.extra_args = vec![
+            "--dry-run".to_string(),
+            "--registry".to_string(),
+            "my-reg".to_string(),
+        ];
         let step = CargoStep::new(config);
         let cmd = step.build_command();
-        let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_str().unwrap()).collect();
+        let args: Vec<_> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_str().unwrap())
+            .collect();
         assert_eq!(args, vec!["publish", "--dry-run", "--registry", "my-reg"]);
     }
 
@@ -398,18 +458,27 @@ mod tests {
         config.release = true;
         let step = CargoStep::new(config);
         let cmd = step.build_command();
-        let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_str().unwrap()).collect();
+        let args: Vec<_> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_str().unwrap())
+            .collect();
         assert_eq!(args, vec!["doc", "--release", "--no-deps"]);
     }
 
     #[test]
     fn build_command_env_vars() {
         let mut config = minimal_config(CargoCommand::Build);
-        config.env.insert("RUSTFLAGS".to_string(), "-D warnings".to_string());
+        config
+            .env
+            .insert("RUSTFLAGS".to_string(), "-D warnings".to_string());
         let step = CargoStep::new(config);
         let cmd = step.build_command();
         let envs: Vec<_> = cmd.as_std().get_envs().collect();
-        assert!(envs.iter().any(|(k, v)| *k == "RUSTFLAGS" && v == &Some("-D warnings".as_ref())));
+        assert!(
+            envs.iter()
+                .any(|(k, v)| *k == "RUSTFLAGS" && v == &Some("-D warnings".as_ref()))
+        );
     }
 
     #[test]
@@ -418,14 +487,21 @@ mod tests {
         config.working_dir = Some("/my/project".to_string());
         let step = CargoStep::new(config);
         let cmd = step.build_command();
-        assert_eq!(cmd.as_std().get_current_dir(), Some(std::path::Path::new("/my/project")));
+        assert_eq!(
+            cmd.as_std().get_current_dir(),
+            Some(std::path::Path::new("/my/project"))
+        );
     }
 
     #[test]
     fn build_command_audit() {
         let step = CargoStep::new(minimal_config(CargoCommand::Audit));
         let cmd = step.build_command();
-        let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_str().unwrap()).collect();
+        let args: Vec<_> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_str().unwrap())
+            .collect();
         assert_eq!(args, vec!["audit"]);
     }
 
@@ -435,7 +511,11 @@ mod tests {
         config.extra_args = vec!["check".to_string()];
         let step = CargoStep::new(config);
         let cmd = step.build_command();
-        let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_str().unwrap()).collect();
+        let args: Vec<_> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_str().unwrap())
+            .collect();
         assert_eq!(args, vec!["deny", "check"]);
     }
 
@@ -443,7 +523,11 @@ mod tests {
     fn build_command_nextest() {
         let step = CargoStep::new(minimal_config(CargoCommand::Nextest));
         let cmd = step.build_command();
-        let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_str().unwrap()).collect();
+        let args: Vec<_> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_str().unwrap())
+            .collect();
         assert_eq!(args, vec!["nextest", "run"]);
     }
 
@@ -454,25 +538,44 @@ mod tests {
         config.extra_args = vec!["--no-fail-fast".to_string()];
         let step = CargoStep::new(config);
         let cmd = step.build_command();
-        let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_str().unwrap()).collect();
-        assert_eq!(args, vec!["nextest", "run", "--features", "feat1", "--no-fail-fast"]);
+        let args: Vec<_> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_str().unwrap())
+            .collect();
+        assert_eq!(
+            args,
+            vec!["nextest", "run", "--features", "feat1", "--no-fail-fast"]
+        );
     }
 
     #[test]
     fn build_command_llvm_cov() {
         let step = CargoStep::new(minimal_config(CargoCommand::LlvmCov));
         let cmd = step.build_command();
-        let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_str().unwrap()).collect();
+        let args: Vec<_> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_str().unwrap())
+            .collect();
         assert_eq!(args, vec!["llvm-cov"]);
     }
 
     #[test]
     fn build_command_llvm_cov_with_args() {
         let mut config = minimal_config(CargoCommand::LlvmCov);
-        config.extra_args = vec!["--html".to_string(), "--output-dir".to_string(), "coverage".to_string()];
+        config.extra_args = vec![
+            "--html".to_string(),
+            "--output-dir".to_string(),
+            "coverage".to_string(),
+        ];
         let step = CargoStep::new(config);
         let cmd = step.build_command();
-        let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_str().unwrap()).collect();
+        let args: Vec<_> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_str().unwrap())
+            .collect();
         assert_eq!(args, vec!["llvm-cov", "--html", "--output-dir", "coverage"]);
     }
 
@@ -482,10 +585,24 @@ mod tests {
         let cmd = step.build_command();
         let prog = cmd.as_std().get_program().to_str().unwrap();
         assert_eq!(prog, "rustup");
-        let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_str().unwrap()).collect();
+        let args: Vec<_> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_str().unwrap())
+            .collect();
         assert_eq!(
             args,
-            vec!["run", "nightly", "cargo", "rustdoc", "--", "-Z", "unstable-options", "--output-format", "json"]
+            vec![
+                "run",
+                "nightly",
+                "cargo",
+                "rustdoc",
+                "--",
+                "-Z",
+                "unstable-options",
+                "--output-format",
+                "json"
+            ]
         );
     }
 
@@ -496,10 +613,27 @@ mod tests {
         config.extra_args = vec!["--no-deps".to_string()];
         let step = CargoStep::new(config);
         let cmd = step.build_command();
-        let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_str().unwrap()).collect();
+        let args: Vec<_> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_str().unwrap())
+            .collect();
         assert_eq!(
             args,
-            vec!["run", "nightly", "cargo", "rustdoc", "-p", "my-crate", "--no-deps", "--", "-Z", "unstable-options", "--output-format", "json"]
+            vec![
+                "run",
+                "nightly",
+                "cargo",
+                "rustdoc",
+                "-p",
+                "my-crate",
+                "--no-deps",
+                "--",
+                "-Z",
+                "unstable-options",
+                "--output-format",
+                "json"
+            ]
         );
     }
 
@@ -509,7 +643,11 @@ mod tests {
         config.toolchain = Some("nightly-2024-06-01".to_string());
         let step = CargoStep::new(config);
         let cmd = step.build_command();
-        let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_str().unwrap()).collect();
+        let args: Vec<_> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_str().unwrap())
+            .collect();
         assert!(args.contains(&"nightly-2024-06-01"));
     }
 

@@ -4,15 +4,14 @@ use std::time::Duration;
 use async_trait::async_trait;
 use chrono::Utc;
 
+use wfe::WorkflowHostBuilder;
 use wfe::models::{
     ExecutionResult, PointerStatus, StepOutcome, WorkflowDefinition, WorkflowStatus, WorkflowStep,
 };
 use wfe::traits::step::{StepBody, StepExecutionContext};
-use wfe::WorkflowHostBuilder;
 use wfe_core::test_support::{
     InMemoryLockProvider, InMemoryPersistenceProvider, InMemoryQueueProvider,
 };
-
 
 /// A step that waits for "approval" event with key "request-1".
 #[derive(Default)]
@@ -68,7 +67,8 @@ async fn event_workflow_waits_then_resumes_on_publish() {
         .use_persistence(persistence.clone() as Arc<dyn wfe_core::traits::PersistenceProvider>)
         .use_lock_provider(lock as Arc<dyn wfe_core::traits::DistributedLockProvider>)
         .use_queue_provider(queue as Arc<dyn wfe_core::traits::QueueProvider>)
-        .build().unwrap();
+        .build()
+        .unwrap();
 
     let def = build_event_definition();
     host.register_step::<WaitForApprovalStep>().await;
@@ -134,7 +134,10 @@ async fn event_workflow_waits_then_resumes_on_publish() {
         .execution_pointers
         .iter()
         .find(|p| p.event_data.is_some());
-    assert!(wait_pointer.is_some(), "Expected event_data to be set on the waiting pointer");
+    assert!(
+        wait_pointer.is_some(),
+        "Expected event_data to be set on the waiting pointer"
+    );
 
     let event_data = wait_pointer.unwrap().event_data.as_ref().unwrap();
     assert_eq!(event_data, &serde_json::json!({"approved": true}));

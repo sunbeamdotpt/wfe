@@ -9,8 +9,8 @@ pub mod validation;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use serde::de::Error as _;
 use serde::Deserialize;
+use serde::de::Error as _;
 
 use crate::compiler::CompiledWorkflow;
 use crate::error::YamlWorkflowError;
@@ -50,8 +50,11 @@ pub fn load_workflow_from_str(
     // Parse to a generic YAML value first, then resolve merge keys (<<:).
     // This adds YAML 1.1 merge key support on top of serde_yaml 0.9's YAML 1.2 parser.
     let raw_value: serde_yaml::Value = serde_yaml::from_str(&interpolated)?;
-    let merged_value = yaml_merge_keys::merge_keys_serde(raw_value)
-        .map_err(|e| YamlWorkflowError::Parse(serde_yaml::Error::custom(format!("merge key resolution failed: {e}"))))?;
+    let merged_value = yaml_merge_keys::merge_keys_serde(raw_value).map_err(|e| {
+        YamlWorkflowError::Parse(serde_yaml::Error::custom(format!(
+            "merge key resolution failed: {e}"
+        )))
+    })?;
 
     // Deserialize the merge-resolved value into our schema.
     let file: schema::YamlWorkflowFile = serde_yaml::from_value(merged_value)?;
@@ -108,12 +111,11 @@ pub fn load_workflow_with_includes(
 
     let interpolated = interpolation::interpolate(yaml, config)?;
     let raw_value: serde_yaml::Value = serde_yaml::from_str(&interpolated)?;
-    let merged_value = yaml_merge_keys::merge_keys_serde(raw_value)
-        .map_err(|e| {
-            YamlWorkflowError::Parse(serde_yaml::Error::custom(format!(
-                "merge key resolution failed: {e}"
-            )))
-        })?;
+    let merged_value = yaml_merge_keys::merge_keys_serde(raw_value).map_err(|e| {
+        YamlWorkflowError::Parse(serde_yaml::Error::custom(format!(
+            "merge key resolution failed: {e}"
+        )))
+    })?;
 
     let with_includes: YamlWorkflowFileWithIncludes = serde_yaml::from_value(merged_value)?;
 
@@ -121,13 +123,11 @@ pub fn load_workflow_with_includes(
 
     // Process includes.
     for include_path_str in &with_includes.include {
-        let include_path = base_path.parent().unwrap_or(base_path).join(include_path_str);
-        load_includes_recursive(
-            &include_path,
-            config,
-            &mut main_specs,
-            &mut visited,
-        )?;
+        let include_path = base_path
+            .parent()
+            .unwrap_or(base_path)
+            .join(include_path_str);
+        load_includes_recursive(&include_path, config, &mut main_specs, &mut visited)?;
     }
 
     // Main file takes precedence: included specs are only added if their ID
@@ -149,14 +149,12 @@ fn load_includes_recursive(
     specs: &mut Vec<schema::WorkflowSpec>,
     visited: &mut HashSet<String>,
 ) -> Result<(), YamlWorkflowError> {
-    let canonical = path
-        .canonicalize()
-        .map_err(|e| {
-            YamlWorkflowError::Io(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!("Include file not found: {}: {e}", path.display()),
-            ))
-        })?;
+    let canonical = path.canonicalize().map_err(|e| {
+        YamlWorkflowError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("Include file not found: {}: {e}", path.display()),
+        ))
+    })?;
 
     let canonical_str = canonical.to_string_lossy().to_string();
     if !visited.insert(canonical_str.clone()) {
@@ -169,12 +167,11 @@ fn load_includes_recursive(
     let yaml = std::fs::read_to_string(&canonical)?;
     let interpolated = interpolation::interpolate(&yaml, config)?;
     let raw_value: serde_yaml::Value = serde_yaml::from_str(&interpolated)?;
-    let merged_value = yaml_merge_keys::merge_keys_serde(raw_value)
-        .map_err(|e| {
-            YamlWorkflowError::Parse(serde_yaml::Error::custom(format!(
-                "merge key resolution failed: {e}"
-            )))
-        })?;
+    let merged_value = yaml_merge_keys::merge_keys_serde(raw_value).map_err(|e| {
+        YamlWorkflowError::Parse(serde_yaml::Error::custom(format!(
+            "merge key resolution failed: {e}"
+        )))
+    })?;
 
     let with_includes: YamlWorkflowFileWithIncludes = serde_yaml::from_value(merged_value)?;
 
@@ -190,7 +187,10 @@ fn load_includes_recursive(
 
     // Recurse into nested includes.
     for nested_include in &with_includes.include {
-        let nested_path = canonical.parent().unwrap_or(&canonical).join(nested_include);
+        let nested_path = canonical
+            .parent()
+            .unwrap_or(&canonical)
+            .join(nested_include);
         load_includes_recursive(&nested_path, config, specs, visited)?;
     }
 

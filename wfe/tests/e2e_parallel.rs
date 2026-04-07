@@ -13,7 +13,6 @@ use wfe_core::test_support::{
     InMemoryLockProvider, InMemoryPersistenceProvider, InMemoryQueueProvider,
 };
 
-
 /// Initial step before parallel.
 #[derive(Default)]
 struct StartStep;
@@ -117,7 +116,8 @@ async fn parallel_branches_both_complete() {
         .use_persistence(persistence.clone() as Arc<dyn wfe_core::traits::PersistenceProvider>)
         .use_lock_provider(lock as Arc<dyn wfe_core::traits::DistributedLockProvider>)
         .use_queue_provider(queue as Arc<dyn wfe_core::traits::QueueProvider>)
-        .build().unwrap();
+        .build()
+        .unwrap();
 
     host.register_step::<StartStep>().await;
     host.register_step::<ParallelContainerStep>().await;
@@ -144,7 +144,10 @@ async fn parallel_branches_both_complete() {
         .iter()
         .filter(|p| p.status == PointerStatus::Complete && !p.scope.is_empty())
         .count();
-    assert_eq!(branch_completions, 2, "Expected both parallel branches to complete");
+    assert_eq!(
+        branch_completions, 2,
+        "Expected both parallel branches to complete"
+    );
 
     host.stop().await;
 }

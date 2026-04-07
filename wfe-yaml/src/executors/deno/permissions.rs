@@ -120,9 +120,9 @@ impl PermissionChecker {
 
     /// Detect `..` path traversal components.
     fn has_traversal(path: &str) -> bool {
-        Path::new(path).components().any(|c| {
-            matches!(c, std::path::Component::ParentDir)
-        })
+        Path::new(path)
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
     }
 }
 
@@ -130,12 +130,7 @@ impl PermissionChecker {
 mod tests {
     use super::*;
 
-    fn perms(
-        net: &[&str],
-        read: &[&str],
-        write: &[&str],
-        env: &[&str],
-    ) -> PermissionChecker {
+    fn perms(net: &[&str], read: &[&str], write: &[&str], env: &[&str]) -> PermissionChecker {
         PermissionChecker::from_config(&DenoPermissions {
             net: net.iter().map(|s| s.to_string()).collect(),
             read: read.iter().map(|s| s.to_string()).collect(),
@@ -182,9 +177,7 @@ mod tests {
     #[test]
     fn read_path_traversal_blocked() {
         let checker = perms(&[], &["/tmp"], &[], &[]);
-        let err = checker
-            .check_read("/tmp/../../../etc/passwd")
-            .unwrap_err();
+        let err = checker.check_read("/tmp/../../../etc/passwd").unwrap_err();
         assert_eq!(err.kind, "read");
         assert!(err.resource.contains(".."));
     }
@@ -205,9 +198,7 @@ mod tests {
     #[test]
     fn write_path_traversal_blocked() {
         let checker = perms(&[], &[], &["/tmp/out"], &[]);
-        assert!(checker
-            .check_write("/tmp/out/../../etc/shadow")
-            .is_err());
+        assert!(checker.check_write("/tmp/out/../../etc/shadow").is_err());
     }
 
     #[test]

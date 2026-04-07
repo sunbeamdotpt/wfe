@@ -12,7 +12,6 @@ use wfe_core::test_support::{
     InMemoryLockProvider, InMemoryPersistenceProvider, InMemoryQueueProvider,
 };
 
-
 /// Version 1 uses a single step.
 #[derive(Default)]
 struct V1Step;
@@ -75,14 +74,17 @@ async fn version_1_uses_v1_definition() {
         .use_persistence(persistence.clone() as Arc<dyn wfe_core::traits::PersistenceProvider>)
         .use_lock_provider(lock as Arc<dyn wfe_core::traits::DistributedLockProvider>)
         .use_queue_provider(queue as Arc<dyn wfe_core::traits::QueueProvider>)
-        .build().unwrap();
+        .build()
+        .unwrap();
 
     host.register_step::<V1Step>().await;
     host.register_step::<V2StepA>().await;
     host.register_step::<V2StepB>().await;
 
-    host.register_workflow_definition(build_v1_definition()).await;
-    host.register_workflow_definition(build_v2_definition()).await;
+    host.register_workflow_definition(build_v1_definition())
+        .await;
+    host.register_workflow_definition(build_v2_definition())
+        .await;
 
     host.start().await.unwrap();
 
@@ -121,14 +123,17 @@ async fn version_2_uses_v2_definition() {
         .use_persistence(persistence.clone() as Arc<dyn wfe_core::traits::PersistenceProvider>)
         .use_lock_provider(lock as Arc<dyn wfe_core::traits::DistributedLockProvider>)
         .use_queue_provider(queue as Arc<dyn wfe_core::traits::QueueProvider>)
-        .build().unwrap();
+        .build()
+        .unwrap();
 
     host.register_step::<V1Step>().await;
     host.register_step::<V2StepA>().await;
     host.register_step::<V2StepB>().await;
 
-    host.register_workflow_definition(build_v1_definition()).await;
-    host.register_workflow_definition(build_v2_definition()).await;
+    host.register_workflow_definition(build_v1_definition())
+        .await;
+    host.register_workflow_definition(build_v2_definition())
+        .await;
 
     host.start().await.unwrap();
 
@@ -167,14 +172,17 @@ async fn both_versions_coexist_and_run_independently() {
         .use_persistence(persistence.clone() as Arc<dyn wfe_core::traits::PersistenceProvider>)
         .use_lock_provider(lock as Arc<dyn wfe_core::traits::DistributedLockProvider>)
         .use_queue_provider(queue as Arc<dyn wfe_core::traits::QueueProvider>)
-        .build().unwrap();
+        .build()
+        .unwrap();
 
     host.register_step::<V1Step>().await;
     host.register_step::<V2StepA>().await;
     host.register_step::<V2StepB>().await;
 
-    host.register_workflow_definition(build_v1_definition()).await;
-    host.register_workflow_definition(build_v2_definition()).await;
+    host.register_workflow_definition(build_v1_definition())
+        .await;
+    host.register_workflow_definition(build_v2_definition())
+        .await;
 
     host.start().await.unwrap();
 
@@ -197,8 +205,7 @@ async fn both_versions_coexist_and_run_independently() {
         }
         let inst_v1 = host.get_workflow(&id_v1).await.unwrap();
         let inst_v2 = host.get_workflow(&id_v2).await.unwrap();
-        if inst_v1.status == WorkflowStatus::Complete
-            && inst_v2.status == WorkflowStatus::Complete
+        if inst_v1.status == WorkflowStatus::Complete && inst_v2.status == WorkflowStatus::Complete
         {
             break;
         }

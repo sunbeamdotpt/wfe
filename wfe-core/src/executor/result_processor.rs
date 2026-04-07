@@ -36,7 +36,9 @@ pub fn process_result(
             let next_step_id = find_next_step(step, &result.outcome_value);
             if let Some(next_id) = next_step_id {
                 let mut next_pointer = ExecutionPointer::new(next_id);
-                next_pointer.step_name = definition.steps.iter()
+                next_pointer.step_name = definition
+                    .steps
+                    .iter()
                     .find(|s| s.id == next_id)
                     .and_then(|s| s.name.clone());
                 next_pointer.predecessor_id = Some(pointer.id.clone());
@@ -62,7 +64,9 @@ pub fn process_result(
         for value in branch_values {
             for &child_step_id in &child_step_ids {
                 let mut child_pointer = ExecutionPointer::new(child_step_id);
-                child_pointer.step_name = definition.steps.iter()
+                child_pointer.step_name = definition
+                    .steps
+                    .iter()
                     .find(|s| s.id == child_step_id)
                     .and_then(|s| s.name.clone());
                 child_pointer.context_item = Some(value.clone());
@@ -79,9 +83,7 @@ pub fn process_result(
         pointer.event_name = result.event_name.clone();
         pointer.event_key = result.event_key.clone();
 
-        if let (Some(event_name), Some(event_key)) =
-            (&result.event_name, &result.event_key)
-        {
+        if let (Some(event_name), Some(event_key)) = (&result.event_name, &result.event_key) {
             let as_of = result.event_as_of.unwrap_or_else(Utc::now);
             let sub = EventSubscription::new(
                 workflow_id,
@@ -107,8 +109,7 @@ pub fn process_result(
         pointer.status = PointerStatus::Sleeping;
         pointer.active = true;
         pointer.sleep_until = Some(
-            Utc::now()
-                + chrono::Duration::milliseconds(poll_config.interval.as_millis() as i64),
+            Utc::now() + chrono::Duration::milliseconds(poll_config.interval.as_millis() as i64),
         );
         pointer.persistence_data = result.persistence_data.clone();
     } else if result.persistence_data.is_some() {

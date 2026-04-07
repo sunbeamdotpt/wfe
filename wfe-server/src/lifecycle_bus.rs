@@ -52,9 +52,14 @@ mod tests {
         let mut rx1 = bus.subscribe();
         let mut rx2 = bus.subscribe();
 
-        bus.publish(LifecycleEvent::new("wf-1", "def-1", 1, LifecycleEventType::Completed))
-            .await
-            .unwrap();
+        bus.publish(LifecycleEvent::new(
+            "wf-1",
+            "def-1",
+            1,
+            LifecycleEventType::Completed,
+        ))
+        .await
+        .unwrap();
 
         let e1 = rx1.recv().await.unwrap();
         let e2 = rx2.recv().await.unwrap();
@@ -66,9 +71,14 @@ mod tests {
     async fn no_subscribers_does_not_error() {
         let bus = BroadcastLifecyclePublisher::new(16);
         // No subscribers — should not panic.
-        bus.publish(LifecycleEvent::new("wf-1", "def-1", 1, LifecycleEventType::Started))
-            .await
-            .unwrap();
+        bus.publish(LifecycleEvent::new(
+            "wf-1",
+            "def-1",
+            1,
+            LifecycleEventType::Started,
+        ))
+        .await
+        .unwrap();
     }
 
     #[tokio::test]

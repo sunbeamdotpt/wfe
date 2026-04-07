@@ -29,7 +29,10 @@ pub fn handle_error(
         .unwrap_or_else(|| definition.default_error_behavior.clone());
 
     match behavior {
-        ErrorBehavior::Retry { interval, max_retries } => {
+        ErrorBehavior::Retry {
+            interval,
+            max_retries,
+        } => {
             if max_retries > 0 && pointer.retry_count >= max_retries {
                 // Exceeded max retries, suspend the workflow
                 pointer.status = PointerStatus::Failed;
@@ -44,9 +47,8 @@ pub fn handle_error(
                 pointer.retry_count += 1;
                 pointer.status = PointerStatus::Sleeping;
                 pointer.active = true;
-                pointer.sleep_until = Some(
-                    Utc::now() + chrono::Duration::milliseconds(interval.as_millis() as i64),
-                );
+                pointer.sleep_until =
+                    Some(Utc::now() + chrono::Duration::milliseconds(interval.as_millis() as i64));
             }
         }
         ErrorBehavior::Suspend => {
@@ -67,7 +69,9 @@ pub fn handle_error(
                 && let Some(comp_step_id) = step.compensation_step_id
             {
                 let mut comp_pointer = ExecutionPointer::new(comp_step_id);
-                comp_pointer.step_name = definition.steps.iter()
+                comp_pointer.step_name = definition
+                    .steps
+                    .iter()
                     .find(|s| s.id == comp_step_id)
                     .and_then(|s| s.name.clone());
                 comp_pointer.predecessor_id = Some(pointer.id.clone());

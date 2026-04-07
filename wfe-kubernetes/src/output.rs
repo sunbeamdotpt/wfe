@@ -152,10 +152,12 @@ mod tests {
 
     #[test]
     fn build_output_data_json_value() {
-        let parsed: HashMap<String, String> =
-            [("count".into(), "42".into()), ("flag".into(), "true".into())]
-                .into_iter()
-                .collect();
+        let parsed: HashMap<String, String> = [
+            ("count".into(), "42".into()),
+            ("flag".into(), "true".into()),
+        ]
+        .into_iter()
+        .collect();
         let data = build_output_data("s", "", "", 0, &parsed);
         // Numbers and booleans should be parsed as JSON, not strings.
         assert_eq!(data["count"], 42);

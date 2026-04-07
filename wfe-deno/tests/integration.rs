@@ -16,8 +16,7 @@ async fn run_js(code: &str) -> Result<(), Box<dyn std::error::Error>> {
 /// Helper: run a JS module in a fresh wfe runtime and drive the event loop.
 async fn run_module(code: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut runtime = create_wfe_runtime();
-    let specifier =
-        deno_core::ModuleSpecifier::parse("ext:wfe-deno/test-module.js").unwrap();
+    let specifier = deno_core::ModuleSpecifier::parse("ext:wfe-deno/test-module.js").unwrap();
     let module_id = runtime
         .load_main_es_module_from_code(&specifier, code.to_string())
         .await
@@ -27,8 +26,7 @@ async fn run_module(code: &str) -> Result<(), Box<dyn std::error::Error>> {
         .run_event_loop(Default::default())
         .await
         .map_err(|e| format!("event loop error: {e}"))?;
-    eval.await
-        .map_err(|e| format!("module eval error: {e}"))?;
+    eval.await.map_err(|e| format!("module eval error: {e}"))?;
     Ok(())
 }
 

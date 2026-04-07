@@ -77,8 +77,16 @@ pub fn build_service_pod(svc: &ServiceDefinition, namespace: &str) -> Pod {
                 command,
                 args,
                 resources: Some(ResourceRequirements {
-                    limits: if limits.is_empty() { None } else { Some(limits) },
-                    requests: if requests.is_empty() { None } else { Some(requests) },
+                    limits: if limits.is_empty() {
+                        None
+                    } else {
+                        Some(limits)
+                    },
+                    requests: if requests.is_empty() {
+                        None
+                    } else {
+                        Some(requests)
+                    },
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -230,10 +238,7 @@ mod tests {
         let ports = spec.ports.as_ref().unwrap();
         assert_eq!(ports.len(), 1);
         assert_eq!(ports[0].port, 5432);
-        assert_eq!(
-            ports[0].target_port,
-            Some(IntOrString::Int(5432))
-        );
+        assert_eq!(ports[0].target_port, Some(IntOrString::Int(5432)));
     }
 
     #[test]
@@ -241,10 +246,7 @@ mod tests {
         let svc = ServiceDefinition {
             name: "app".into(),
             image: "myapp".into(),
-            ports: vec![
-                WfeServicePort::tcp(8080),
-                WfeServicePort::tcp(8443),
-            ],
+            ports: vec![WfeServicePort::tcp(8080), WfeServicePort::tcp(8443)],
             env: Default::default(),
             readiness: None,
             command: vec![],

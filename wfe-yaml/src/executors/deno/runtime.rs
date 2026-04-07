@@ -8,7 +8,7 @@ use wfe_core::WfeError;
 
 use super::config::DenoConfig;
 use super::module_loader::WfeModuleLoader;
-use super::ops::workflow::{wfe_ops, StepMeta, StepOutputs, WorkflowInputs};
+use super::ops::workflow::{StepMeta, StepOutputs, WorkflowInputs, wfe_ops};
 use super::permissions::PermissionChecker;
 
 /// Create a configured `JsRuntime` for executing a workflow step script.
@@ -61,8 +61,8 @@ pub fn would_auto_add_esm_sh(config: &DenoConfig) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::config::DenoPermissions;
+    use super::*;
 
     #[test]
     fn create_runtime_succeeds() {

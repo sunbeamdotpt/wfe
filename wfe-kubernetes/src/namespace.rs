@@ -16,7 +16,13 @@ pub fn namespace_name(prefix: &str, workflow_id: &str) -> String {
     let sanitized: String = raw
         .to_lowercase()
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
         .take(63)
         .collect();
     // Trim trailing hyphens
@@ -55,9 +61,9 @@ pub async fn ensure_namespace(
         ..Default::default()
     };
 
-    api.create(&PostParams::default(), &ns)
-        .await
-        .map_err(|e| WfeError::StepExecution(format!("failed to create namespace '{name}': {e}")))?;
+    api.create(&PostParams::default(), &ns).await.map_err(|e| {
+        WfeError::StepExecution(format!("failed to create namespace '{name}': {e}"))
+    })?;
 
     Ok(())
 }
@@ -65,9 +71,9 @@ pub async fn ensure_namespace(
 /// Delete a namespace and all resources within it.
 pub async fn delete_namespace(client: &Client, name: &str) -> Result<(), WfeError> {
     let api: Api<Namespace> = Api::all(client.clone());
-    api.delete(name, &Default::default())
-        .await
-        .map_err(|e| WfeError::StepExecution(format!("failed to delete namespace '{name}': {e}")))?;
+    api.delete(name, &Default::default()).await.map_err(|e| {
+        WfeError::StepExecution(format!("failed to delete namespace '{name}': {e}"))
+    })?;
     Ok(())
 }
 

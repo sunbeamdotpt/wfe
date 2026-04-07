@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use deno_core::op2;
 use deno_core::OpState;
+use deno_core::op2;
 
 use crate::state::WfeState;
 

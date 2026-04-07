@@ -133,7 +133,11 @@ mod tests {
         assert_eq!(deserialized.tls.ca, Some("/ca.pem".to_string()));
         assert_eq!(deserialized.tls.cert, Some("/cert.pem".to_string()));
         assert_eq!(deserialized.tls.key, Some("/key.pem".to_string()));
-        assert!(deserialized.registry_auth.contains_key("registry.example.com"));
+        assert!(
+            deserialized
+                .registry_auth
+                .contains_key("registry.example.com")
+        );
         assert_eq!(deserialized.timeout_ms, Some(30000));
     }
 

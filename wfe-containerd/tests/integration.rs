@@ -10,8 +10,8 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use wfe_containerd::config::{ContainerdConfig, TlsConfig};
 use wfe_containerd::ContainerdStep;
+use wfe_containerd::config::{ContainerdConfig, TlsConfig};
 use wfe_core::models::{ExecutionPointer, WorkflowInstance, WorkflowStep};
 use wfe_core::traits::step::{StepBody, StepExecutionContext};
 
@@ -75,7 +75,7 @@ fn make_context<'a>(
         workflow,
         cancellation_token: tokio_util::sync::CancellationToken::new(),
         host_context: None,
-                log_sink: None,
+        log_sink: None,
     }
 }
 
@@ -204,8 +204,7 @@ async fn run_container_with_volume_mount() {
         return;
     };
 
-    let shared_dir = std::env::var("WFE_IO_DIR")
-        .unwrap_or_else(|_| "/tmp/wfe-io".to_string());
+    let shared_dir = std::env::var("WFE_IO_DIR").unwrap_or_else(|_| "/tmp/wfe-io".to_string());
     let vol_dir = format!("{shared_dir}/test-vol");
     std::fs::create_dir_all(&vol_dir).unwrap();
 
@@ -249,8 +248,7 @@ async fn run_debian_with_volume_and_network() {
         return;
     };
 
-    let shared_dir = std::env::var("WFE_IO_DIR")
-        .unwrap_or_else(|_| "/tmp/wfe-io".to_string());
+    let shared_dir = std::env::var("WFE_IO_DIR").unwrap_or_else(|_| "/tmp/wfe-io".to_string());
     let cargo_dir = format!("{shared_dir}/test-cargo");
     let rustup_dir = format!("{shared_dir}/test-rustup");
     std::fs::create_dir_all(&cargo_dir).unwrap();
@@ -263,8 +261,12 @@ async fn run_debian_with_volume_and_network() {
     config.user = "0:0".to_string();
     config.network = "host".to_string();
     config.timeout_ms = Some(30_000);
-    config.env.insert("CARGO_HOME".to_string(), "/cargo".to_string());
-    config.env.insert("RUSTUP_HOME".to_string(), "/rustup".to_string());
+    config
+        .env
+        .insert("CARGO_HOME".to_string(), "/cargo".to_string());
+    config
+        .env
+        .insert("RUSTUP_HOME".to_string(), "/rustup".to_string());
     config.volumes = vec![
         wfe_containerd::VolumeMountConfig {
             source: cargo_dir.clone(),

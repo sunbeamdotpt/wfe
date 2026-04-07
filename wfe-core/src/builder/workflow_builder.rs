@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
-use crate::models::{
-    ExecutionResult, StepOutcome, WorkflowDefinition, WorkflowStep,
-};
+use crate::models::{ExecutionResult, StepOutcome, WorkflowDefinition, WorkflowStep};
 use crate::traits::step::{StepBody, WorkflowData};
 
 use super::inline_step::InlineStep;
@@ -77,7 +75,12 @@ impl<D: WorkflowData> WorkflowBuilder<D> {
     }
 
     /// Wire an outcome from `from_step` to `to_step`.
-    pub fn wire_outcome(&mut self, from_step: usize, to_step: usize, value: Option<serde_json::Value>) {
+    pub fn wire_outcome(
+        &mut self,
+        from_step: usize,
+        to_step: usize,
+        value: Option<serde_json::Value>,
+    ) {
         if let Some(step) = self.steps.get_mut(from_step) {
             step.outcomes.push(StepOutcome {
                 next_step: to_step,

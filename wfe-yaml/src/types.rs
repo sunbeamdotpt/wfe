@@ -59,7 +59,9 @@ pub fn parse_type_string(s: &str) -> Result<SchemaType, String> {
     // Check for generic types: list<...> or map<...>
     if let Some(inner_start) = s.find('<') {
         if !s.ends_with('>') {
-            return Err(format!("Malformed generic type: '{s}' (missing closing '>')"));
+            return Err(format!(
+                "Malformed generic type: '{s}' (missing closing '>')"
+            ));
         }
         let container = &s[..inner_start];
         let inner_str = &s[inner_start + 1..s.len() - 1];

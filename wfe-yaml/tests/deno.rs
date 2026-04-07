@@ -42,7 +42,7 @@ fn make_context<'a>(
         workflow,
         cancellation_token: tokio_util::sync::CancellationToken::new(),
         host_context: None,
-                log_sink: None,
+        log_sink: None,
     }
 }
 
@@ -224,10 +224,7 @@ workflow:
     let result = wfe_yaml::load_single_workflow_from_str(yaml, &config);
     assert!(result.is_err());
     let msg = result.err().unwrap().to_string();
-    assert!(
-        msg.contains("config") || msg.contains("Deno"),
-        "got: {msg}"
-    );
+    assert!(msg.contains("config") || msg.contains("Deno"), "got: {msg}");
 }
 
 #[test]
@@ -247,10 +244,7 @@ workflow:
     let result = wfe_yaml::load_single_workflow_from_str(yaml, &config);
     assert!(result.is_err());
     let msg = result.err().unwrap().to_string();
-    assert!(
-        msg.contains("script") || msg.contains("file"),
-        "got: {msg}"
-    );
+    assert!(msg.contains("script") || msg.contains("file"), "got: {msg}");
 }
 
 #[test]
@@ -269,7 +263,10 @@ workflow:
     let compiled = wfe_yaml::load_single_workflow_from_str(yaml, &config).unwrap();
     assert!(!compiled.step_factories.is_empty());
     let (key, _factory) = &compiled.step_factories[0];
-    assert!(key.contains("deno"), "factory key should contain 'deno', got: {key}");
+    assert!(
+        key.contains("deno"),
+        "factory key should contain 'deno', got: {key}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -345,10 +342,7 @@ async fn deno_fetch_denied_host() {
         "expected permission error, got: {data:?}"
     );
     let err_msg = data["error"].as_str().unwrap();
-    assert!(
-        err_msg.contains("Permission denied"),
-        "got: {err_msg}"
-    );
+    assert!(err_msg.contains("Permission denied"), "got: {err_msg}");
 }
 
 #[tokio::test]
@@ -384,8 +378,13 @@ async fn deno_fetch_returns_json() {
 async fn deno_fetch_post_with_body() {
     let server = wiremock::MockServer::start().await;
     wiremock::Mock::given(wiremock::matchers::method("POST"))
-        .and(wiremock::matchers::header("content-type", "application/json"))
-        .and(wiremock::matchers::body_json(serde_json::json!({"key": "val"})))
+        .and(wiremock::matchers::header(
+            "content-type",
+            "application/json",
+        ))
+        .and(wiremock::matchers::body_json(
+            serde_json::json!({"key": "val"}),
+        ))
         .respond_with(wiremock::ResponseTemplate::new(201).set_body_string("created"))
         .mount(&server)
         .await;
@@ -501,7 +500,11 @@ async fn deno_import_local_file() {
     let dir = tempfile::tempdir().unwrap();
     let helper_path = dir.path().join("helper.js");
     let mut f = std::fs::File::create(&helper_path).unwrap();
-    writeln!(f, "export function greet(name) {{ return `hello ${{name}}`; }}").unwrap();
+    writeln!(
+        f,
+        "export function greet(name) {{ return `hello ${{name}}`; }}"
+    )
+    .unwrap();
     drop(f);
 
     let main_path = dir.path().join("main.js");
@@ -536,10 +539,7 @@ output("greeting", greet("world"));"#,
 async fn deno_dynamic_import_denied() {
     let server = wiremock::MockServer::start().await;
     wiremock::Mock::given(wiremock::matchers::any())
-        .respond_with(
-            wiremock::ResponseTemplate::new(200)
-                .set_body_string("export const x = 1;"),
-        )
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_string("export const x = 1;"))
         .mount(&server)
         .await;
 

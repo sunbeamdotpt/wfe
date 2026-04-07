@@ -60,7 +60,10 @@ mod tests {
     #[test]
     fn command_as_str() {
         assert_eq!(RustupCommand::Install.as_str(), "install");
-        assert_eq!(RustupCommand::ToolchainInstall.as_str(), "toolchain-install");
+        assert_eq!(
+            RustupCommand::ToolchainInstall.as_str(),
+            "toolchain-install"
+        );
         assert_eq!(RustupCommand::ComponentAdd.as_str(), "component-add");
         assert_eq!(RustupCommand::TargetAdd.as_str(), "target-add");
     }
@@ -118,7 +121,11 @@ mod tests {
         let config = RustupConfig {
             command: RustupCommand::ComponentAdd,
             toolchain: Some("nightly".to_string()),
-            components: vec!["clippy".to_string(), "rustfmt".to_string(), "rust-src".to_string()],
+            components: vec![
+                "clippy".to_string(),
+                "rustfmt".to_string(),
+                "rust-src".to_string(),
+            ],
             targets: vec![],
             profile: None,
             default_toolchain: None,
@@ -138,7 +145,10 @@ mod tests {
             command: RustupCommand::TargetAdd,
             toolchain: Some("stable".to_string()),
             components: vec![],
-            targets: vec!["wasm32-unknown-unknown".to_string(), "aarch64-linux-android".to_string()],
+            targets: vec![
+                "wasm32-unknown-unknown".to_string(),
+                "aarch64-linux-android".to_string(),
+            ],
             profile: None,
             default_toolchain: None,
             extra_args: vec![],
@@ -147,7 +157,10 @@ mod tests {
         let json = serde_json::to_string(&config).unwrap();
         let de: RustupConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(de.command, RustupCommand::TargetAdd);
-        assert_eq!(de.targets, vec!["wasm32-unknown-unknown", "aarch64-linux-android"]);
+        assert_eq!(
+            de.targets,
+            vec!["wasm32-unknown-unknown", "aarch64-linux-android"]
+        );
     }
 
     #[test]

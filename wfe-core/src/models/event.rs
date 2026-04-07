@@ -75,7 +75,11 @@ mod tests {
 
     #[test]
     fn new_event_defaults() {
-        let event = Event::new("order.created", "order-456", serde_json::json!({"amount": 100}));
+        let event = Event::new(
+            "order.created",
+            "order-456",
+            serde_json::json!({"amount": 100}),
+        );
         assert_eq!(event.event_name, "order.created");
         assert_eq!(event.event_key, "order-456");
         assert!(!event.is_processed);

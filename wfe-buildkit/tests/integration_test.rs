@@ -9,17 +9,16 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use wfe_buildkit::config::{BuildkitConfig, TlsConfig};
 use wfe_buildkit::BuildkitStep;
+use wfe_buildkit::config::{BuildkitConfig, TlsConfig};
 
 use wfe_core::models::{ExecutionPointer, WorkflowInstance, WorkflowStep};
 use wfe_core::traits::step::{StepBody, StepExecutionContext};
 
 /// Get the BuildKit daemon address from the environment or use the default.
 fn buildkit_addr() -> String {
-    std::env::var("WFE_BUILDKIT_ADDR").unwrap_or_else(|_| {
-        "unix:///Users/sienna/.lima/wfe-test/sock/buildkitd.sock".to_string()
-    })
+    std::env::var("WFE_BUILDKIT_ADDR")
+        .unwrap_or_else(|_| "unix:///Users/sienna/.lima/wfe-test/sock/buildkitd.sock".to_string())
 }
 
 /// Check whether the BuildKit daemon socket is reachable.
@@ -33,13 +32,7 @@ fn buildkitd_available() -> bool {
     }
 }
 
-fn make_test_context(
-    step_name: &str,
-) -> (
-    WorkflowStep,
-    ExecutionPointer,
-    WorkflowInstance,
-) {
+fn make_test_context(step_name: &str) -> (WorkflowStep, ExecutionPointer, WorkflowInstance) {
     let mut step = WorkflowStep::new(0, "buildkit");
     step.name = Some(step_name.to_string());
     let pointer = ExecutionPointer::new(0);
@@ -50,21 +43,14 @@ fn make_test_context(
 #[tokio::test]
 async fn build_simple_dockerfile_via_grpc() {
     if !buildkitd_available() {
-        eprintln!(
-            "SKIP: BuildKit daemon not available at {}",
-            buildkit_addr()
-        );
+        eprintln!("SKIP: BuildKit daemon not available at {}", buildkit_addr());
         return;
     }
 
     // Create a temp directory with a trivial Dockerfile.
     let tmp = tempfile::tempdir().unwrap();
     let dockerfile = tmp.path().join("Dockerfile");
-    std::fs::write(
-        &dockerfile,
-        "FROM alpine:latest\nRUN echo built\n",
-    )
-    .unwrap();
+    std::fs::write(&dockerfile, "FROM alpine:latest\nRUN echo built\n").unwrap();
 
     let config = BuildkitConfig {
         dockerfile: "Dockerfile".to_string(),
@@ -94,7 +80,7 @@ async fn build_simple_dockerfile_via_grpc() {
         workflow: &instance,
         cancellation_token: cancel,
         host_context: None,
-                log_sink: None,
+        log_sink: None,
     };
 
     let result = step.run(&ctx).await.expect("build should succeed");
@@ -135,10 +121,7 @@ async fn build_simple_dockerfile_via_grpc() {
 #[tokio::test]
 async fn build_with_build_args() {
     if !buildkitd_available() {
-        eprintln!(
-            "SKIP: BuildKit daemon not available at {}",
-            buildkit_addr()
-        );
+        eprintln!("SKIP: BuildKit daemon not available at {}", buildkit_addr());
         return;
     }
 
@@ -181,10 +164,13 @@ async fn build_with_build_args() {
         workflow: &instance,
         cancellation_token: cancel,
         host_context: None,
-                log_sink: None,
+        log_sink: None,
     };
 
-    let result = step.run(&ctx).await.expect("build with args should succeed");
+    let result = step
+        .run(&ctx)
+        .await
+        .expect("build with args should succeed");
     assert!(result.proceed);
 
     let data = result.output_data.expect("should have output_data");
@@ -229,7 +215,7 @@ async fn connect_to_unavailable_daemon_returns_error() {
         workflow: &instance,
         cancellation_token: cancel,
         host_context: None,
-                log_sink: None,
+        log_sink: None,
     };
 
     let err = step.run(&ctx).await;

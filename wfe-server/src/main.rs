@@ -152,9 +152,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         wfe_service = wfe_service.with_log_search(index);
     }
     let (health_reporter, health_service) = tonic_health::server::health_reporter();
-    health_reporter
-        .set_serving::<WfeServer<WfeService>>()
-        .await;
+    health_reporter.set_serving::<WfeServer<WfeService>>().await;
 
     // 11. Build auth state.
     let auth_state = Arc::new(auth::AuthState::new(config.auth.clone()).await);
@@ -168,13 +166,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // HIGH-08: Limit webhook payload size to 2 MB to prevent OOM DoS.
     let http_router = axum::Router::new()
-        .route("/webhooks/events", axum::routing::post(webhook::handle_generic_event))
-        .route("/webhooks/github", axum::routing::post(webhook::handle_github_webhook))
-        .route("/webhooks/gitea", axum::routing::post(webhook::handle_gitea_webhook))
+        .route(
+            "/webhooks/events",
+            axum::routing::post(webhook::handle_generic_event),
+        )
+        .route(
+            "/webhooks/github",
+            axum::routing::post(webhook::handle_github_webhook),
+        )
+        .route(
+            "/webhooks/gitea",
+            axum::routing::post(webhook::handle_gitea_webhook),
+        )
         .route("/healthz", axum::routing::get(webhook::health_check))
-        .route("/schema/workflow.proto", axum::routing::get(serve_proto_schema))
-        .route("/schema/workflow.json", axum::routing::get(serve_json_schema))
-        .route("/schema/workflow.yaml", axum::routing::get(serve_yaml_example))
+        .route(
+            "/schema/workflow.proto",
+            axum::routing::get(serve_proto_schema),
+        )
+        .route(
+            "/schema/workflow.json",
+            axum::routing::get(serve_json_schema),
+        )
+        .route(
+            "/schema/workflow.yaml",
+            axum::routing::get(serve_yaml_example),
+        )
         .layer(axum::extract::DefaultBodyLimit::max(2 * 1024 * 1024))
         .with_state(webhook_state);
 
@@ -234,7 +250,10 @@ async fn load_yaml_definitions(host: &wfe::WorkflowHost, dir: &std::path::Path) 
 
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "yaml" || ext == "yml") {
+        if path
+            .extension()
+            .is_some_and(|ext| ext == "yaml" || ext == "yml")
+        {
             match wfe_yaml::load_workflow_from_str(
                 &std::fs::read_to_string(&path).unwrap_or_default(),
                 &config,
@@ -261,7 +280,10 @@ async fn load_yaml_definitions(host: &wfe::WorkflowHost, dir: &std::path::Path) 
 /// Serve the raw .proto schema file.
 async fn serve_proto_schema() -> impl axum::response::IntoResponse {
     (
-        [(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; charset=utf-8",
+        )],
         include_str!("../../wfe-server-protos/proto/wfe/v1/wfe.proto"),
     )
 }

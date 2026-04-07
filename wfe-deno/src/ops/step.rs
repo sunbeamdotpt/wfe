@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use deno_core::op2;
 use deno_core::OpState;
+use deno_core::op2;
 
 use crate::bridge::JsStepBody;
 use crate::state::WfeState;
@@ -23,10 +23,9 @@ pub async fn op_register_step(
     };
     let counter = Arc::new(std::sync::atomic::AtomicU32::new(0));
 
-    host.register_step_factory(
-        &step_type,
-        move || Box::new(JsStepBody::new(tx.clone(), counter.clone())),
-    )
+    host.register_step_factory(&step_type, move || {
+        Box::new(JsStepBody::new(tx.clone(), counter.clone()))
+    })
     .await;
 
     Ok(())

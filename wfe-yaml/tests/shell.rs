@@ -60,7 +60,9 @@ struct CollectingLogSink {
 
 impl CollectingLogSink {
     fn new() -> Self {
-        Self { chunks: tokio::sync::Mutex::new(Vec::new()) }
+        Self {
+            chunks: tokio::sync::Mutex::new(Vec::new()),
+        }
     }
 
     async fn chunks(&self) -> Vec<wfe_core::traits::LogChunk> {
@@ -242,11 +244,8 @@ workflow:
         run: echo "{wfe_prefix}[output result=$GREETING]"
 "#
     );
-    let instance = run_yaml_workflow_with_data(
-        &yaml,
-        serde_json::json!({"greeting": "hi there"}),
-    )
-    .await;
+    let instance =
+        run_yaml_workflow_with_data(&yaml, serde_json::json!({"greeting": "hi there"})).await;
     assert_eq!(instance.status, WorkflowStatus::Complete);
 
     if let Some(data) = instance.data.as_object() {
@@ -320,19 +319,33 @@ workflow:
     assert_eq!(instance.status, WorkflowStatus::Complete);
 
     let chunks = log_sink.chunks().await;
-    assert!(chunks.len() >= 2, "expected at least 2 stdout chunks, got {}", chunks.len());
+    assert!(
+        chunks.len() >= 2,
+        "expected at least 2 stdout chunks, got {}",
+        chunks.len()
+    );
 
     let stdout_chunks: Vec<_> = chunks
         .iter()
         .filter(|c| c.stream == wfe_core::traits::LogStreamType::Stdout)
         .collect();
-    assert!(stdout_chunks.len() >= 2, "expected at least 2 stdout chunks");
+    assert!(
+        stdout_chunks.len() >= 2,
+        "expected at least 2 stdout chunks"
+    );
 
-    let all_data: String = stdout_chunks.iter()
+    let all_data: String = stdout_chunks
+        .iter()
         .map(|c| String::from_utf8_lossy(&c.data).to_string())
         .collect();
-    assert!(all_data.contains("line one"), "stdout should contain 'line one', got: {all_data}");
-    assert!(all_data.contains("line two"), "stdout should contain 'line two', got: {all_data}");
+    assert!(
+        all_data.contains("line one"),
+        "stdout should contain 'line one', got: {all_data}"
+    );
+    assert!(
+        all_data.contains("line two"),
+        "stdout should contain 'line two', got: {all_data}"
+    );
 
     // Verify chunk metadata.
     for chunk in &stdout_chunks {
@@ -364,10 +377,14 @@ workflow:
         .collect();
     assert!(!stderr_chunks.is_empty(), "expected stderr chunks");
 
-    let stderr_data: String = stderr_chunks.iter()
+    let stderr_data: String = stderr_chunks
+        .iter()
         .map(|c| String::from_utf8_lossy(&c.data).to_string())
         .collect();
-    assert!(stderr_data.contains("stderr output"), "stderr should contain 'stderr output', got: {stderr_data}");
+    assert!(
+        stderr_data.contains("stderr output"),
+        "stderr should contain 'stderr output', got: {stderr_data}"
+    );
 }
 
 #[tokio::test]
@@ -392,8 +409,14 @@ workflow:
 
     let chunks = log_sink.chunks().await;
     let step_names: Vec<_> = chunks.iter().map(|c| c.step_name.as_str()).collect();
-    assert!(step_names.contains(&"step-a"), "should have chunks from step-a");
-    assert!(step_names.contains(&"step-b"), "should have chunks from step-b");
+    assert!(
+        step_names.contains(&"step-a"),
+        "should have chunks from step-a"
+    );
+    assert!(
+        step_names.contains(&"step-b"),
+        "should have chunks from step-b"
+    );
 }
 
 #[tokio::test]
@@ -412,7 +435,13 @@ workflow:
     let instance = run_yaml_workflow(yaml).await;
     assert_eq!(instance.status, WorkflowStatus::Complete);
     let data = instance.data.as_object().unwrap();
-    assert!(data.get("echo-step.stdout").unwrap().as_str().unwrap().contains("no sink"));
+    assert!(
+        data.get("echo-step.stdout")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .contains("no sink")
+    );
 }
 
 // ── Security regression tests ────────────────────────────────────────
@@ -431,11 +460,8 @@ workflow:
         run: echo "$PATH"
 "#;
     // Set a workflow data key "path" that would override PATH if not blocked.
-    let instance = run_yaml_workflow_with_data(
-        yaml,
-        serde_json::json!({"path": "/attacker/bin"}),
-    )
-    .await;
+    let instance =
+        run_yaml_workflow_with_data(yaml, serde_json::json!({"path": "/attacker/bin"})).await;
     assert_eq!(instance.status, WorkflowStatus::Complete);
 
     let data = instance.data.as_object().unwrap();
@@ -463,11 +489,8 @@ workflow:
         run: echo "{wfe_prefix}[output val=$MY_CUSTOM_VAR]"
 "#
     );
-    let instance = run_yaml_workflow_with_data(
-        &yaml,
-        serde_json::json!({"my_custom_var": "works"}),
-    )
-    .await;
+    let instance =
+        run_yaml_workflow_with_data(&yaml, serde_json::json!({"my_custom_var": "works"})).await;
     assert_eq!(instance.status, WorkflowStatus::Complete);
 
     let data = instance.data.as_object().unwrap();

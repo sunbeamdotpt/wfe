@@ -8,12 +8,12 @@ use wfe::models::{
     ExecutionResult, PointerStatus, StepOutcome, WorkflowDefinition, WorkflowInstance,
     WorkflowStatus, WorkflowStep,
 };
-use wfe::traits::step::{StepBody, StepExecutionContext};
 use wfe::traits::search::{Page, SearchFilter, SearchIndex, WorkflowSearchResult};
+use wfe::traits::step::{StepBody, StepExecutionContext};
 use wfe::{WorkflowHost, WorkflowHostBuilder};
 
 use wfe_core::test_support::{
-    InMemoryLockProvider, InMemoryLifecyclePublisher, InMemoryPersistenceProvider,
+    InMemoryLifecyclePublisher, InMemoryLockProvider, InMemoryPersistenceProvider,
     InMemoryQueueProvider,
 };
 
@@ -89,7 +89,8 @@ fn build_host() -> (WorkflowHost, Arc<InMemoryPersistenceProvider>) {
         .use_persistence(persistence.clone() as Arc<dyn wfe_core::traits::PersistenceProvider>)
         .use_lock_provider(lock as Arc<dyn wfe_core::traits::DistributedLockProvider>)
         .use_queue_provider(queue as Arc<dyn wfe_core::traits::QueueProvider>)
-        .build().unwrap();
+        .build()
+        .unwrap();
 
     (host, persistence)
 }
@@ -109,7 +110,8 @@ fn build_host_with_lifecycle() -> (
         .use_lock_provider(lock as Arc<dyn wfe_core::traits::DistributedLockProvider>)
         .use_queue_provider(queue as Arc<dyn wfe_core::traits::QueueProvider>)
         .use_lifecycle(lifecycle.clone() as Arc<dyn wfe_core::traits::LifecyclePublisher>)
-        .build().unwrap();
+        .build()
+        .unwrap();
 
     (host, persistence, lifecycle)
 }
@@ -125,7 +127,8 @@ fn build_host_with_search() -> (WorkflowHost, Arc<InMemoryPersistenceProvider>) 
         .use_lock_provider(lock as Arc<dyn wfe_core::traits::DistributedLockProvider>)
         .use_queue_provider(queue as Arc<dyn wfe_core::traits::QueueProvider>)
         .use_search(search as Arc<dyn SearchIndex>)
-        .build().unwrap();
+        .build()
+        .unwrap();
 
     (host, persistence)
 }
@@ -147,7 +150,8 @@ fn build_host_full() -> (
         .use_queue_provider(queue as Arc<dyn wfe_core::traits::QueueProvider>)
         .use_lifecycle(lifecycle.clone() as Arc<dyn wfe_core::traits::LifecyclePublisher>)
         .use_search(search as Arc<dyn SearchIndex>)
-        .build().unwrap();
+        .build()
+        .unwrap();
 
     (host, persistence, lifecycle)
 }
@@ -475,11 +479,7 @@ async fn host_register_workflow_via_builder() {
 
     let def = host
         .register_workflow::<serde_json::Value>(
-            &|builder| {
-                builder
-                    .start_with::<PassthroughStep>()
-                    .end_workflow()
-            },
+            &|builder| builder.start_with::<PassthroughStep>().end_workflow(),
             "builder-workflow",
             1,
         )
@@ -598,12 +598,7 @@ async fn host_terminate_complete_workflow_returns_false() {
 #[tokio::test]
 async fn purger_stub_returns_ok() {
     let persistence = InMemoryPersistenceProvider::new();
-    let result = wfe::purge_workflows(
-        &persistence,
-        WorkflowStatus::Complete,
-        Utc::now(),
-    )
-    .await;
+    let result = wfe::purge_workflows(&persistence, WorkflowStatus::Complete, Utc::now()).await;
     assert!(result.is_ok());
 }
 

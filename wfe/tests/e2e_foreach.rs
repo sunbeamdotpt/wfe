@@ -99,7 +99,8 @@ async fn foreach_processes_all_items() {
         .use_persistence(persistence as Arc<dyn wfe_core::traits::PersistenceProvider>)
         .use_lock_provider(lock as Arc<dyn wfe_core::traits::DistributedLockProvider>)
         .use_queue_provider(queue as Arc<dyn wfe_core::traits::QueueProvider>)
-        .build().unwrap();
+        .build()
+        .unwrap();
 
     host.register_step::<DataDrivenForEachStep>().await;
     host.register_step::<ProcessItemStep>().await;

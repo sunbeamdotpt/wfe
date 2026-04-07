@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use wfe_core::WfeError;
 use wfe_core::models::ExecutionResult;
 use wfe_core::traits::step::{StepBody, StepExecutionContext};
-use wfe_core::WfeError;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShellConfig {
@@ -31,8 +31,15 @@ impl ShellStep {
         // Inject workflow data as UPPER_CASE env vars (top-level keys only).
         // Skip keys that would override security-sensitive environment variables.
         const BLOCKED_KEYS: &[&str] = &[
-            "PATH", "LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH",
-            "HOME", "SHELL", "USER", "LOGNAME", "TERM",
+            "PATH",
+            "LD_PRELOAD",
+            "LD_LIBRARY_PATH",
+            "DYLD_LIBRARY_PATH",
+            "HOME",
+            "SHELL",
+            "USER",
+            "LOGNAME",
+            "TERM",
         ];
         if let Some(data_obj) = context.workflow.data.as_object() {
             for (key, value) in data_obj {
@@ -78,19 +85,25 @@ impl ShellStep {
         let workflow_id = context.workflow.id.clone();
         let definition_id = context.workflow.workflow_definition_id.clone();
         let step_id = context.step.id;
-        let step_name = context.step.name.clone().unwrap_or_else(|| "unknown".to_string());
+        let step_name = context
+            .step
+            .name
+            .clone()
+            .unwrap_or_else(|| "unknown".to_string());
 
         let mut cmd = self.build_command(context);
-        let mut child = cmd.spawn().map_err(|e| {
-            WfeError::StepExecution(format!("Failed to spawn shell command: {e}"))
-        })?;
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| WfeError::StepExecution(format!("Failed to spawn shell command: {e}")))?;
 
-        let stdout_pipe = child.stdout.take().ok_or_else(|| {
-            WfeError::StepExecution("failed to capture stdout pipe".to_string())
-        })?;
-        let stderr_pipe = child.stderr.take().ok_or_else(|| {
-            WfeError::StepExecution("failed to capture stderr pipe".to_string())
-        })?;
+        let stdout_pipe = child
+            .stdout
+            .take()
+            .ok_or_else(|| WfeError::StepExecution("failed to capture stdout pipe".to_string()))?;
+        let stderr_pipe = child
+            .stderr
+            .take()
+            .ok_or_else(|| WfeError::StepExecution("failed to capture stderr pipe".to_string()))?;
         let mut stdout_lines = BufReader::new(stdout_pipe).lines();
         let mut stderr_lines = BufReader::new(stderr_pipe).lines();
 
@@ -194,9 +207,9 @@ impl ShellStep {
                 }
             }
         } else {
-            cmd.output()
-                .await
-                .map_err(|e| WfeError::StepExecution(format!("Failed to spawn shell command: {e}")))?
+            cmd.output().await.map_err(|e| {
+                WfeError::StepExecution(format!("Failed to spawn shell command: {e}"))
+            })?
         };
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -209,7 +222,10 @@ impl ShellStep {
 
 #[async_trait]
 impl StepBody for ShellStep {
-    async fn run(&mut self, context: &StepExecutionContext<'_>) -> wfe_core::Result<ExecutionResult> {
+    async fn run(
+        &mut self,
+        context: &StepExecutionContext<'_>,
+    ) -> wfe_core::Result<ExecutionResult> {
         let (stdout, stderr, exit_code) = if context.log_sink.is_some() {
             self.run_streaming(context).await?
         } else {

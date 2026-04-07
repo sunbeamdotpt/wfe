@@ -119,12 +119,12 @@ impl WorkflowExecutor {
         host_context: Option<&dyn crate::traits::HostContext>,
     ) -> Result<()> {
         // 2. Load workflow instance.
-        let mut workflow = self
-            .persistence
-            .get_workflow_instance(workflow_id)
-            .await?;
+        let mut workflow = self.persistence.get_workflow_instance(workflow_id).await?;
 
-        tracing::Span::current().record("workflow.definition_id", workflow.workflow_definition_id.as_str());
+        tracing::Span::current().record(
+            "workflow.definition_id",
+            workflow.workflow_definition_id.as_str(),
+        );
 
         if workflow.status != WorkflowStatus::Runnable {
             debug!(workflow_id, status = ?workflow.status, "Workflow not runnable, skipping");
@@ -179,15 +179,15 @@ impl WorkflowExecutor {
                         // Activate next step via outcomes (same as Complete).
                         let next_step_id = step.outcomes.first().map(|o| o.next_step);
                         if let Some(next_id) = next_step_id {
-                            let mut next_pointer =
-                                crate::models::ExecutionPointer::new(next_id);
-                            next_pointer.step_name = definition.steps.iter()
+                            let mut next_pointer = crate::models::ExecutionPointer::new(next_id);
+                            next_pointer.step_name = definition
+                                .steps
+                                .iter()
                                 .find(|s| s.id == next_id)
                                 .and_then(|s| s.name.clone());
                             next_pointer.predecessor_id =
                                 Some(workflow.execution_pointers[idx].id.clone());
-                            next_pointer.scope =
-                                workflow.execution_pointers[idx].scope.clone();
+                            next_pointer.scope = workflow.execution_pointers[idx].scope.clone();
                             workflow.execution_pointers.push(next_pointer);
                         }
 
@@ -208,12 +208,12 @@ impl WorkflowExecutor {
             );
 
             // b. Resolve the step body.
-            let mut step_body = step_registry
-                .resolve(&step.step_type)
-                .ok_or_else(|| WfeError::StepExecution(format!(
+            let mut step_body = step_registry.resolve(&step.step_type).ok_or_else(|| {
+                WfeError::StepExecution(format!(
                     "Step type not found in registry: {}",
                     step.step_type
-                )))?;
+                ))
+            })?;
 
             // Mark pointer as running before building context.
             if workflow.execution_pointers[idx].start_time.is_none() {
@@ -229,7 +229,8 @@ impl WorkflowExecutor {
                     step_id,
                     step_name: step.name.clone(),
                 },
-            )).await;
+            ))
+            .await;
 
             // c. Build StepExecutionContext (borrows workflow immutably).
             let cancellation_token = tokio_util::sync::CancellationToken::new();
@@ -277,19 +278,15 @@ impl WorkflowExecutor {
                             step_id,
                             step_name: step.name.clone(),
                         },
-                    )).await;
+                    ))
+                    .await;
 
                     // e. Process the ExecutionResult.
                     // Extract workflow_id before mutable borrow.
                     let wf_id = workflow.id.clone();
                     let process_result = {
                         let pointer = &mut workflow.execution_pointers[idx];
-                        result_processor::process_result(
-                            &result,
-                            pointer,
-                            definition,
-                            &wf_id,
-                        )
+                        result_processor::process_result(&result, pointer, definition, &wf_id)
                     };
 
                     all_subscriptions.extend(process_result.subscriptions);
@@ -320,7 +317,8 @@ impl WorkflowExecutor {
                         crate::models::LifecycleEventType::Error {
                             message: error_msg.clone(),
                         },
-                    )).await;
+                    ))
+                    .await;
 
                     let pointer_id = workflow.execution_pointers[idx].id.clone();
                     execution_errors.push(ExecutionError::new(
@@ -331,11 +329,7 @@ impl WorkflowExecutor {
 
                     let handler_result = {
                         let pointer = &mut workflow.execution_pointers[idx];
-                        error_handler::handle_error(
-                            &error_msg,
-                            pointer,
-                            definition,
-                        )
+                        error_handler::handle_error(&error_msg, pointer, definition)
                     };
 
                     // Apply workflow-level status changes from error handler.
@@ -348,7 +342,8 @@ impl WorkflowExecutor {
                                 &workflow.workflow_definition_id,
                                 workflow.version,
                                 crate::models::LifecycleEventType::Terminated,
-                            )).await;
+                            ))
+                            .await;
                         }
                     }
 
@@ -382,7 +377,8 @@ impl WorkflowExecutor {
                 &workflow.workflow_definition_id,
                 workflow.version,
                 crate::models::LifecycleEventType::Completed,
-            )).await;
+            ))
+            .await;
 
             // Publish completion event for SubWorkflow parents.
             let completion_event = Event::new(
@@ -427,9 +423,7 @@ impl WorkflowExecutor {
 
         // Persist errors.
         if !execution_errors.is_empty() {
-            self.persistence
-                .persist_errors(&execution_errors)
-                .await?;
+            self.persistence.persist_errors(&execution_errors).await?;
         }
 
         // 8. Queue any follow-up work.
@@ -512,10 +506,7 @@ mod tests {
 
     #[async_trait]
     impl StepBody for PassStep {
-        async fn run(
-            &mut self,
-            _ctx: &StepExecutionContext<'_>,
-        ) -> crate::Result<ExecutionResult> {
+        async fn run(&mut self, _ctx: &StepExecutionContext<'_>) -> crate::Result<ExecutionResult> {
             Ok(ExecutionResult::next())
         }
     }
@@ -525,10 +516,7 @@ mod tests {
 
     #[async_trait]
     impl StepBody for OutcomeStep {
-        async fn run(
-            &mut self,
-            _ctx: &StepExecutionContext<'_>,
-        ) -> crate::Result<ExecutionResult> {
+        async fn run(&mut self, _ctx: &StepExecutionContext<'_>) -> crate::Result<ExecutionResult> {
             Ok(ExecutionResult::outcome(serde_json::json!("yes")))
         }
     }
@@ -538,10 +526,7 @@ mod tests {
 
     #[async_trait]
     impl StepBody for PersistStep {
-        async fn run(
-            &mut self,
-            _ctx: &StepExecutionContext<'_>,
-        ) -> crate::Result<ExecutionResult> {
+        async fn run(&mut self, _ctx: &StepExecutionContext<'_>) -> crate::Result<ExecutionResult> {
             Ok(ExecutionResult::persist(serde_json::json!({"count": 1})))
         }
     }
@@ -551,10 +536,7 @@ mod tests {
 
     #[async_trait]
     impl StepBody for SleepStep {
-        async fn run(
-            &mut self,
-            _ctx: &StepExecutionContext<'_>,
-        ) -> crate::Result<ExecutionResult> {
+        async fn run(&mut self, _ctx: &StepExecutionContext<'_>) -> crate::Result<ExecutionResult> {
             Ok(ExecutionResult::sleep(Duration::from_secs(30), None))
         }
     }
@@ -564,10 +546,7 @@ mod tests {
 
     #[async_trait]
     impl StepBody for WaitEventStep {
-        async fn run(
-            &mut self,
-            _ctx: &StepExecutionContext<'_>,
-        ) -> crate::Result<ExecutionResult> {
+        async fn run(&mut self, _ctx: &StepExecutionContext<'_>) -> crate::Result<ExecutionResult> {
             Ok(ExecutionResult::wait_for_event(
                 "order.completed",
                 "order-123",
@@ -581,10 +560,7 @@ mod tests {
 
     #[async_trait]
     impl StepBody for EventResumeStep {
-        async fn run(
-            &mut self,
-            ctx: &StepExecutionContext<'_>,
-        ) -> crate::Result<ExecutionResult> {
+        async fn run(&mut self, ctx: &StepExecutionContext<'_>) -> crate::Result<ExecutionResult> {
             if ctx.execution_pointer.event_published {
                 Ok(ExecutionResult::next())
             } else {
@@ -602,10 +578,7 @@ mod tests {
 
     #[async_trait]
     impl StepBody for BranchStep {
-        async fn run(
-            &mut self,
-            _ctx: &StepExecutionContext<'_>,
-        ) -> crate::Result<ExecutionResult> {
+        async fn run(&mut self, _ctx: &StepExecutionContext<'_>) -> crate::Result<ExecutionResult> {
             Ok(ExecutionResult::branch(
                 vec![
                     serde_json::json!(1),
@@ -622,10 +595,7 @@ mod tests {
 
     #[async_trait]
     impl StepBody for FailStep {
-        async fn run(
-            &mut self,
-            _ctx: &StepExecutionContext<'_>,
-        ) -> crate::Result<ExecutionResult> {
+        async fn run(&mut self, _ctx: &StepExecutionContext<'_>) -> crate::Result<ExecutionResult> {
             Err(WfeError::StepExecution("step failed".into()))
         }
     }
@@ -635,10 +605,7 @@ mod tests {
 
     #[async_trait]
     impl StepBody for CompensateStep {
-        async fn run(
-            &mut self,
-            _ctx: &StepExecutionContext<'_>,
-        ) -> crate::Result<ExecutionResult> {
+        async fn run(&mut self, _ctx: &StepExecutionContext<'_>) -> crate::Result<ExecutionResult> {
             Ok(ExecutionResult::next())
         }
     }
@@ -680,7 +647,8 @@ mod tests {
         registry.register::<PassStep>();
 
         let mut def = WorkflowDefinition::new("test", 1);
-        def.steps.push(WorkflowStep::new(0, step_type::<PassStep>()));
+        def.steps
+            .push(WorkflowStep::new(0, step_type::<PassStep>()));
 
         let mut instance = WorkflowInstance::new("test", 1, serde_json::json!({}));
         let pointer = ExecutionPointer::new(0);
@@ -688,11 +656,20 @@ mod tests {
 
         persistence.create_new_workflow(&instance).await.unwrap();
 
-        executor.execute(&instance.id, &def, &registry, None).await.unwrap();
+        executor
+            .execute(&instance.id, &def, &registry, None)
+            .await
+            .unwrap();
 
-        let updated = persistence.get_workflow_instance(&instance.id).await.unwrap();
+        let updated = persistence
+            .get_workflow_instance(&instance.id)
+            .await
+            .unwrap();
         assert_eq!(updated.status, WorkflowStatus::Complete);
-        assert_eq!(updated.execution_pointers[0].status, PointerStatus::Complete);
+        assert_eq!(
+            updated.execution_pointers[0].status,
+            PointerStatus::Complete
+        );
         assert!(updated.complete_time.is_some());
     }
 
@@ -712,27 +689,46 @@ mod tests {
             value: None,
         });
         def.steps.push(step0);
-        def.steps.push(WorkflowStep::new(1, step_type::<PassStep>()));
+        def.steps
+            .push(WorkflowStep::new(1, step_type::<PassStep>()));
 
         let mut instance = WorkflowInstance::new("test", 1, serde_json::json!({}));
         instance.execution_pointers.push(ExecutionPointer::new(0));
         persistence.create_new_workflow(&instance).await.unwrap();
 
         // First execution: step 0 completes, step 1 pointer created.
-        executor.execute(&instance.id, &def, &registry, None).await.unwrap();
+        executor
+            .execute(&instance.id, &def, &registry, None)
+            .await
+            .unwrap();
 
-        let updated = persistence.get_workflow_instance(&instance.id).await.unwrap();
+        let updated = persistence
+            .get_workflow_instance(&instance.id)
+            .await
+            .unwrap();
         assert_eq!(updated.execution_pointers.len(), 2);
-        assert_eq!(updated.execution_pointers[0].status, PointerStatus::Complete);
+        assert_eq!(
+            updated.execution_pointers[0].status,
+            PointerStatus::Complete
+        );
         // Step 1 pointer should be active and pending.
         assert_eq!(updated.execution_pointers[1].step_id, 1);
 
         // Second execution: step 1 completes.
-        executor.execute(&instance.id, &def, &registry, None).await.unwrap();
+        executor
+            .execute(&instance.id, &def, &registry, None)
+            .await
+            .unwrap();
 
-        let updated = persistence.get_workflow_instance(&instance.id).await.unwrap();
+        let updated = persistence
+            .get_workflow_instance(&instance.id)
+            .await
+            .unwrap();
         assert_eq!(updated.status, WorkflowStatus::Complete);
-        assert_eq!(updated.execution_pointers[1].status, PointerStatus::Complete);
+        assert_eq!(
+            updated.execution_pointers[1].status,
+            PointerStatus::Complete
+        );
     }
 
     #[tokio::test]
@@ -745,9 +741,17 @@ mod tests {
 
         let mut def = WorkflowDefinition::new("test", 1);
         let mut s0 = WorkflowStep::new(0, step_type::<PassStep>());
-        s0.outcomes.push(StepOutcome { next_step: 1, label: None, value: None });
+        s0.outcomes.push(StepOutcome {
+            next_step: 1,
+            label: None,
+            value: None,
+        });
         let mut s1 = WorkflowStep::new(1, step_type::<PassStep>());
-        s1.outcomes.push(StepOutcome { next_step: 2, label: None, value: None });
+        s1.outcomes.push(StepOutcome {
+            next_step: 2,
+            label: None,
+            value: None,
+        });
         let s2 = WorkflowStep::new(2, step_type::<PassStep>());
         def.steps.push(s0);
         def.steps.push(s1);
@@ -759,10 +763,16 @@ mod tests {
 
         // Execute three times for three steps.
         for _ in 0..3 {
-            executor.execute(&instance.id, &def, &registry, None).await.unwrap();
+            executor
+                .execute(&instance.id, &def, &registry, None)
+                .await
+                .unwrap();
         }
 
-        let updated = persistence.get_workflow_instance(&instance.id).await.unwrap();
+        let updated = persistence
+            .get_workflow_instance(&instance.id)
+            .await
+            .unwrap();
         assert_eq!(updated.status, WorkflowStatus::Complete);
         assert_eq!(updated.execution_pointers.len(), 3);
         for p in &updated.execution_pointers {
@@ -792,16 +802,24 @@ mod tests {
             value: Some(serde_json::json!("yes")),
         });
         def.steps.push(s0);
-        def.steps.push(WorkflowStep::new(1, step_type::<PassStep>()));
-        def.steps.push(WorkflowStep::new(2, step_type::<PassStep>()));
+        def.steps
+            .push(WorkflowStep::new(1, step_type::<PassStep>()));
+        def.steps
+            .push(WorkflowStep::new(2, step_type::<PassStep>()));
 
         let mut instance = WorkflowInstance::new("test", 1, serde_json::json!({}));
         instance.execution_pointers.push(ExecutionPointer::new(0));
         persistence.create_new_workflow(&instance).await.unwrap();
 
-        executor.execute(&instance.id, &def, &registry, None).await.unwrap();
+        executor
+            .execute(&instance.id, &def, &registry, None)
+            .await
+            .unwrap();
 
-        let updated = persistence.get_workflow_instance(&instance.id).await.unwrap();
+        let updated = persistence
+            .get_workflow_instance(&instance.id)
+            .await
+            .unwrap();
         assert_eq!(updated.execution_pointers.len(), 2);
         // Should route to step 2 (the "yes" branch).
         assert_eq!(updated.execution_pointers[1].step_id, 2);
@@ -816,15 +834,22 @@ mod tests {
         registry.register::<PersistStep>();
 
         let mut def = WorkflowDefinition::new("test", 1);
-        def.steps.push(WorkflowStep::new(0, step_type::<PersistStep>()));
+        def.steps
+            .push(WorkflowStep::new(0, step_type::<PersistStep>()));
 
         let mut instance = WorkflowInstance::new("test", 1, serde_json::json!({}));
         instance.execution_pointers.push(ExecutionPointer::new(0));
         persistence.create_new_workflow(&instance).await.unwrap();
 
-        executor.execute(&instance.id, &def, &registry, None).await.unwrap();
+        executor
+            .execute(&instance.id, &def, &registry, None)
+            .await
+            .unwrap();
 
-        let updated = persistence.get_workflow_instance(&instance.id).await.unwrap();
+        let updated = persistence
+            .get_workflow_instance(&instance.id)
+            .await
+            .unwrap();
         assert_eq!(updated.status, WorkflowStatus::Runnable);
         assert!(updated.execution_pointers[0].active);
         assert_eq!(
@@ -842,16 +867,26 @@ mod tests {
         registry.register::<SleepStep>();
 
         let mut def = WorkflowDefinition::new("test", 1);
-        def.steps.push(WorkflowStep::new(0, step_type::<SleepStep>()));
+        def.steps
+            .push(WorkflowStep::new(0, step_type::<SleepStep>()));
 
         let mut instance = WorkflowInstance::new("test", 1, serde_json::json!({}));
         instance.execution_pointers.push(ExecutionPointer::new(0));
         persistence.create_new_workflow(&instance).await.unwrap();
 
-        executor.execute(&instance.id, &def, &registry, None).await.unwrap();
+        executor
+            .execute(&instance.id, &def, &registry, None)
+            .await
+            .unwrap();
 
-        let updated = persistence.get_workflow_instance(&instance.id).await.unwrap();
-        assert_eq!(updated.execution_pointers[0].status, PointerStatus::Sleeping);
+        let updated = persistence
+            .get_workflow_instance(&instance.id)
+            .await
+            .unwrap();
+        assert_eq!(
+            updated.execution_pointers[0].status,
+            PointerStatus::Sleeping
+        );
         assert!(updated.execution_pointers[0].sleep_until.is_some());
         assert!(updated.execution_pointers[0].active);
     }
@@ -865,15 +900,22 @@ mod tests {
         registry.register::<WaitEventStep>();
 
         let mut def = WorkflowDefinition::new("test", 1);
-        def.steps.push(WorkflowStep::new(0, step_type::<WaitEventStep>()));
+        def.steps
+            .push(WorkflowStep::new(0, step_type::<WaitEventStep>()));
 
         let mut instance = WorkflowInstance::new("test", 1, serde_json::json!({}));
         instance.execution_pointers.push(ExecutionPointer::new(0));
         persistence.create_new_workflow(&instance).await.unwrap();
 
-        executor.execute(&instance.id, &def, &registry, None).await.unwrap();
+        executor
+            .execute(&instance.id, &def, &registry, None)
+            .await
+            .unwrap();
 
-        let updated = persistence.get_workflow_instance(&instance.id).await.unwrap();
+        let updated = persistence
+            .get_workflow_instance(&instance.id)
+            .await
+            .unwrap();
         assert_eq!(
             updated.execution_pointers[0].status,
             PointerStatus::WaitingForEvent
@@ -899,7 +941,8 @@ mod tests {
         registry.register::<EventResumeStep>();
 
         let mut def = WorkflowDefinition::new("test", 1);
-        def.steps.push(WorkflowStep::new(0, step_type::<EventResumeStep>()));
+        def.steps
+            .push(WorkflowStep::new(0, step_type::<EventResumeStep>()));
 
         let mut instance = WorkflowInstance::new("test", 1, serde_json::json!({}));
         let mut pointer = ExecutionPointer::new(0);
@@ -911,10 +954,19 @@ mod tests {
         instance.execution_pointers.push(pointer);
         persistence.create_new_workflow(&instance).await.unwrap();
 
-        executor.execute(&instance.id, &def, &registry, None).await.unwrap();
+        executor
+            .execute(&instance.id, &def, &registry, None)
+            .await
+            .unwrap();
 
-        let updated = persistence.get_workflow_instance(&instance.id).await.unwrap();
-        assert_eq!(updated.execution_pointers[0].status, PointerStatus::Complete);
+        let updated = persistence
+            .get_workflow_instance(&instance.id)
+            .await
+            .unwrap();
+        assert_eq!(
+            updated.execution_pointers[0].status,
+            PointerStatus::Complete
+        );
         assert_eq!(updated.status, WorkflowStatus::Complete);
     }
 
@@ -931,15 +983,22 @@ mod tests {
         let mut s0 = WorkflowStep::new(0, step_type::<BranchStep>());
         s0.children.push(1);
         def.steps.push(s0);
-        def.steps.push(WorkflowStep::new(1, step_type::<PassStep>()));
+        def.steps
+            .push(WorkflowStep::new(1, step_type::<PassStep>()));
 
         let mut instance = WorkflowInstance::new("test", 1, serde_json::json!({}));
         instance.execution_pointers.push(ExecutionPointer::new(0));
         persistence.create_new_workflow(&instance).await.unwrap();
 
-        executor.execute(&instance.id, &def, &registry, None).await.unwrap();
+        executor
+            .execute(&instance.id, &def, &registry, None)
+            .await
+            .unwrap();
 
-        let updated = persistence.get_workflow_instance(&instance.id).await.unwrap();
+        let updated = persistence
+            .get_workflow_instance(&instance.id)
+            .await
+            .unwrap();
         // 1 original + 3 children.
         assert_eq!(updated.execution_pointers.len(), 4);
         // Children should have scope containing the parent pointer id.
@@ -973,11 +1032,20 @@ mod tests {
         instance.execution_pointers.push(ExecutionPointer::new(0));
         persistence.create_new_workflow(&instance).await.unwrap();
 
-        executor.execute(&instance.id, &def, &registry, None).await.unwrap();
+        executor
+            .execute(&instance.id, &def, &registry, None)
+            .await
+            .unwrap();
 
-        let updated = persistence.get_workflow_instance(&instance.id).await.unwrap();
+        let updated = persistence
+            .get_workflow_instance(&instance.id)
+            .await
+            .unwrap();
         assert_eq!(updated.execution_pointers[0].retry_count, 1);
-        assert_eq!(updated.execution_pointers[0].status, PointerStatus::Sleeping);
+        assert_eq!(
+            updated.execution_pointers[0].status,
+            PointerStatus::Sleeping
+        );
         assert!(updated.execution_pointers[0].sleep_until.is_some());
         assert_eq!(updated.status, WorkflowStatus::Runnable);
     }
@@ -999,9 +1067,15 @@ mod tests {
         instance.execution_pointers.push(ExecutionPointer::new(0));
         persistence.create_new_workflow(&instance).await.unwrap();
 
-        executor.execute(&instance.id, &def, &registry, None).await.unwrap();
+        executor
+            .execute(&instance.id, &def, &registry, None)
+            .await
+            .unwrap();
 
-        let updated = persistence.get_workflow_instance(&instance.id).await.unwrap();
+        let updated = persistence
+            .get_workflow_instance(&instance.id)
+            .await
+            .unwrap();
         assert_eq!(updated.status, WorkflowStatus::Suspended);
         assert_eq!(updated.execution_pointers[0].status, PointerStatus::Failed);
     }
@@ -1023,9 +1097,15 @@ mod tests {
         instance.execution_pointers.push(ExecutionPointer::new(0));
         persistence.create_new_workflow(&instance).await.unwrap();
 
-        executor.execute(&instance.id, &def, &registry, None).await.unwrap();
+        executor
+            .execute(&instance.id, &def, &registry, None)
+            .await
+            .unwrap();
 
-        let updated = persistence.get_workflow_instance(&instance.id).await.unwrap();
+        let updated = persistence
+            .get_workflow_instance(&instance.id)
+            .await
+            .unwrap();
         assert_eq!(updated.status, WorkflowStatus::Terminated);
         assert_eq!(updated.execution_pointers[0].status, PointerStatus::Failed);
         assert!(updated.complete_time.is_some());
@@ -1045,15 +1125,22 @@ mod tests {
         s0.error_behavior = Some(ErrorBehavior::Compensate);
         s0.compensation_step_id = Some(1);
         def.steps.push(s0);
-        def.steps.push(WorkflowStep::new(1, step_type::<CompensateStep>()));
+        def.steps
+            .push(WorkflowStep::new(1, step_type::<CompensateStep>()));
 
         let mut instance = WorkflowInstance::new("test", 1, serde_json::json!({}));
         instance.execution_pointers.push(ExecutionPointer::new(0));
         persistence.create_new_workflow(&instance).await.unwrap();
 
-        executor.execute(&instance.id, &def, &registry, None).await.unwrap();
+        executor
+            .execute(&instance.id, &def, &registry, None)
+            .await
+            .unwrap();
 
-        let updated = persistence.get_workflow_instance(&instance.id).await.unwrap();
+        let updated = persistence
+            .get_workflow_instance(&instance.id)
+            .await
+            .unwrap();
         assert_eq!(updated.execution_pointers[0].status, PointerStatus::Failed);
         // Compensation pointer should be created.
         assert_eq!(updated.execution_pointers.len(), 2);
@@ -1070,8 +1157,10 @@ mod tests {
         registry.register::<PassStep>();
 
         let mut def = WorkflowDefinition::new("test", 1);
-        def.steps.push(WorkflowStep::new(0, step_type::<PassStep>()));
-        def.steps.push(WorkflowStep::new(1, step_type::<PassStep>()));
+        def.steps
+            .push(WorkflowStep::new(0, step_type::<PassStep>()));
+        def.steps
+            .push(WorkflowStep::new(1, step_type::<PassStep>()));
 
         let mut instance = WorkflowInstance::new("test", 1, serde_json::json!({}));
         // Two independent active pointers.
@@ -1079,14 +1168,22 @@ mod tests {
         instance.execution_pointers.push(ExecutionPointer::new(1));
         persistence.create_new_workflow(&instance).await.unwrap();
 
-        executor.execute(&instance.id, &def, &registry, None).await.unwrap();
+        executor
+            .execute(&instance.id, &def, &registry, None)
+            .await
+            .unwrap();
 
-        let updated = persistence.get_workflow_instance(&instance.id).await.unwrap();
+        let updated = persistence
+            .get_workflow_instance(&instance.id)
+            .await
+            .unwrap();
         assert_eq!(updated.status, WorkflowStatus::Complete);
-        assert!(updated
-            .execution_pointers
-            .iter()
-            .all(|p| p.status == PointerStatus::Complete));
+        assert!(
+            updated
+                .execution_pointers
+                .iter()
+                .all(|p| p.status == PointerStatus::Complete)
+        );
     }
 
     #[tokio::test]
@@ -1114,9 +1211,15 @@ mod tests {
         persistence.create_new_workflow(&instance).await.unwrap();
 
         // Should not error on a completed workflow.
-        executor.execute(&instance.id, &def, &registry, None).await.unwrap();
+        executor
+            .execute(&instance.id, &def, &registry, None)
+            .await
+            .unwrap();
 
-        let updated = persistence.get_workflow_instance(&instance.id).await.unwrap();
+        let updated = persistence
+            .get_workflow_instance(&instance.id)
+            .await
+            .unwrap();
         assert_eq!(updated.status, WorkflowStatus::Complete);
     }
 
@@ -1129,7 +1232,8 @@ mod tests {
         registry.register::<SleepStep>();
 
         let mut def = WorkflowDefinition::new("test", 1);
-        def.steps.push(WorkflowStep::new(0, step_type::<SleepStep>()));
+        def.steps
+            .push(WorkflowStep::new(0, step_type::<SleepStep>()));
 
         let mut instance = WorkflowInstance::new("test", 1, serde_json::json!({}));
         let mut pointer = ExecutionPointer::new(0);
@@ -1139,11 +1243,20 @@ mod tests {
         instance.execution_pointers.push(pointer);
         persistence.create_new_workflow(&instance).await.unwrap();
 
-        executor.execute(&instance.id, &def, &registry, None).await.unwrap();
+        executor
+            .execute(&instance.id, &def, &registry, None)
+            .await
+            .unwrap();
 
-        let updated = persistence.get_workflow_instance(&instance.id).await.unwrap();
+        let updated = persistence
+            .get_workflow_instance(&instance.id)
+            .await
+            .unwrap();
         // Should still be sleeping since sleep_until is in the future.
-        assert_eq!(updated.execution_pointers[0].status, PointerStatus::Sleeping);
+        assert_eq!(
+            updated.execution_pointers[0].status,
+            PointerStatus::Sleeping
+        );
     }
 
     #[tokio::test]
@@ -1163,7 +1276,10 @@ mod tests {
         instance.execution_pointers.push(ExecutionPointer::new(0));
         persistence.create_new_workflow(&instance).await.unwrap();
 
-        executor.execute(&instance.id, &def, &registry, None).await.unwrap();
+        executor
+            .execute(&instance.id, &def, &registry, None)
+            .await
+            .unwrap();
 
         let errors = persistence.get_errors().await;
         assert_eq!(errors.len(), 1);
@@ -1174,24 +1290,31 @@ mod tests {
     async fn lifecycle_events_published() {
         let (persistence, lock, queue) = create_providers();
         let lifecycle = Arc::new(InMemoryLifecyclePublisher::new());
-        let executor = create_executor(persistence.clone(), lock, queue)
-            .with_lifecycle(lifecycle.clone());
+        let executor =
+            create_executor(persistence.clone(), lock, queue).with_lifecycle(lifecycle.clone());
 
         let mut registry = StepRegistry::new();
         registry.register::<PassStep>();
 
         let mut def = WorkflowDefinition::new("test", 1);
-        def.steps.push(WorkflowStep::new(0, step_type::<PassStep>()));
+        def.steps
+            .push(WorkflowStep::new(0, step_type::<PassStep>()));
 
         let mut instance = WorkflowInstance::new("test", 1, serde_json::json!({}));
         instance.execution_pointers.push(ExecutionPointer::new(0));
         persistence.create_new_workflow(&instance).await.unwrap();
 
-        executor.execute(&instance.id, &def, &registry, None).await.unwrap();
+        executor
+            .execute(&instance.id, &def, &registry, None)
+            .await
+            .unwrap();
 
         // Executor itself doesn't publish lifecycle events in the current implementation,
         // but the with_lifecycle builder works correctly.
-        let updated = persistence.get_workflow_instance(&instance.id).await.unwrap();
+        let updated = persistence
+            .get_workflow_instance(&instance.id)
+            .await
+            .unwrap();
         assert_eq!(updated.status, WorkflowStatus::Complete);
     }
 
@@ -1206,15 +1329,22 @@ mod tests {
         let mut def = WorkflowDefinition::new("test", 1);
         def.default_error_behavior = ErrorBehavior::Terminate;
         // Step has no error_behavior override.
-        def.steps.push(WorkflowStep::new(0, step_type::<FailStep>()));
+        def.steps
+            .push(WorkflowStep::new(0, step_type::<FailStep>()));
 
         let mut instance = WorkflowInstance::new("test", 1, serde_json::json!({}));
         instance.execution_pointers.push(ExecutionPointer::new(0));
         persistence.create_new_workflow(&instance).await.unwrap();
 
-        executor.execute(&instance.id, &def, &registry, None).await.unwrap();
+        executor
+            .execute(&instance.id, &def, &registry, None)
+            .await
+            .unwrap();
 
-        let updated = persistence.get_workflow_instance(&instance.id).await.unwrap();
+        let updated = persistence
+            .get_workflow_instance(&instance.id)
+            .await
+            .unwrap();
         assert_eq!(updated.status, WorkflowStatus::Terminated);
     }
 
@@ -1227,15 +1357,22 @@ mod tests {
         registry.register::<PassStep>();
 
         let mut def = WorkflowDefinition::new("test", 1);
-        def.steps.push(WorkflowStep::new(0, step_type::<PassStep>()));
+        def.steps
+            .push(WorkflowStep::new(0, step_type::<PassStep>()));
 
         let mut instance = WorkflowInstance::new("test", 1, serde_json::json!({}));
         instance.execution_pointers.push(ExecutionPointer::new(0));
         persistence.create_new_workflow(&instance).await.unwrap();
 
-        executor.execute(&instance.id, &def, &registry, None).await.unwrap();
+        executor
+            .execute(&instance.id, &def, &registry, None)
+            .await
+            .unwrap();
 
-        let updated = persistence.get_workflow_instance(&instance.id).await.unwrap();
+        let updated = persistence
+            .get_workflow_instance(&instance.id)
+            .await
+            .unwrap();
         assert!(updated.execution_pointers[0].start_time.is_some());
         assert!(updated.execution_pointers[0].end_time.is_some());
     }
@@ -1257,15 +1394,22 @@ mod tests {
             value: Some(serde_json::json!("yes")),
         });
         def.steps.push(s0);
-        def.steps.push(WorkflowStep::new(1, step_type::<PassStep>()));
+        def.steps
+            .push(WorkflowStep::new(1, step_type::<PassStep>()));
 
         let mut instance = WorkflowInstance::new("test", 1, serde_json::json!({}));
         instance.execution_pointers.push(ExecutionPointer::new(0));
         persistence.create_new_workflow(&instance).await.unwrap();
 
-        executor.execute(&instance.id, &def, &registry, None).await.unwrap();
+        executor
+            .execute(&instance.id, &def, &registry, None)
+            .await
+            .unwrap();
 
-        let updated = persistence.get_workflow_instance(&instance.id).await.unwrap();
+        let updated = persistence
+            .get_workflow_instance(&instance.id)
+            .await
+            .unwrap();
         assert_eq!(
             updated.execution_pointers[0].outcome,
             Some(serde_json::json!("yes"))
@@ -1318,15 +1462,33 @@ mod tests {
         persistence.create_new_workflow(&instance).await.unwrap();
 
         // First execution: fails, retry scheduled.
-        executor.execute(&instance.id, &def, &registry, None).await.unwrap();
-        let updated = persistence.get_workflow_instance(&instance.id).await.unwrap();
+        executor
+            .execute(&instance.id, &def, &registry, None)
+            .await
+            .unwrap();
+        let updated = persistence
+            .get_workflow_instance(&instance.id)
+            .await
+            .unwrap();
         assert_eq!(updated.execution_pointers[0].retry_count, 1);
-        assert_eq!(updated.execution_pointers[0].status, PointerStatus::Sleeping);
+        assert_eq!(
+            updated.execution_pointers[0].status,
+            PointerStatus::Sleeping
+        );
 
         // Second execution: succeeds (sleep_until is in the past with 0ms interval).
-        executor.execute(&instance.id, &def, &registry, None).await.unwrap();
-        let updated = persistence.get_workflow_instance(&instance.id).await.unwrap();
-        assert_eq!(updated.execution_pointers[0].status, PointerStatus::Complete);
+        executor
+            .execute(&instance.id, &def, &registry, None)
+            .await
+            .unwrap();
+        let updated = persistence
+            .get_workflow_instance(&instance.id)
+            .await
+            .unwrap();
+        assert_eq!(
+            updated.execution_pointers[0].status,
+            PointerStatus::Complete
+        );
         assert_eq!(updated.status, WorkflowStatus::Complete);
     }
 
@@ -1342,9 +1504,15 @@ mod tests {
         // No execution pointers at all.
         persistence.create_new_workflow(&instance).await.unwrap();
 
-        executor.execute(&instance.id, &def, &registry, None).await.unwrap();
+        executor
+            .execute(&instance.id, &def, &registry, None)
+            .await
+            .unwrap();
 
-        let updated = persistence.get_workflow_instance(&instance.id).await.unwrap();
+        let updated = persistence
+            .get_workflow_instance(&instance.id)
+            .await
+            .unwrap();
         assert_eq!(updated.status, WorkflowStatus::Runnable);
     }
 }

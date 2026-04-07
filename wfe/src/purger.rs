@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 
+use wfe_core::Result;
 use wfe_core::models::WorkflowStatus;
 use wfe_core::traits::PersistenceProvider;
-use wfe_core::Result;
 
 /// Purge workflows matching a given status that were created before `older_than`.
 ///

@@ -4,9 +4,9 @@ use async_trait::async_trait;
 use k8s_openapi::api::core::v1::Pod;
 use kube::api::PostParams;
 use kube::{Api, Client};
+use wfe_core::WfeError;
 use wfe_core::models::service::{ServiceDefinition, ServiceEndpoint};
 use wfe_core::traits::ServiceProvider;
-use wfe_core::WfeError;
 
 use crate::config::ClusterConfig;
 use crate::logs::wait_for_pod_running;
@@ -77,11 +77,8 @@ impl ServiceProvider for KubernetesServiceProvider {
                 .map(|r| Duration::from_millis(r.timeout_ms))
                 .unwrap_or(Duration::from_secs(120));
 
-            match tokio::time::timeout(
-                timeout,
-                wait_for_pod_running(&self.client, &ns, &svc.name),
-            )
-            .await
+            match tokio::time::timeout(timeout, wait_for_pod_running(&self.client, &ns, &svc.name))
+                .await
             {
                 Ok(Ok(())) => {}
                 Ok(Err(e)) => {

@@ -3,15 +3,12 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
-use wfe::models::{
-    ExecutionResult, StepOutcome, WorkflowDefinition, WorkflowStatus, WorkflowStep,
-};
+use wfe::models::{ExecutionResult, StepOutcome, WorkflowDefinition, WorkflowStatus, WorkflowStep};
 use wfe::traits::step::{StepBody, StepExecutionContext};
 use wfe::{WorkflowHostBuilder, run_workflow_sync};
 use wfe_core::test_support::{
     InMemoryLockProvider, InMemoryPersistenceProvider, InMemoryQueueProvider,
 };
-
 
 /// A step that sleeps for a very short duration (10ms), then proceeds.
 /// Tracks whether it has already slept via persistence_data.
@@ -74,7 +71,8 @@ async fn delay_step_completes_after_sleep() {
         .use_persistence(persistence.clone() as Arc<dyn wfe_core::traits::PersistenceProvider>)
         .use_lock_provider(lock as Arc<dyn wfe_core::traits::DistributedLockProvider>)
         .use_queue_provider(queue as Arc<dyn wfe_core::traits::QueueProvider>)
-        .build().unwrap();
+        .build()
+        .unwrap();
 
     let def = build_delay_definition();
     host.register_step::<ShortDelayStep>().await;
@@ -100,7 +98,10 @@ async fn delay_step_completes_after_sleep() {
         .iter()
         .filter(|p| p.status == wfe::models::PointerStatus::Complete)
         .count();
-    assert_eq!(complete_count, 2, "Expected both delay step and after-delay step to complete");
+    assert_eq!(
+        complete_count, 2,
+        "Expected both delay step and after-delay step to complete"
+    );
 
     host.stop().await;
 }

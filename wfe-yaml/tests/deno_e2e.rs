@@ -105,7 +105,10 @@ workflow:
     "#;
     let instance = run_yaml_workflow(yaml).await;
     assert_eq!(instance.status, WorkflowStatus::Complete);
-    assert_eq!(instance.data["message"], serde_json::json!("hello from deno"));
+    assert_eq!(
+        instance.data["message"],
+        serde_json::json!("hello from deno")
+    );
 }
 
 #[tokio::test]
@@ -114,8 +117,7 @@ async fn yaml_deno_with_fetch_wiremock() {
     wiremock::Mock::given(wiremock::matchers::method("GET"))
         .and(wiremock::matchers::path("/api/data"))
         .respond_with(
-            wiremock::ResponseTemplate::new(200)
-                .set_body_json(serde_json::json!({"value": 42})),
+            wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({"value": 42})),
         )
         .mount(&server)
         .await;
@@ -325,8 +327,7 @@ workflow:
           const data = inputs();
           output("doubled", data.value * 2);
 "#;
-    let instance =
-        run_yaml_workflow_with_data(yaml, serde_json::json!({"value": 21})).await;
+    let instance = run_yaml_workflow_with_data(yaml, serde_json::json!({"value": 21})).await;
     assert_eq!(instance.status, WorkflowStatus::Complete);
     assert_eq!(instance.data["doubled"], serde_json::json!(42));
 }
@@ -547,10 +548,7 @@ workflow:
     match result {
         Err(e) => {
             let msg = e.to_string();
-            assert!(
-                msg.contains("config") || msg.contains("Deno"),
-                "got: {msg}"
-            );
+            assert!(msg.contains("config") || msg.contains("Deno"), "got: {msg}");
         }
         Ok(_) => panic!("expected error for deno step without config"),
     }
@@ -574,10 +572,7 @@ workflow:
     match result {
         Err(e) => {
             let msg = e.to_string();
-            assert!(
-                msg.contains("script") || msg.contains("file"),
-                "got: {msg}"
-            );
+            assert!(msg.contains("script") || msg.contains("file"), "got: {msg}");
         }
         Ok(_) => panic!("expected error for deno step without script or file"),
     }
@@ -633,8 +628,14 @@ workflow:
 "#;
     let config = HashMap::new();
     let compiled = load_single_workflow_from_str(yaml, &config).unwrap();
-    let has_shell = compiled.step_factories.iter().any(|(k, _)| k.contains("shell"));
-    let has_deno = compiled.step_factories.iter().any(|(k, _)| k.contains("deno"));
+    let has_shell = compiled
+        .step_factories
+        .iter()
+        .any(|(k, _)| k.contains("shell"));
+    let has_deno = compiled
+        .step_factories
+        .iter()
+        .any(|(k, _)| k.contains("deno"));
     assert!(has_shell, "should have shell factory");
     assert!(has_deno, "should have deno factory");
 }
@@ -785,7 +786,10 @@ workflow:
 "#;
     let instance = run_yaml_workflow(yaml).await;
     assert_eq!(instance.status, WorkflowStatus::Complete);
-    assert_eq!(instance.data["nested"]["a"]["b"]["c"], serde_json::json!(42));
+    assert_eq!(
+        instance.data["nested"]["a"]["b"]["c"],
+        serde_json::json!(42)
+    );
     assert_eq!(instance.data["array"], serde_json::json!([1, 2, 3]));
     assert!(instance.data["null_val"].is_null());
     assert_eq!(instance.data["bool_val"], serde_json::json!(false));
