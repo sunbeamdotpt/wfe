@@ -1,0 +1,55 @@
+# wfe-ci: Prebuilt image for running wfe CI workflows in Kubernetes.
+#
+# Contains:
+#   - Rust stable toolchain
+#   - cargo-nextest, cargo-llvm-cov
+#   - sccache (configured via env vars from Vault)
+#   - buildkit client (buildctl) for in-cluster buildkitd
+#   - tea CLI for Gitea release management
+#   - git, curl, kubectl
+#
+# Usage in workflows: type: kubernetes, image: src.sunbeam.pt/studio/wfe-ci:latest
+
+FROM rust:bookworm
+
+# System packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        git \
+        jq \
+        libssl-dev \
+        pkg-config \
+        protobuf-compiler \
+        unzip \
+        xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# Cargo tools
+RUN cargo install --locked cargo-nextest cargo-llvm-cov sccache && \
+    rm -rf /usr/local/cargo/registry
+
+# Buildkit client (buildctl)
+ARG BUILDKIT_VERSION=v0.28.0
+RUN curl -fsSL "https://github.com/moby/buildkit/releases/download/${BUILDKIT_VERSION}/buildkit-${BUILDKIT_VERSION}.linux-amd64.tar.gz" \
+      | tar -xz -C /usr/local --strip-components=1 bin/buildctl
+
+# kubectl
+RUN curl -fsSL "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
+      -o /usr/local/bin/kubectl && chmod +x /usr/local/bin/kubectl
+
+# tea CLI for Gitea
+ARG TEA_VERSION=0.11.0
+RUN curl -fsSL "https://gitea.com/gitea/tea/releases/download/v${TEA_VERSION}/tea-${TEA_VERSION}-linux-amd64" \
+      -o /usr/local/bin/tea && chmod +x /usr/local/bin/tea
+
+# llvm tools (needed by cargo-llvm-cov)
+RUN rustup component add llvm-tools-preview
+
+# Sccache wrapper config — expects SCCACHE_S3_ENDPOINT, SCCACHE_BUCKET, etc. via env.
+ENV RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
+    CARGO_INCREMENTAL=0
+
+WORKDIR /workspace
+
+CMD ["bash"]
