@@ -2,6 +2,57 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.0] - 2026-04-07
+
+### Added
+
+- **wfectl**: New command-line client for wfe-server with 17 subcommands
+  (login, logout, whoami, register, validate, definitions, run, get, list,
+  cancel, suspend, resume, publish, watch, logs, search-logs). Supports
+  OAuth2 PKCE login flow via Ory Hydra, direct bearer-token auth, and
+  configurable output formats (table/JSON).
+- **wfectl validate**: Local YAML validation command that compiles workflow
+  files in-process via `wfe-yaml` with the full executor feature set
+  (rustlang, buildkit, containerd, kubernetes, deno). No server round-trip
+  or auth required — instant feedback before push.
+- **Human-friendly workflow names**: `WorkflowInstance` now has a `name`
+  field (unique alongside the UUID primary key). The host auto-assigns
+  `{definition_id}-{N}` using a per-definition monotonic counter, with
+  optional caller override via `start_workflow_with_name` /
+  `StartWorkflowRequest.name`. All gRPC read/mutate APIs accept either the
+  UUID or the human name interchangeably. `WorkflowDefinition` now has an
+  optional display `name` declared in YAML (e.g. `name: "Continuous
+  Integration"`) that surfaces in listings.
+- **wfe-server**: Full executor feature set enabled in the shipped binary —
+  kubernetes, deno, buildkit, containerd, rustlang step types all compiled
+  in.
+- **wfe-server**: Dockerfile switched from `rust:alpine` to
+  `rust:1-bookworm` + `debian:bookworm-slim` runtime because `deno_core`'s
+  bundled v8 only ships glibc binaries.
+- **wfe-ci**: New `Dockerfile.ci` builder image with rust stable,
+  cargo-nextest, cargo-llvm-cov, sccache, buildctl, kubectl, tea, git.
+  Used as the base image for kubernetes-executed CI steps.
+- **wfe-kubernetes**: `run:` scripts now execute under `/bin/bash -c`
+  instead of `/bin/sh -c` so workflows can rely on `set -o pipefail`,
+  process substitution, arrays, and other bashisms dash doesn't support.
+
+### Fixed
+
+- **wfe**: `WorkflowHost::start()` now calls
+  `persistence.ensure_store_exists()`, which was previously defined but
+  never invoked — the Postgres/SQLite schema was never auto-created on
+  startup, causing `relation "wfc.workflows" does not exist` errors on
+  first run.
+- **wfe-core**: `SubWorkflowStep` now inherits the parent workflow's data
+  when no explicit inputs are set, so child workflows see the same
+  top-level fields (e.g. `$REPO_URL`, `$COMMIT_SHA`) without every
+  `type: workflow` step having to re-declare them.
+- **workflows.yaml**: Restructured all step references from
+  `<<: *ci_step` / `<<: *ci_long` (which relied on YAML 1.1 shallow merge
+  over-writing the `config:` block) to inner-config merges of the form
+  `config: {<<: *ci_config, ...}`. Secret env vars moved into the shared
+  `ci_env` anchor so individual steps don't fight the shallow merge.
+
 ## [1.8.1] - 2026-04-06
 
 ### Added
