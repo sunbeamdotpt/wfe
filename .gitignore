@@ -4,3 +4,9 @@ Cargo.lock
 *.swo
 .DS_Store
 .env*
+# Local dev SQLite database + WAL companions
+/wfe.db
+/wfe.db-shm
+/wfe.db-wal
+# Auto-generated schema artifact (server endpoint is the source of truth)
+/workflows.schema.yaml
