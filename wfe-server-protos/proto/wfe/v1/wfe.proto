@@ -45,6 +45,9 @@ message RegisteredDefinition {
   string definition_id = 1;
   uint32 version = 2;
   uint32 step_count = 3;
+  // Human-friendly display name declared in the YAML (e.g. "Continuous
+  // Integration"). Empty when the definition did not set one.
+  string name = 4;
 }
 
 message ListDefinitionsRequest {}
@@ -58,6 +61,10 @@ message DefinitionSummary {
   uint32 version = 2;
   string description = 3;
   uint32 step_count = 4;
+  // Human-friendly display name declared in the YAML (e.g. "Continuous
+  // Integration"). Empty when the definition did not set one; clients should
+  // fall back to `id` for presentation.
+  string name = 5;
 }
 
 // ─── Instances ───────────────────────────────────────────────────────
@@ -66,13 +73,23 @@ message StartWorkflowRequest {
   string definition_id = 1;
   uint32 version = 2;
   google.protobuf.Struct data = 3;
+  // Optional caller-supplied name for this instance. Must be unique across
+  // all workflow instances. When unset the server auto-assigns
+  // `{definition_id}-{N}` using a per-definition monotonic counter.
+  string name = 4;
 }
 
 message StartWorkflowResponse {
   string workflow_id = 1;
+  // Human-friendly name that was assigned to the new instance (either the
+  // caller override or the auto-generated `{definition_id}-{N}`).
+  string name = 2;
 }
 
 message GetWorkflowRequest {
+  // Accepts either the UUID `workflow_id` or the human-friendly instance
+  // name (e.g. "ci-42"). The server tries UUID first, then falls back to
+  // name-based lookup.
   string workflow_id = 1;
 }
 
@@ -201,6 +218,10 @@ message WorkflowInstance {
   google.protobuf.Timestamp create_time = 8;
   google.protobuf.Timestamp complete_time = 9;
   repeated ExecutionPointer execution_pointers = 10;
+  // Human-friendly unique name, auto-assigned as `{definition_id}-{N}` at
+  // start time, or the caller-supplied override from StartWorkflowRequest.
+  // Interchangeable with `id` in Get/Cancel/Suspend/Resume/Watch/Logs RPCs.
+  string name = 11;
 }
 
 message ExecutionPointer {
@@ -222,6 +243,8 @@ message WorkflowSearchResult {
   string reference = 5;
   string description = 6;
   google.protobuf.Timestamp create_time = 7;
+  // Human-friendly instance name (e.g. "ci-42").
+  string name = 8;
 }
 
 enum WorkflowStatus {
