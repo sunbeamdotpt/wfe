@@ -232,13 +232,22 @@ impl KubernetesStep {
         wait_for_pod_running(client, namespace, &pod_name).await?;
 
         // 8. Stream logs + capture stdout.
+        // Store logs under the root workflow ID so `wfectl logs <ci-name>`
+        // aggregates output from all sub-workflows in the tree. Without
+        // this, each sub-workflow's logs are siloed under its own UUID
+        // and the user sees nothing when querying the parent.
+        let log_workflow_id = context
+            .workflow
+            .root_workflow_id
+            .as_deref()
+            .unwrap_or(workflow_id);
         let stdout = stream_logs(
             client,
             namespace,
             &pod_name,
             step_name,
             definition_id,
-            workflow_id,
+            log_workflow_id,
             context.step.id,
             context.log_sink,
         )
