@@ -93,14 +93,35 @@ impl StepBody for KubernetesStep {
         // 2. Ensure namespace exists.
         ensure_namespace(&client, &ns, workflow_id).await?;
 
-        // 2b. If the definition declares a shared volume, ensure the PVC
+        // 2b. If the workflow declares a shared volume, ensure the PVC
         // exists in the namespace and compute the mount spec we'll inject
         // into the Job. The PVC is created once per namespace (one per
         // top-level workflow run) and reused by every step and
-        // sub-workflow. Backends with no definition in the step context
-        // (test fixtures) just skip the shared volume.
-        let shared_mount = if let Some(def) = context.definition {
-            if let Some(sv) = &def.shared_volume {
+        // sub-workflow.
+        //
+        // Check two sources: the step's definition (top-level workflow)
+        // and the inherited `_wfe_shared_volume` key in workflow.data
+        // (sub-workflows inherit it via parent-data propagation). The
+        // data path is the normal case for sub-workflows since only the
+        // root definition declares `shared_volume:`.
+        let shared_mount = {
+            // Try definition first (top-level workflow running its own steps).
+            let sv_from_def = context.definition.and_then(|d| d.shared_volume.as_ref());
+
+            // Fall back to inherited data (sub-workflow inherits parent data).
+            let sv_from_data: Option<wfe_core::models::SharedVolume> = if sv_from_def.is_none() {
+                context
+                    .workflow
+                    .data
+                    .get("_wfe_shared_volume")
+                    .and_then(|v| serde_json::from_value(v.clone()).ok())
+            } else {
+                None
+            };
+
+            let sv = sv_from_def.or(sv_from_data.as_ref());
+
+            if let Some(sv) = sv {
                 let size = sv
                     .size
                     .as_deref()
@@ -119,8 +140,6 @@ impl StepBody for KubernetesStep {
             } else {
                 None
             }
-        } else {
-            None
         };
 
         // 3. Merge env vars: workflow.data (uppercased) + config.env.
