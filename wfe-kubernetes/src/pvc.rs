@@ -76,13 +76,35 @@ pub async fn ensure_shared_volume_pvc(
     };
 
     match api.create(&PostParams::default(), &pvc).await {
-        Ok(_) => Ok(()),
+        Ok(_) => {}
         // Another step created it between our get and create — also fine.
-        Err(kube::Error::Api(err)) if err.code == 409 => Ok(()),
-        Err(e) => Err(WfeError::StepExecution(format!(
-            "failed to create shared-volume PVC '{name}' in '{namespace}': {e}"
-        ))),
+        Err(kube::Error::Api(err)) if err.code == 409 => {}
+        Err(e) => {
+            return Err(WfeError::StepExecution(format!(
+                "failed to create shared-volume PVC '{name}' in '{namespace}': {e}"
+            )));
+        }
     }
+
+    // Wait for the PVC to be bound before returning. Storage provisioners
+    // (e.g. Longhorn) need a few seconds to create and attach the volume.
+    // If we return immediately the Job's pod is created while the PVC is
+    // still Pending, and the scheduler rejects it with "unbound immediate
+    // PersistentVolumeClaims".
+    for _ in 0..60 {
+        if let Ok(pvc) = api.get(name).await {
+            if let Some(status) = &pvc.status {
+                if status.phase.as_deref() == Some("Bound") {
+                    return Ok(());
+                }
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
+
+    Err(WfeError::StepExecution(format!(
+        "shared-volume PVC '{name}' in '{namespace}' was not bound within 120s"
+    )))
 }
 
 #[cfg(test)]

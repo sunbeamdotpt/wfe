@@ -83,17 +83,11 @@ pub async fn wait_for_pod_running(
                             }
                         }
                     }
-                    if let Some(conditions) = &status.conditions {
-                        for cond in conditions {
-                            if cond.type_ == "PodScheduled" && cond.status == "False" {
-                                if let Some(ref msg) = cond.message {
-                                    return Err(WfeError::StepExecution(format!(
-                                        "pod '{pod_name}' scheduling failed: {msg}"
-                                    )));
-                                }
-                            }
-                        }
-                    }
+                    // Note: we intentionally do NOT treat PodScheduled=False
+                    // as a fatal error here. Transient scheduling failures
+                    // (e.g. "unbound PersistentVolumeClaims") resolve once
+                    // the storage provisioner finishes. Let the timeout
+                    // handle genuinely stuck pods instead of failing early.
                 }
             }
             Err(kube::Error::Api(err)) if err.code == 404 => {}
