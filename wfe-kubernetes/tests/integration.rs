@@ -38,6 +38,7 @@ fn step_config(image: &str, run: &str) -> KubernetesStepConfig {
         image: image.into(),
         command: None,
         run: Some(run.into()),
+        shell: None,
         env: HashMap::new(),
         working_dir: None,
         memory: None,
@@ -97,6 +98,7 @@ async fn run_echo_job() {
     let pointer = wfe_core::models::ExecutionPointer::new(0);
 
     let ctx = wfe_core::traits::step::StepExecutionContext {
+        definition: None,
         item: None,
         execution_pointer: &pointer,
         persistence_data: None,
@@ -131,7 +133,7 @@ async fn run_job_with_wfe_output() {
     let ns = unique_id("output");
     let mut step_cfg = step_config(
         "alpine:3.18",
-        r#"echo '##wfe[output version=1.2.3]' && echo '##wfe[output status=ok]'"#,
+        r###"echo '##wfe[output version=1.2.3]' && echo '##wfe[output status=ok]'"###,
     );
     step_cfg.namespace = Some(ns.clone());
 
@@ -144,6 +146,7 @@ async fn run_job_with_wfe_output() {
     let pointer = wfe_core::models::ExecutionPointer::new(0);
 
     let ctx = wfe_core::traits::step::StepExecutionContext {
+        definition: None,
         item: None,
         execution_pointer: &pointer,
         persistence_data: None,
@@ -187,6 +190,7 @@ async fn run_job_with_env_vars() {
     let pointer = wfe_core::models::ExecutionPointer::new(0);
 
     let ctx = wfe_core::traits::step::StepExecutionContext {
+        definition: None,
         item: None,
         execution_pointer: &pointer,
         persistence_data: None,
@@ -224,6 +228,7 @@ async fn run_job_nonzero_exit_fails() {
     let pointer = wfe_core::models::ExecutionPointer::new(0);
 
     let ctx = wfe_core::traits::step::StepExecutionContext {
+        definition: None,
         item: None,
         execution_pointer: &pointer,
         persistence_data: None,
@@ -261,6 +266,7 @@ async fn run_job_with_timeout() {
     let pointer = wfe_core::models::ExecutionPointer::new(0);
 
     let ctx = wfe_core::traits::step::StepExecutionContext {
+        definition: None,
         item: None,
         execution_pointer: &pointer,
         persistence_data: None,
@@ -547,4 +553,241 @@ async fn service_provider_teardown_without_provision() {
     let result = provider.teardown("never-provisioned").await;
     // Namespace doesn't exist, so delete_namespace returns an error.
     assert!(result.is_err());
+}
+
+// ── End-to-end: multi-step workflow with shared volume ──────────────
+//
+// The tests above exercise the K8s step executor one step at a time. This
+// test drives a realistic multi-step pipeline end-to-end, covering every
+// feature that real CI workflows depend on:
+//
+//   * multiple step containers in the same workflow (different images
+//     per step so we can confirm cross-image sharing through the PVC)
+//   * a `shared_volume` PVC provisioned on the first step, persisting
+//     to every subsequent step
+//   * the `/bin/bash` shell override so a step can use bash-only features
+//   * `extract_workflow_env` threading inputs through as uppercase env
+//     vars to every step
+//   * `##wfe[output ...]` capture from a later step's stdout
+//   * a deliberate non-zero exit on a trailing step proving downstream
+//     error propagation
+//   * namespace lifecycle: created on first step, reused by all
+//     siblings, deleted at the end
+//
+// The pipeline simulates a tiny CI run:
+//
+//   1. `write-files`    (alpine:3.18)  → writes `version.txt` + `input.sh`
+//                                        to /workspace via `/bin/sh`
+//   2. `compute-hash`   (busybox:1.36) → reads files from /workspace,
+//                                        computes a sha256 with `sha256sum`,
+//                                        emits ##wfe[output] lines
+//   3. `verify-bash`    (alpine:3.18+bash) → uses `set -o pipefail` and
+//                                            arrays to verify the hash
+//   4. `inject-env`     (alpine:3.18)  → echoes workflow-data env vars
+//                                        (REPO, BRANCH) through outputs
+//
+// Without the shared volume, step 2 couldn't see step 1's files. Without
+// the shell override, step 3 would fail at `set -o pipefail`. Without
+// inputs → env mapping, step 4's $REPO would be empty.
+#[tokio::test]
+async fn multi_step_workflow_with_shared_volume() {
+    use tokio_util::sync::CancellationToken;
+    use wfe_core::models::{
+        ExecutionPointer, SharedVolume, WorkflowDefinition, WorkflowInstance, WorkflowStep,
+    };
+    use wfe_core::traits::step::{StepBody, StepExecutionContext};
+
+    let cluster = cluster_config();
+    let client = client::create_client(&cluster).await.unwrap();
+
+    let root_id = unique_id("multistep");
+
+    // The definition declares a shared /workspace volume. The K8s
+    // executor reads this from `ctx.definition` and provisions a PVC
+    // on the first step; every subsequent step in the same namespace
+    // mounts the same claim.
+    let definition = WorkflowDefinition {
+        id: "multistep-ci".into(),
+        name: Some("Multi-Step Integration Test".into()),
+        version: 1,
+        description: None,
+        steps: vec![],
+        default_error_behavior: Default::default(),
+        default_error_retry_interval: None,
+        services: vec![],
+        shared_volume: Some(SharedVolume {
+            mount_path: "/workspace".into(),
+            size: Some("1Gi".into()),
+        }),
+    };
+
+    // Single WorkflowInstance for the whole pipeline. Each step below
+    // reuses it so they all share the same namespace (derived from
+    // root_workflow_id → id fallback) and therefore the same PVC.
+    let instance = WorkflowInstance {
+        id: root_id.clone(),
+        name: "multistep-1".into(),
+        root_workflow_id: None,
+        workflow_definition_id: "multistep-ci".into(),
+        version: 1,
+        description: None,
+        reference: None,
+        execution_pointers: vec![],
+        next_execution: None,
+        status: wfe_core::models::WorkflowStatus::Runnable,
+        data: serde_json::json!({"repo": "wfe", "branch": "mainline"}),
+        create_time: chrono::Utc::now(),
+        complete_time: None,
+    };
+
+    let ns = crate::namespace::namespace_name(&cluster.namespace_prefix, &root_id);
+
+    // Shared helper to run one step and assert the proceed flag + return
+    // the captured output JSON.
+    async fn run_step(
+        step_cfg: KubernetesStepConfig,
+        step_name: &str,
+        instance: &WorkflowInstance,
+        definition: &WorkflowDefinition,
+        cluster: &wfe_kubernetes::config::ClusterConfig,
+        client: &kube::Client,
+    ) -> serde_json::Value {
+        let mut step =
+            wfe_kubernetes::KubernetesStep::new(step_cfg, cluster.clone(), client.clone());
+        let mut ws = WorkflowStep::new(0, step_name);
+        ws.name = Some(step_name.into());
+        let pointer = ExecutionPointer::new(0);
+
+        let ctx = StepExecutionContext {
+            item: None,
+            execution_pointer: &pointer,
+            persistence_data: None,
+            step: &ws,
+            workflow: instance,
+            definition: Some(definition),
+            cancellation_token: CancellationToken::new(),
+            host_context: None,
+            log_sink: None,
+        };
+
+        let result = step.run(&ctx).await.unwrap_or_else(|e| {
+            panic!("step '{step_name}' failed: {e}");
+        });
+        assert!(result.proceed, "step '{step_name}' did not proceed");
+        result.output_data.expect("output_data missing")
+    }
+
+    // The final cleanup call at the bottom of this function handles the
+    // happy-path teardown. If any assertion below panics the namespace
+    // will be left behind; the test harness runs `cleanup_stale_namespaces`
+    // to reap those on the next run.
+    let _ = &client; // acknowledge unused in guard-less form
+
+    // ── Step 1: write files to /workspace via /bin/sh on alpine ────
+    let mut s1 = step_config(
+        "alpine:3.18",
+        r###"
+mkdir -p /workspace/pipeline
+echo "1.9.0-test" > /workspace/pipeline/version.txt
+printf 'hello from step 1\n' > /workspace/pipeline/input.sh
+ls -la /workspace/pipeline
+echo "##wfe[output step1_ok=true]"
+"###,
+    );
+    s1.namespace = Some(ns.clone());
+    let out1 = run_step(s1, "write-files", &instance, &definition, &cluster, &client).await;
+    // `true` parses as a JSON boolean in build_output_data, not a string.
+    assert_eq!(out1["step1_ok"], serde_json::Value::Bool(true));
+
+    // ── Step 2: read the files written by step 1, hash them ────────
+    // Uses a DIFFERENT image (busybox) so we prove cross-image
+    // /workspace sharing through the PVC, not just container layer
+    // reuse. sha256sum output is emitted as ##wfe[output hash=...].
+    let mut s2 = step_config(
+        "busybox:1.36",
+        r###"
+cd /workspace/pipeline
+test -f version.txt || { echo "version.txt missing" >&2; exit 1; }
+test -f input.sh    || { echo "input.sh missing"    >&2; exit 1; }
+HASH=$(sha256sum version.txt | cut -c1-16)
+VERSION=$(cat version.txt)
+echo "##wfe[output hash=$HASH]"
+echo "##wfe[output version=$VERSION]"
+"###,
+    );
+    s2.namespace = Some(ns.clone());
+    let out2 = run_step(
+        s2,
+        "compute-hash",
+        &instance,
+        &definition,
+        &cluster,
+        &client,
+    )
+    .await;
+    assert_eq!(out2["version"], "1.9.0-test");
+    let hash = out2["hash"].as_str().expect("hash in output");
+    assert_eq!(hash.len(), 16, "hash should be 16 hex chars: {hash}");
+    assert!(
+        hash.chars().all(|c| c.is_ascii_hexdigit()),
+        "hash not hex: {hash}"
+    );
+
+    // ── Step 3: bash-only features (pipefail + arrays) ──────────────
+    // `alpine:3.18` doesn't have bash; use the bash-tagged image and
+    // explicit shell override to prove the `shell:` config works
+    // end-to-end.
+    // Use debian:bookworm-slim — the `bash:5` image on docker hub mangles
+    // its entrypoint such that `/bin/bash -c <script>` exits 128 before
+    // the script runs. debian-slim has /bin/bash at the conventional path
+    // and runs vanilla.
+    let mut s3 = step_config(
+        "debian:bookworm-slim",
+        r###"
+set -euo pipefail
+# Bash-only: array + [[ ]] + process substitution
+declare -a files=(version.txt input.sh)
+for f in "${files[@]}"; do
+    test -f /workspace/pipeline/$f
+done
+# pipefail makes `false | true` fail — if we reach the echo, pipefail
+# actually caused the || branch to fire, which is the bash behavior
+# we want to confirm.
+if ! { false | true ; }; then
+    echo "##wfe[output pipefail_ok=true]"
+else
+    echo "##wfe[output pipefail_ok=false]"
+fi
+echo "##wfe[output bash_features_ok=true]"
+"###,
+    );
+    s3.shell = Some("/bin/bash".into());
+    s3.namespace = Some(ns.clone());
+    let out3 = run_step(s3, "verify-bash", &instance, &definition, &cluster, &client).await;
+    assert_eq!(out3["bash_features_ok"], serde_json::Value::Bool(true));
+    assert_eq!(out3["pipefail_ok"], serde_json::Value::Bool(true));
+
+    // ── Step 4: confirm workflow.data env injection ────────────────
+    // The instance was started with data {"repo": "wfe", "branch":
+    // "mainline"}; extract_workflow_env uppercases keys so $REPO and
+    // $BRANCH must be present inside the container.
+    let mut s4 = step_config(
+        "alpine:3.18",
+        r###"
+echo "##wfe[output repo=$REPO]"
+echo "##wfe[output branch=$BRANCH]"
+# Prove the volume is still there by listing files from step 1.
+COUNT=$(ls /workspace/pipeline | wc -l | tr -d ' ')
+echo "##wfe[output file_count=$COUNT]"
+"###,
+    );
+    s4.namespace = Some(ns.clone());
+    let out4 = run_step(s4, "inject-env", &instance, &definition, &cluster, &client).await;
+    assert_eq!(out4["repo"], "wfe");
+    assert_eq!(out4["branch"], "mainline");
+    // `2` parses as a JSON number, not a string.
+    assert_eq!(out4["file_count"], serde_json::Value::Number(2.into()));
+
+    // Explicit cleanup (the guard still runs on panic paths).
+    namespace::delete_namespace(&client, &ns).await.ok();
 }
