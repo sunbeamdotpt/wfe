@@ -20,6 +20,18 @@ pub struct ClusterConfig {
     /// Node selector labels for Job pods.
     #[serde(default)]
     pub node_selector: HashMap<String, String>,
+    /// Default size (e.g. "10Gi") used when a workflow declares a
+    /// `shared_volume` without specifying its own `size`. The K8s executor
+    /// creates one PVC per top-level workflow instance and mounts it on
+    /// every step container so sub-workflows can share a cloned checkout,
+    /// sccache directory, etc. Cluster operators tune this based on the
+    /// typical working-set size of their pipelines.
+    #[serde(default = "default_shared_volume_size")]
+    pub default_shared_volume_size: String,
+    /// Optional StorageClass to use when provisioning shared-volume PVCs.
+    /// Falls back to the cluster's default StorageClass when unset.
+    #[serde(default)]
+    pub shared_volume_storage_class: Option<String>,
 }
 
 impl Default for ClusterConfig {
@@ -30,12 +42,18 @@ impl Default for ClusterConfig {
             service_account: None,
             image_pull_secrets: Vec::new(),
             node_selector: HashMap::new(),
+            default_shared_volume_size: default_shared_volume_size(),
+            shared_volume_storage_class: None,
         }
     }
 }
 
 fn default_namespace_prefix() -> String {
     "wfe-".to_string()
+}
+
+fn default_shared_volume_size() -> String {
+    "10Gi".to_string()
 }
 
 /// Per-step configuration for a Kubernetes Job execution.
@@ -46,9 +64,19 @@ pub struct KubernetesStepConfig {
     /// Override entrypoint.
     #[serde(default)]
     pub command: Option<Vec<String>>,
-    /// Shorthand: runs via `/bin/sh -c "..."`. Mutually exclusive with `command`.
+    /// Shorthand: runs the given script via the configured `shell`
+    /// (default `/bin/sh`). Mutually exclusive with `command`. For scripts
+    /// that rely on bashisms like `set -o pipefail`, process substitution,
+    /// or arrays, set `shell: /bin/bash` explicitly — the default /bin/sh
+    /// keeps alpine/busybox containers working out of the box.
     #[serde(default)]
     pub run: Option<String>,
+    /// Shell used to execute a `run:` script. Defaults to `/bin/sh` so
+    /// minimal containers (alpine, distroless) work unchanged. Override
+    /// to `/bin/bash` or any other interpreter when the script needs
+    /// features dash doesn't support.
+    #[serde(default)]
+    pub shell: Option<String>,
     /// Environment variables injected into the container.
     #[serde(default)]
     pub env: HashMap<String, String>,
@@ -95,6 +123,8 @@ mod tests {
             service_account: Some("wfe-runner".into()),
             image_pull_secrets: vec!["ghcr-secret".into()],
             node_selector: [("tier".into(), "compute".into())].into(),
+            default_shared_volume_size: "20Gi".into(),
+            shared_volume_storage_class: Some("fast-ssd".into()),
         };
         let json = serde_json::to_string(&config).unwrap();
         let parsed: ClusterConfig = serde_json::from_str(&json).unwrap();
@@ -119,6 +149,7 @@ mod tests {
             image: "node:20-alpine".into(),
             command: None,
             run: Some("npm test".into()),
+            shell: None,
             env: [("NODE_ENV".into(), "test".into())].into(),
             working_dir: Some("/app".into()),
             memory: Some("512Mi".into()),

@@ -13,9 +13,10 @@ use wfe_core::traits::step::{StepBody, StepExecutionContext};
 use crate::cleanup::delete_job;
 use crate::config::{ClusterConfig, KubernetesStepConfig};
 use crate::logs::{stream_logs, wait_for_pod_running};
-use crate::manifests::build_job;
+use crate::manifests::{SharedVolumeMount, build_job};
 use crate::namespace::{ensure_namespace, namespace_name};
 use crate::output::{build_output_data, parse_outputs};
+use crate::pvc::{ensure_shared_volume_pvc, shared_volume_pvc_name};
 
 /// A workflow step that runs as a Kubernetes Job.
 pub struct KubernetesStep {
@@ -65,6 +66,15 @@ impl StepBody for KubernetesStep {
             .unwrap_or("unknown")
             .to_string();
 
+        // Isolation domain is keyed on the *root* workflow when set so
+        // sub-workflows started via `type: workflow` share their parent's
+        // namespace + PVC. Top-level (user-started) workflows fall back
+        // to their own id.
+        let isolation_id = context
+            .workflow
+            .root_workflow_id
+            .as_deref()
+            .unwrap_or(&context.workflow.id);
         let workflow_id = &context.workflow.id;
         let definition_id = &context.workflow.workflow_definition_id;
 
@@ -72,21 +82,59 @@ impl StepBody for KubernetesStep {
         let _ = self.get_client().await?;
         let client = self.client.as_ref().unwrap().clone();
 
-        // 1. Determine namespace.
+        // 1. Determine namespace. Honors explicit step-level override,
+        // otherwise derives from the isolation domain.
         let ns = self
             .config
             .namespace
             .clone()
-            .unwrap_or_else(|| namespace_name(&self.cluster.namespace_prefix, workflow_id));
+            .unwrap_or_else(|| namespace_name(&self.cluster.namespace_prefix, isolation_id));
 
         // 2. Ensure namespace exists.
         ensure_namespace(&client, &ns, workflow_id).await?;
+
+        // 2b. If the definition declares a shared volume, ensure the PVC
+        // exists in the namespace and compute the mount spec we'll inject
+        // into the Job. The PVC is created once per namespace (one per
+        // top-level workflow run) and reused by every step and
+        // sub-workflow. Backends with no definition in the step context
+        // (test fixtures) just skip the shared volume.
+        let shared_mount = if let Some(def) = context.definition {
+            if let Some(sv) = &def.shared_volume {
+                let size = sv
+                    .size
+                    .as_deref()
+                    .unwrap_or(&self.cluster.default_shared_volume_size);
+                ensure_shared_volume_pvc(
+                    &client,
+                    &ns,
+                    size,
+                    self.cluster.shared_volume_storage_class.as_deref(),
+                )
+                .await?;
+                Some(SharedVolumeMount {
+                    claim_name: shared_volume_pvc_name().to_string(),
+                    mount_path: sv.mount_path.clone(),
+                })
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         // 3. Merge env vars: workflow.data (uppercased) + config.env.
         let env_overrides = extract_workflow_env(&context.workflow.data);
 
         // 4. Build Job manifest.
-        let job_manifest = build_job(&self.config, &step_name, &ns, &env_overrides, &self.cluster);
+        let job_manifest = build_job(
+            &self.config,
+            &step_name,
+            &ns,
+            &env_overrides,
+            &self.cluster,
+            shared_mount.as_ref(),
+        );
         let job_name = job_manifest
             .metadata
             .name

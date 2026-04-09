@@ -227,17 +227,27 @@ impl WorkflowRepository for PostgresPersistenceProvider {
         } else {
             instance.id.clone()
         };
+        // Fall back to the UUID when the caller didn't assign a human name.
+        // In production `WorkflowHost::start_workflow` always fills this in
+        // via `next_definition_sequence`, but test fixtures and any external
+        // caller that forgets shouldn't trip the UNIQUE constraint.
+        let name = if instance.name.is_empty() {
+            id.clone()
+        } else {
+            instance.name.clone()
+        };
 
         let mut tx = self.pool.begin().await.map_err(Self::map_sqlx_err)?;
 
         sqlx::query(
             r#"INSERT INTO wfc.workflows
-               (id, name, definition_id, version, description, reference, status, data,
-                next_execution, create_time, complete_time)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)"#,
+               (id, name, root_workflow_id, definition_id, version, description, reference,
+                status, data, next_execution, create_time, complete_time)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)"#,
         )
         .bind(&id)
-        .bind(&instance.name)
+        .bind(&name)
+        .bind(&instance.root_workflow_id)
         .bind(&instance.workflow_definition_id)
         .bind(instance.version as i32)
         .bind(&instance.description)
@@ -264,12 +274,14 @@ impl WorkflowRepository for PostgresPersistenceProvider {
 
         sqlx::query(
             r#"UPDATE wfc.workflows SET
-               name=$2, definition_id=$3, version=$4, description=$5, reference=$6,
-               status=$7, data=$8, next_execution=$9, create_time=$10, complete_time=$11
+               name=$2, root_workflow_id=$3, definition_id=$4, version=$5,
+               description=$6, reference=$7, status=$8, data=$9, next_execution=$10,
+               create_time=$11, complete_time=$12
                WHERE id=$1"#,
         )
         .bind(&instance.id)
         .bind(&instance.name)
+        .bind(&instance.root_workflow_id)
         .bind(&instance.workflow_definition_id)
         .bind(instance.version as i32)
         .bind(&instance.description)
@@ -306,12 +318,14 @@ impl WorkflowRepository for PostgresPersistenceProvider {
 
         sqlx::query(
             r#"UPDATE wfc.workflows SET
-               name=$2, definition_id=$3, version=$4, description=$5, reference=$6,
-               status=$7, data=$8, next_execution=$9, create_time=$10, complete_time=$11
+               name=$2, root_workflow_id=$3, definition_id=$4, version=$5,
+               description=$6, reference=$7, status=$8, data=$9, next_execution=$10,
+               create_time=$11, complete_time=$12
                WHERE id=$1"#,
         )
         .bind(&instance.id)
         .bind(&instance.name)
+        .bind(&instance.root_workflow_id)
         .bind(&instance.workflow_definition_id)
         .bind(instance.version as i32)
         .bind(&instance.description)
@@ -396,6 +410,7 @@ impl WorkflowRepository for PostgresPersistenceProvider {
         Ok(WorkflowInstance {
             id: row.get("id"),
             name: row.get("name"),
+            root_workflow_id: row.get("root_workflow_id"),
             workflow_definition_id: row.get("definition_id"),
             version: row.get::<i32, _>("version") as u32,
             description: row.get("description"),
@@ -832,6 +847,7 @@ impl PersistenceProvider for PostgresPersistenceProvider {
             r#"CREATE TABLE IF NOT EXISTS wfc.workflows (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL UNIQUE,
+                root_workflow_id TEXT,
                 definition_id TEXT NOT NULL,
                 version INT NOT NULL,
                 description TEXT,
@@ -863,6 +879,13 @@ impl PersistenceProvider for PostgresPersistenceProvider {
                     ALTER TABLE wfc.workflows ALTER COLUMN name SET NOT NULL;
                     CREATE UNIQUE INDEX IF NOT EXISTS idx_workflows_name
                         ON wfc.workflows (name);
+                END IF;
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'wfc' AND table_name = 'workflows'
+                      AND column_name = 'root_workflow_id'
+                ) THEN
+                    ALTER TABLE wfc.workflows ADD COLUMN root_workflow_id TEXT;
                 END IF;
             END$$;"#,
         )
