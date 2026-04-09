@@ -43,8 +43,8 @@ ARG TEA_VERSION=0.11.0
 RUN curl -fsSL "https://gitea.com/gitea/tea/releases/download/v${TEA_VERSION}/tea-${TEA_VERSION}-linux-amd64" \
       -o /usr/local/bin/tea && chmod +x /usr/local/bin/tea
 
-# llvm tools (needed by cargo-llvm-cov)
-RUN rustup component add llvm-tools-preview
+# Rust components for CI lint + coverage
+RUN rustup component add llvm-tools-preview rustfmt clippy
 
 # Sccache wrapper config — expects SCCACHE_S3_ENDPOINT, SCCACHE_BUCKET, etc. via env.
 ENV RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
