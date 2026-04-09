@@ -2,6 +2,42 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.1] - 2026-04-09
+
+### Added
+
+- **wfe-kubernetes**: Cross-workflow shared volumes — declare
+  `shared_volume: { mount_path: /workspace, size: 30Gi }` on a
+  top-level workflow and every sub-workflow in the tree shares a
+  single PVC. Sub-workflows inherit the root's namespace via
+  `root_workflow_id` so checkout/lint/test/cover all see the same
+  `/workspace`.
+- **wfe-kubernetes**: Configurable `shell:` on step config (default
+  `/bin/sh`). CI workflows that need `set -o pipefail` set
+  `shell: /bin/bash` on their shared config anchors.
+- **wfe-core**: `StepExecutionContext.definition` gives executor-specific
+  steps access to the workflow definition without a registry round-trip.
+- Expanded test suites: 14 new persistence tests, 4 queue tests, 3
+  lock tests, 10 host name/resolve tests, multi-step K8s integration
+  test, 14 webhook handler tests. All shared via macros so every
+  provider backend benefits.
+
+### Fixed
+
+- **wfe**: Shared volume config now propagates to sub-workflows via
+  `_wfe_shared_volume` in instance data. Previously, only the root
+  definition carried the config; sub-workflow steps never saw it and
+  no PVC was created.
+- **wfe-server**: `log_search` TCP probe used `SocketAddr::parse` which
+  rejects hostnames — OpenSearch integration tests were silently
+  skipping. Switched to `ToSocketAddrs` for DNS resolution.
+- **wfe-server**: `ensure_index` now handles `resource_already_exists`
+  races gracefully instead of returning an error.
+- **persistence**: `create_new_workflow` falls back to UUID when `name`
+  is empty, preventing UNIQUE constraint violations in tests.
+- **wfe-kubernetes**: Default shell reverted to `/bin/sh` (was changed
+  to `/bin/bash` in 1.9.0 which broke alpine-based containers).
+
 ## [1.9.0] - 2026-04-07
 
 ### Added
