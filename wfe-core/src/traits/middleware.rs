@@ -62,6 +62,7 @@ mod tests {
         let pointer = ExecutionPointer::new(0);
         let step = WorkflowStep::new(0, "test_step");
         let ctx = StepExecutionContext {
+            definition: None,
             item: None,
             execution_pointer: &pointer,
             persistence_data: None,
@@ -82,6 +83,7 @@ mod tests {
         let pointer = ExecutionPointer::new(0);
         let step = WorkflowStep::new(0, "test_step");
         let ctx = StepExecutionContext {
+            definition: None,
             item: None,
             execution_pointer: &pointer,
             persistence_data: None,

@@ -123,8 +123,18 @@ impl StepBody for SubWorkflowStep {
         } else {
             serde_json::json!({})
         };
+        // Inherit the parent's root — or, if the parent is itself a root
+        // (has no root set), use the parent's own id as the root for the
+        // child. This makes every descendant of a top-level ci run share
+        // the same root_workflow_id and therefore the same namespace and
+        // shared volume on backends that care.
+        let parent_root = context
+            .workflow
+            .root_workflow_id
+            .clone()
+            .or_else(|| Some(context.workflow.id.clone()));
         let child_instance_id = host
-            .start_workflow(&self.workflow_id, self.version, child_data)
+            .start_workflow(&self.workflow_id, self.version, child_data, parent_root)
             .await?;
 
         Ok(ExecutionResult::wait_for_event(
@@ -171,6 +181,7 @@ mod tests {
             definition_id: &str,
             version: u32,
             data: serde_json::Value,
+            _parent_root_workflow_id: Option<String>,
         ) -> std::pin::Pin<Box<dyn std::future::Future<Output = crate::Result<String>> + Send + '_>>
         {
             let def_id = definition_id.to_string();
@@ -191,6 +202,7 @@ mod tests {
             _definition_id: &str,
             _version: u32,
             _data: serde_json::Value,
+            _parent_root_workflow_id: Option<String>,
         ) -> std::pin::Pin<Box<dyn std::future::Future<Output = crate::Result<String>> + Send + '_>>
         {
             Box::pin(async {
@@ -208,6 +220,7 @@ mod tests {
         host: &'a dyn HostContext,
     ) -> StepExecutionContext<'a> {
         StepExecutionContext {
+            definition: None,
             item: None,
             execution_pointer: pointer,
             persistence_data: pointer.persistence_data.as_ref(),

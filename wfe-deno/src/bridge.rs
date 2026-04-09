@@ -189,6 +189,7 @@ mod tests {
         let instance = WorkflowInstance {
             id: "wf-1".into(),
             name: "test-def-1".into(),
+            root_workflow_id: None,
             workflow_definition_id: "test-def".into(),
             version: 1,
             description: None,
@@ -212,6 +213,7 @@ mod tests {
         step.step_config = Some(serde_json::json!({"key": "val"}));
 
         let ctx = StepExecutionContext {
+            definition: None,
             item: None,
             execution_pointer: &pointer,
             persistence_data: None,
@@ -236,6 +238,7 @@ mod tests {
         let item = serde_json::json!({"id": 42});
 
         let ctx = StepExecutionContext {
+            definition: None,
             item: Some(&item),
             execution_pointer: &pointer,
             persistence_data: Some(&serde_json::json!({"saved": true})),
@@ -360,6 +363,7 @@ mod tests {
 
         let (instance, step, pointer) = make_test_context();
         let ctx = StepExecutionContext {
+            definition: None,
             item: None,
             execution_pointer: &pointer,
             persistence_data: None,
@@ -397,6 +401,7 @@ mod tests {
 
         let (instance, step, pointer) = make_test_context();
         let ctx = StepExecutionContext {
+            definition: None,
             item: None,
             execution_pointer: &pointer,
             persistence_data: None,
@@ -428,6 +433,7 @@ mod tests {
 
         let (instance, step, pointer) = make_test_context();
         let ctx = StepExecutionContext {
+            definition: None,
             item: None,
             execution_pointer: &pointer,
             persistence_data: None,

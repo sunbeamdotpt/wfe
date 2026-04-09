@@ -59,6 +59,11 @@ impl WorkflowRepository for InMemoryPersistenceProvider {
         };
         let mut stored = instance.clone();
         stored.id = id.clone();
+        // Fall back to UUID when the caller didn't assign a human name, so
+        // name-based lookups work (the UUID is always unique).
+        if stored.name.is_empty() {
+            stored.name = id.clone();
+        }
         self.workflows.write().await.insert(id.clone(), stored);
         Ok(id)
     }
