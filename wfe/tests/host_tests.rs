@@ -8,6 +8,7 @@ use wfe::models::{
     ExecutionResult, PointerStatus, StepOutcome, WorkflowDefinition, WorkflowInstance,
     WorkflowStatus, WorkflowStep,
 };
+use wfe::traits::WorkflowRepository;
 use wfe::traits::search::{Page, SearchFilter, SearchIndex, WorkflowSearchResult};
 use wfe::traits::step::{StepBody, StepExecutionContext};
 use wfe::{WorkflowHost, WorkflowHostBuilder};
@@ -724,4 +725,231 @@ async fn host_full_workflow_with_search_and_lifecycle() {
 
     assert_eq!(instance.status, WorkflowStatus::Complete);
     host.stop().await;
+}
+
+// ─── 1.9 name / resolve path tests ──────────────────────────────────
+//
+// Every test below pins a 1.9 behavior introduced by the shift from
+// UUID-only addressing to human-friendly names: auto-sequencing,
+// caller-supplied overrides, whitespace rejection, and transparent
+// name-or-UUID lookup across Get/Suspend/Resume/Terminate.
+
+#[tokio::test]
+async fn start_workflow_auto_assigns_sequenced_name() {
+    let (host, persistence) = build_host();
+    host.register_workflow_definition(make_simple_definition())
+        .await;
+    host.register_step::<PassthroughStep>().await;
+
+    // Three consecutive runs of the same definition should produce
+    // monotonically incrementing `{definition_id}-N` names.
+    let id_a = host
+        .start_workflow("simple-workflow", 1, serde_json::json!({}))
+        .await
+        .unwrap();
+    let id_b = host
+        .start_workflow("simple-workflow", 1, serde_json::json!({}))
+        .await
+        .unwrap();
+    let id_c = host
+        .start_workflow("simple-workflow", 1, serde_json::json!({}))
+        .await
+        .unwrap();
+
+    let a = persistence.get_workflow_instance(&id_a).await.unwrap();
+    let b = persistence.get_workflow_instance(&id_b).await.unwrap();
+    let c = persistence.get_workflow_instance(&id_c).await.unwrap();
+
+    assert_eq!(a.name, "simple-workflow-1");
+    assert_eq!(b.name, "simple-workflow-2");
+    assert_eq!(c.name, "simple-workflow-3");
+
+    // UUIDs still unique — names are a parallel index, not a replacement.
+    assert_ne!(a.id, b.id);
+    assert_ne!(b.id, c.id);
+}
+
+#[tokio::test]
+async fn start_workflow_with_name_uses_explicit_override() {
+    let (host, persistence) = build_host();
+    host.register_workflow_definition(make_simple_definition())
+        .await;
+    host.register_step::<PassthroughStep>().await;
+
+    let id = host
+        .start_workflow_with_name(
+            "simple-workflow",
+            1,
+            serde_json::json!({}),
+            Some("ci-1.9.0-release".into()),
+        )
+        .await
+        .unwrap();
+
+    let instance = persistence.get_workflow_instance(&id).await.unwrap();
+    assert_eq!(instance.name, "ci-1.9.0-release");
+}
+
+#[tokio::test]
+async fn start_workflow_with_empty_name_override_is_rejected() {
+    let (host, _) = build_host();
+    host.register_workflow_definition(make_simple_definition())
+        .await;
+    host.register_step::<PassthroughStep>().await;
+
+    // A whitespace-only override is treated as empty — rejected so the
+    // UNIQUE index can't get "" or "   ".
+    let err = host
+        .start_workflow_with_name(
+            "simple-workflow",
+            1,
+            serde_json::json!({}),
+            Some("   ".into()),
+        )
+        .await
+        .unwrap_err();
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("non-empty"),
+        "expected non-empty rejection, got: {msg}"
+    );
+}
+
+#[tokio::test]
+async fn get_workflow_accepts_uuid_and_name_interchangeably() {
+    let (host, _) = build_host();
+    host.register_workflow_definition(make_simple_definition())
+        .await;
+    host.register_step::<PassthroughStep>().await;
+
+    let uuid = host
+        .start_workflow("simple-workflow", 1, serde_json::json!({}))
+        .await
+        .unwrap();
+
+    // Lookup by UUID (primary key) works.
+    let by_uuid = host.get_workflow(&uuid).await.unwrap();
+    // Lookup by the auto-assigned human name also works.
+    let by_name = host.get_workflow(&by_uuid.name).await.unwrap();
+    // Both return the same instance.
+    assert_eq!(by_uuid.id, by_name.id);
+    assert_eq!(by_uuid.name, by_name.name);
+}
+
+#[tokio::test]
+async fn get_workflow_nonexistent_returns_error() {
+    let (host, _) = build_host();
+    let err = host
+        .get_workflow("neither-a-uuid-nor-a-name")
+        .await
+        .unwrap_err();
+    assert!(matches!(err, wfe_core::WfeError::WorkflowNotFound(_)));
+}
+
+#[tokio::test]
+async fn resolve_workflow_id_returns_canonical_uuid() {
+    let (host, _) = build_host();
+    host.register_workflow_definition(make_simple_definition())
+        .await;
+    host.register_step::<PassthroughStep>().await;
+
+    let uuid = host
+        .start_workflow("simple-workflow", 1, serde_json::json!({}))
+        .await
+        .unwrap();
+    let instance = host.get_workflow(&uuid).await.unwrap();
+
+    // Identity case.
+    let resolved_from_uuid = host.resolve_workflow_id(&uuid).await.unwrap();
+    assert_eq!(resolved_from_uuid, uuid);
+
+    // Name → UUID case.
+    let resolved_from_name = host.resolve_workflow_id(&instance.name).await.unwrap();
+    assert_eq!(resolved_from_name, uuid);
+}
+
+#[tokio::test]
+async fn suspend_and_resume_accept_name_in_addition_to_uuid() {
+    let (host, persistence, _lifecycle) = build_host_with_lifecycle();
+    host.register_workflow_definition(make_simple_definition())
+        .await;
+    host.register_step::<PassthroughStep>().await;
+
+    let uuid = host
+        .start_workflow("simple-workflow", 1, serde_json::json!({}))
+        .await
+        .unwrap();
+    let name = persistence.get_workflow_instance(&uuid).await.unwrap().name;
+
+    // Suspend via human name.
+    let suspended = host.suspend_workflow(&name).await.unwrap();
+    assert!(suspended);
+    let after_suspend = persistence.get_workflow_instance(&uuid).await.unwrap();
+    assert_eq!(after_suspend.status, WorkflowStatus::Suspended);
+
+    // Resume via UUID (to prove both paths still work).
+    let resumed = host.resume_workflow(&uuid).await.unwrap();
+    assert!(resumed);
+    let after_resume = persistence.get_workflow_instance(&uuid).await.unwrap();
+    assert_eq!(after_resume.status, WorkflowStatus::Runnable);
+}
+
+#[tokio::test]
+async fn terminate_workflow_via_name() {
+    let (host, persistence, _lifecycle) = build_host_with_lifecycle();
+    host.register_workflow_definition(make_simple_definition())
+        .await;
+    host.register_step::<PassthroughStep>().await;
+
+    let uuid = host
+        .start_workflow("simple-workflow", 1, serde_json::json!({}))
+        .await
+        .unwrap();
+    let name = persistence.get_workflow_instance(&uuid).await.unwrap().name;
+
+    let terminated = host.terminate_workflow(&name).await.unwrap();
+    assert!(terminated);
+    let final_state = persistence.get_workflow_instance(&uuid).await.unwrap();
+    assert_eq!(final_state.status, WorkflowStatus::Terminated);
+    // Terminating a second time is a no-op.
+    assert!(!host.terminate_workflow(&name).await.unwrap());
+}
+
+#[tokio::test]
+async fn suspend_nonrunnable_workflow_returns_false() {
+    let (host, persistence) = build_host();
+    host.register_workflow_definition(make_simple_definition())
+        .await;
+    host.register_step::<PassthroughStep>().await;
+
+    let uuid = host
+        .start_workflow("simple-workflow", 1, serde_json::json!({}))
+        .await
+        .unwrap();
+
+    // Terminate first, then try to suspend — suspend on a terminated
+    // workflow should return false, not error.
+    host.terminate_workflow(&uuid).await.unwrap();
+    let suspended = host.suspend_workflow(&uuid).await.unwrap();
+    assert!(!suspended);
+
+    let state = persistence.get_workflow_instance(&uuid).await.unwrap();
+    assert_eq!(state.status, WorkflowStatus::Terminated);
+}
+
+#[tokio::test]
+async fn resume_non_suspended_workflow_returns_false() {
+    let (host, _) = build_host();
+    host.register_workflow_definition(make_simple_definition())
+        .await;
+    host.register_step::<PassthroughStep>().await;
+
+    let uuid = host
+        .start_workflow("simple-workflow", 1, serde_json::json!({}))
+        .await
+        .unwrap();
+
+    // Workflow is Runnable, not Suspended — resume should no-op return false.
+    let resumed = host.resume_workflow(&uuid).await.unwrap();
+    assert!(!resumed);
 }

@@ -68,6 +68,7 @@ fn make_context<'a>(
     pointer: &'a ExecutionPointer,
 ) -> StepExecutionContext<'a> {
     StepExecutionContext {
+        definition: None,
         item: None,
         execution_pointer: pointer,
         persistence_data: None,

@@ -100,6 +100,96 @@ macro_rules! queue_suite {
                         .is_none()
                 );
             }
+
+            #[tokio::test]
+            async fn index_queue_type_is_isolated() {
+                let provider = ($factory)().await;
+                provider
+                    .queue_work("idx-1", QueueType::Index)
+                    .await
+                    .unwrap();
+                provider
+                    .queue_work("idx-2", QueueType::Index)
+                    .await
+                    .unwrap();
+                provider
+                    .queue_work("wf-1", QueueType::Workflow)
+                    .await
+                    .unwrap();
+
+                // Index queue drains in FIFO order...
+                assert_eq!(
+                    provider
+                        .dequeue_work(QueueType::Index)
+                        .await
+                        .unwrap()
+                        .as_deref(),
+                    Some("idx-1")
+                );
+                assert_eq!(
+                    provider
+                        .dequeue_work(QueueType::Index)
+                        .await
+                        .unwrap()
+                        .as_deref(),
+                    Some("idx-2")
+                );
+                // ...and doesn't disturb the Workflow queue.
+                assert_eq!(
+                    provider
+                        .dequeue_work(QueueType::Workflow)
+                        .await
+                        .unwrap()
+                        .as_deref(),
+                    Some("wf-1")
+                );
+            }
+
+            #[tokio::test]
+            async fn start_and_stop_lifecycle_are_idempotent() {
+                let provider = ($factory)().await;
+                // Both start and stop should be no-ops that can be called
+                // multiple times without error regardless of backend.
+                provider.start().await.unwrap();
+                provider.start().await.unwrap();
+                provider.stop().await.unwrap();
+                provider.stop().await.unwrap();
+            }
+
+            #[tokio::test]
+            async fn is_dequeue_blocking_is_stable() {
+                let provider = ($factory)().await;
+                // Pure property — just make sure it doesn't panic and is
+                // consistent between calls. Different backends return
+                // different values; we only care the call works.
+                let a = provider.is_dequeue_blocking();
+                let b = provider.is_dequeue_blocking();
+                assert_eq!(a, b);
+            }
+
+            #[tokio::test]
+            async fn enqueue_many_then_drain() {
+                let provider = ($factory)().await;
+                for i in 0..20u32 {
+                    provider
+                        .queue_work(&format!("item-{i}"), QueueType::Workflow)
+                        .await
+                        .unwrap();
+                }
+
+                for i in 0..20u32 {
+                    let got = provider.dequeue_work(QueueType::Workflow).await.unwrap();
+                    assert_eq!(got.as_deref(), Some(format!("item-{i}").as_str()));
+                }
+
+                assert!(
+                    provider
+                        .dequeue_work(QueueType::Workflow)
+                        .await
+                        .unwrap()
+                        .is_none()
+                );
+            }
         }
     };
 }

@@ -73,6 +73,7 @@ async fn build_simple_dockerfile_via_grpc() {
     let (ws, pointer, instance) = make_test_context("integration-build");
     let cancel = tokio_util::sync::CancellationToken::new();
     let ctx = StepExecutionContext {
+        definition: None,
         item: None,
         execution_pointer: &pointer,
         persistence_data: None,
@@ -157,6 +158,7 @@ async fn build_with_build_args() {
     let (ws, pointer, instance) = make_test_context("build-args-test");
     let cancel = tokio_util::sync::CancellationToken::new();
     let ctx = StepExecutionContext {
+        definition: None,
         item: None,
         execution_pointer: &pointer,
         persistence_data: None,
@@ -208,6 +210,7 @@ async fn connect_to_unavailable_daemon_returns_error() {
     let (ws, pointer, instance) = make_test_context("error-test");
     let cancel = tokio_util::sync::CancellationToken::new();
     let ctx = StepExecutionContext {
+        definition: None,
         item: None,
         execution_pointer: &pointer,
         persistence_data: None,

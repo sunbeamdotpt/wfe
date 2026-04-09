@@ -44,6 +44,39 @@ macro_rules! lock_suite {
                 // Should not error even if lock was never acquired
                 provider.release_lock("nonexistent").await.unwrap();
             }
+
+            #[tokio::test]
+            async fn different_resources_are_independent() {
+                let provider = ($factory)().await;
+                assert!(provider.acquire_lock("resource-a").await.unwrap());
+                // Different resource id doesn't block on the first.
+                assert!(provider.acquire_lock("resource-b").await.unwrap());
+                // Now trying to reacquire either fails while held.
+                assert!(!provider.acquire_lock("resource-a").await.unwrap());
+                assert!(!provider.acquire_lock("resource-b").await.unwrap());
+                provider.release_lock("resource-a").await.unwrap();
+                provider.release_lock("resource-b").await.unwrap();
+            }
+
+            #[tokio::test]
+            async fn start_and_stop_lifecycle_are_idempotent() {
+                let provider = ($factory)().await;
+                provider.start().await.unwrap();
+                provider.start().await.unwrap();
+                provider.stop().await.unwrap();
+                provider.stop().await.unwrap();
+            }
+
+            #[tokio::test]
+            async fn acquire_release_acquire_roundtrip() {
+                let provider = ($factory)().await;
+                for _ in 0..5 {
+                    assert!(provider.acquire_lock("cycling").await.unwrap());
+                    provider.release_lock("cycling").await.unwrap();
+                }
+                assert!(provider.acquire_lock("cycling").await.unwrap());
+                assert!(!provider.acquire_lock("cycling").await.unwrap());
+            }
         }
     };
 }
