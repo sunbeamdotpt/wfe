@@ -561,4 +561,298 @@ mod tests {
         let data = map_trigger_data(&trigger, &payload);
         assert!(data.get("missing").is_none());
     }
+
+    // ─── Handler-level coverage ──────────────────────────────────────
+    //
+    // The block below exercises handle_generic_event / handle_github_webhook /
+    // handle_gitea_webhook directly with an in-memory WorkflowHost to cover
+    // auth branches, signature verification, JSON parse errors, trigger
+    // matching, and the happy path that fires a workflow start.
+
+    use crate::config::{ServerConfig, WebhookConfig};
+    use std::sync::Arc;
+    use wfe::WorkflowHostBuilder;
+    use wfe_core::test_support::{
+        InMemoryLockProvider, InMemoryPersistenceProvider, InMemoryQueueProvider,
+    };
+
+    async fn test_webhook_state() -> WebhookState {
+        let persistence = Arc::new(InMemoryPersistenceProvider::new());
+        let lock = Arc::new(InMemoryLockProvider::new());
+        let queue = Arc::new(InMemoryQueueProvider::new());
+        let host = WorkflowHostBuilder::new()
+            .use_persistence(persistence as Arc<dyn wfe_core::traits::PersistenceProvider>)
+            .use_lock_provider(lock as Arc<dyn wfe_core::traits::DistributedLockProvider>)
+            .use_queue_provider(queue as Arc<dyn wfe_core::traits::QueueProvider>)
+            .build()
+            .unwrap();
+        host.start().await.unwrap();
+
+        WebhookState {
+            host: Arc::new(host),
+            config: ServerConfig::default(),
+        }
+    }
+
+    async fn test_state_with_secret(source: &str, secret: &str) -> WebhookState {
+        let mut state = test_webhook_state().await;
+        state
+            .config
+            .auth
+            .webhook_secrets
+            .insert(source.to_string(), secret.to_string());
+        state
+    }
+
+    #[tokio::test]
+    async fn health_check_always_ok() {
+        let resp = health_check().await.into_response();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn generic_event_no_auth_configured_publishes() {
+        let state = test_webhook_state().await;
+        let payload = GenericEventPayload {
+            event_name: "order.paid".into(),
+            event_key: "42".into(),
+            data: Some(serde_json::json!({"amount": 99})),
+        };
+        let resp = handle_generic_event(State(state), HeaderMap::new(), Json(payload))
+            .await
+            .into_response();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn generic_event_with_static_token_accepts_valid_bearer() {
+        let mut state = test_webhook_state().await;
+        state.config.auth.tokens = vec!["the-token".into()];
+        let mut headers = HeaderMap::new();
+        headers.insert("authorization", "Bearer the-token".parse().unwrap());
+        let payload = GenericEventPayload {
+            event_name: "evt".into(),
+            event_key: "k".into(),
+            data: None,
+        };
+        let resp = handle_generic_event(State(state), headers, Json(payload))
+            .await
+            .into_response();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn generic_event_with_static_token_rejects_bad_bearer() {
+        let mut state = test_webhook_state().await;
+        state.config.auth.tokens = vec!["the-token".into()];
+        let mut headers = HeaderMap::new();
+        headers.insert("authorization", "Bearer wrong".parse().unwrap());
+        let payload = GenericEventPayload {
+            event_name: "evt".into(),
+            event_key: "k".into(),
+            data: None,
+        };
+        let resp = handle_generic_event(State(state), headers, Json(payload))
+            .await
+            .into_response();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn generic_event_with_static_token_rejects_missing_header() {
+        let mut state = test_webhook_state().await;
+        state.config.auth.tokens = vec!["t".into()];
+        let payload = GenericEventPayload {
+            event_name: "evt".into(),
+            event_key: "k".into(),
+            data: None,
+        };
+        let resp = handle_generic_event(State(state), HeaderMap::new(), Json(payload))
+            .await
+            .into_response();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn github_webhook_accepts_unauthenticated_when_no_secret() {
+        let state = test_webhook_state().await;
+        let body = Bytes::from(
+            r#"{"ref":"refs/heads/main","head_commit":{"id":"deadbeef"},"repository":{"full_name":"me/repo"}}"#,
+        );
+        let mut headers = HeaderMap::new();
+        headers.insert("x-github-event", "push".parse().unwrap());
+        let resp = handle_github_webhook(State(state), headers, body)
+            .await
+            .into_response();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn github_webhook_rejects_bad_signature() {
+        let state = test_state_with_secret("github", "supersecret").await;
+        let body = Bytes::from(r#"{"ref":"refs/heads/main"}"#);
+        let mut headers = HeaderMap::new();
+        headers.insert("x-github-event", "push".parse().unwrap());
+        headers.insert("x-hub-signature-256", "sha256=invalid".parse().unwrap());
+        let resp = handle_github_webhook(State(state), headers, body)
+            .await
+            .into_response();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn github_webhook_accepts_valid_signature() {
+        let state = test_state_with_secret("github", "s3cret").await;
+        let body_bytes = r#"{"ref":"refs/heads/main","repository":{"full_name":"me/repo"}}"#;
+        let body = Bytes::from(body_bytes);
+        let mut mac = HmacSha256::new_from_slice(b"s3cret").unwrap();
+        mac.update(body_bytes.as_bytes());
+        let sig = format!("sha256={}", hex::encode(mac.finalize().into_bytes()));
+        let mut headers = HeaderMap::new();
+        headers.insert("x-github-event", "push".parse().unwrap());
+        headers.insert("x-hub-signature-256", sig.parse().unwrap());
+        let resp = handle_github_webhook(State(state), headers, body)
+            .await
+            .into_response();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn github_webhook_returns_400_on_bad_json() {
+        let state = test_webhook_state().await;
+        let body = Bytes::from("not { valid } json");
+        let mut headers = HeaderMap::new();
+        headers.insert("x-github-event", "push".parse().unwrap());
+        let resp = handle_github_webhook(State(state), headers, body)
+            .await
+            .into_response();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn github_webhook_fires_matching_trigger() {
+        // Define a workflow that the webhook can start, then wire a trigger
+        // that matches the incoming push. Confirm a workflow instance was
+        // created on the host.
+        let mut state = test_webhook_state().await;
+
+        // Register the workflow definition so start_workflow can find it.
+        // The step has no registered factory, which is fine — the workflow
+        // reaches runnable state and the background executor would fail on
+        // first run, but handle_github_webhook only cares that
+        // `host.start_workflow` succeeds in creating the instance.
+        let mut def = wfe_core::models::WorkflowDefinition::new("ci", 1);
+        let mut s0 = wfe_core::models::WorkflowStep::new(0, "noop");
+        s0.outcomes.push(wfe_core::models::StepOutcome {
+            next_step: 0,
+            label: None,
+            value: None,
+        });
+        def.steps.push(s0);
+        state.host.register_workflow_definition(def).await;
+
+        state.config.webhook = WebhookConfig {
+            triggers: vec![WebhookTrigger {
+                source: "github".into(),
+                event: "push".into(),
+                match_ref: Some("refs/heads/main".into()),
+                workflow_id: "ci".into(),
+                version: 1,
+                data_mapping: [("repo".into(), "$.repository.full_name".into())].into(),
+            }],
+        };
+
+        let body = Bytes::from(r#"{"ref":"refs/heads/main","repository":{"full_name":"me/repo"}}"#);
+        let mut headers = HeaderMap::new();
+        headers.insert("x-github-event", "push".parse().unwrap());
+
+        let host = state.host.clone();
+        let resp = handle_github_webhook(State(state), headers, body)
+            .await
+            .into_response();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // At least one `ci` instance should now exist. The webhook
+        // handler logs the started id, so we just confirm the side
+        // effect via get_workflow by name fallback.
+        let ci1 = host.get_workflow("ci-1").await;
+        assert!(ci1.is_ok(), "expected ci-1 to exist after webhook trigger");
+    }
+
+    #[tokio::test]
+    async fn github_webhook_trigger_skips_non_matching_ref() {
+        let mut state = test_webhook_state().await;
+        state.config.webhook = WebhookConfig {
+            triggers: vec![WebhookTrigger {
+                source: "github".into(),
+                event: "push".into(),
+                match_ref: Some("refs/heads/release".into()),
+                workflow_id: "ci".into(),
+                version: 1,
+                data_mapping: Default::default(),
+            }],
+        };
+
+        let body = Bytes::from(r#"{"ref":"refs/heads/main","repository":{"full_name":"me/repo"}}"#);
+        let mut headers = HeaderMap::new();
+        headers.insert("x-github-event", "push".parse().unwrap());
+
+        let host = state.host.clone();
+        let resp = handle_github_webhook(State(state), headers, body)
+            .await
+            .into_response();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // No workflow should have been started — trigger.match_ref didn't match.
+        let none = host.get_workflow("ci-1").await;
+        assert!(none.is_err());
+    }
+
+    #[tokio::test]
+    async fn gitea_webhook_accepts_raw_hex_signature() {
+        let state = test_state_with_secret("gitea", "gitkey").await;
+        let body_bytes = r#"{"ref":"refs/heads/main","repository":{"full_name":"me/repo"}}"#;
+        let body = Bytes::from(body_bytes);
+        let mut mac = HmacSha256::new_from_slice(b"gitkey").unwrap();
+        mac.update(body_bytes.as_bytes());
+        let sig = hex::encode(mac.finalize().into_bytes());
+
+        let mut headers = HeaderMap::new();
+        headers.insert("x-gitea-event", "push".parse().unwrap());
+        headers.insert("x-gitea-signature", sig.parse().unwrap());
+        let resp = handle_gitea_webhook(State(state), headers, body)
+            .await
+            .into_response();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn gitea_webhook_rejects_bad_signature() {
+        let state = test_state_with_secret("gitea", "gitkey").await;
+        let mut headers = HeaderMap::new();
+        headers.insert("x-gitea-event", "push".parse().unwrap());
+        headers.insert("x-gitea-signature", "totallybogus".parse().unwrap());
+        let resp = handle_gitea_webhook(State(state), headers, Bytes::from(r#"{}"#))
+            .await
+            .into_response();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn gitea_webhook_returns_400_on_bad_json() {
+        let state = test_webhook_state().await;
+        let mut headers = HeaderMap::new();
+        headers.insert("x-gitea-event", "push".parse().unwrap());
+        let resp = handle_gitea_webhook(State(state), headers, Bytes::from("not-json"))
+            .await
+            .into_response();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    // Sanity: the WebhookConfig must exist in ServerConfig for these tests
+    // to compile.
+    #[allow(dead_code)]
+    fn _assert_webhook_config_type() -> WebhookConfig {
+        WebhookConfig::default()
+    }
 }

@@ -100,6 +100,13 @@ impl LogSearchIndex {
 
         if !response.status_code().is_success() {
             let text = response.text().await.unwrap_or_default();
+            // Race: another caller created the index between our
+            // `exists` probe and the `create` call. OpenSearch returns
+            // a 400 with `resource_already_exists_exception`; treat that
+            // as a successful no-op rather than failing the call.
+            if text.contains("resource_already_exists_exception") {
+                return Ok(());
+            }
             return Err(wfe_core::WfeError::Persistence(format!(
                 "Failed to create log index: {text}"
             )));
@@ -306,15 +313,19 @@ mod tests {
     fn opensearch_url() -> Option<String> {
         let url =
             std::env::var("WFE_SEARCH_URL").unwrap_or_else(|_| "http://localhost:9200".to_string());
-        // Quick TCP probe to check if OpenSearch is reachable.
-        let addr = url
+        // Quick TCP probe to check if OpenSearch is reachable. Use
+        // `to_socket_addrs` so hostnames resolve — the previous
+        // implementation parsed `"localhost:9200"` as a SocketAddr, which
+        // fails (hostnames aren't valid SocketAddrs), silently skipping
+        // every OpenSearch test even when the daemon was available.
+        use std::net::ToSocketAddrs;
+        let host_port = url
             .strip_prefix("http://")
             .or_else(|| url.strip_prefix("https://"))
             .unwrap_or("localhost:9200");
-        match std::net::TcpStream::connect_timeout(
-            &addr.parse().ok()?,
-            std::time::Duration::from_secs(1),
-        ) {
+        let mut addrs = host_port.to_socket_addrs().ok()?;
+        let addr = addrs.next()?;
+        match std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(1)) {
             Ok(_) => Some(url),
             Err(_) => None,
         }

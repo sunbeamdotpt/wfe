@@ -56,8 +56,11 @@ _templates:
     BUILDKIT_CLIENT_KEY: ${WFE_BUILDKIT_CLIENT_KEY}
 
   # Default config for short CI steps (4Gi memory, 30min timeout).
+  # `shell: /bin/bash` because the step scripts use `set -o pipefail`,
+  # arrays, and other bashisms the default `/bin/sh` (dash) doesn't support.
   ci_config: &ci_config
     image: src.sunbeam.pt/studio/wfe-ci:latest
+    shell: /bin/bash
     memory: 4Gi
     cpu: "2"
     timeout: 30m
@@ -66,6 +69,7 @@ _templates:
   # Default config for long-running CI steps (8Gi memory, 60min timeout).
   ci_long_config: &ci_long_config
     image: src.sunbeam.pt/studio/wfe-ci:latest
+    shell: /bin/bash
     memory: 8Gi
     cpu: "4"
     timeout: 60m
@@ -724,6 +728,14 @@ workflows:
   - id: ci
     name: Continuous Integration
     version: 1
+    # Shared persistent volume: every step in this ci run — including every
+    # sub-workflow kicked off via `type: workflow` — mounts the same PVC at
+    # /workspace. The `clone` step in checkout puts the repo there and the
+    # lint/test/cover/image/release sub-workflows all see it. Size is tuned
+    # to fit a full `target/` build + sccache copy with headroom.
+    shared_volume:
+      mount_path: /workspace
+      size: 30Gi
     inputs:
       repo_url: string
       commit_sha: string
