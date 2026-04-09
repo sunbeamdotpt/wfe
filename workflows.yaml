@@ -60,6 +60,7 @@ _templates:
   # arrays, and other bashisms the default `/bin/sh` (dash) doesn't support.
   ci_config: &ci_config
     image: src.sunbeam.pt/studio/wfe-ci:latest
+    pull_policy: Always
     shell: /bin/bash
     memory: 4Gi
     cpu: "2"
@@ -69,6 +70,7 @@ _templates:
   # Default config for long-running CI steps (8Gi memory, 60min timeout).
   ci_long_config: &ci_long_config
     image: src.sunbeam.pt/studio/wfe-ci:latest
+    pull_policy: Always
     shell: /bin/bash
     memory: 8Gi
     cpu: "4"
