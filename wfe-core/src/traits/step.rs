@@ -2,7 +2,9 @@ use async_trait::async_trait;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use crate::models::{ExecutionPointer, ExecutionResult, WorkflowInstance, WorkflowStep};
+use crate::models::{
+    ExecutionPointer, ExecutionResult, WorkflowDefinition, WorkflowInstance, WorkflowStep,
+};
 
 /// Marker trait for all data types that flow between workflow steps.
 /// Anything that is serializable and deserializable qualifies.
@@ -13,12 +15,19 @@ impl<T> WorkflowData for T where T: Serialize + DeserializeOwned + Send + Sync +
 
 /// Context for steps that need to interact with the workflow host.
 /// Implemented by WorkflowHost to allow steps like SubWorkflow to start child workflows.
+///
+/// The `parent_root_workflow_id` argument carries the UUID of the top-level
+/// ancestor workflow so backends (notably Kubernetes) can place every
+/// descendant of a given root run in the same isolation domain — namespace,
+/// shared volume, RBAC — so sub-workflows can share state like a cloned
+/// repo checkout. Pass `None` when starting a brand-new root workflow.
 pub trait HostContext: Send + Sync {
     fn start_workflow(
         &self,
         definition_id: &str,
         version: u32,
         data: serde_json::Value,
+        parent_root_workflow_id: Option<String>,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = crate::Result<String>> + Send + '_>>;
 }
 
@@ -34,6 +43,12 @@ pub struct StepExecutionContext<'a> {
     pub step: &'a WorkflowStep,
     /// The running workflow instance.
     pub workflow: &'a WorkflowInstance,
+    /// The compiled workflow definition the instance was created from.
+    /// `None` on code paths that don't have it available (some test fixtures);
+    /// production execution always populates this so executor-specific
+    /// features (e.g. Kubernetes shared volumes) can inspect the
+    /// definition-level configuration.
+    pub definition: Option<&'a WorkflowDefinition>,
     /// Cancellation token.
     pub cancellation_token: tokio_util::sync::CancellationToken,
     /// Host context for starting child workflows. None if not available.
@@ -51,6 +66,7 @@ impl<'a> std::fmt::Debug for StepExecutionContext<'a> {
             .field("persistence_data", &self.persistence_data)
             .field("step", &self.step)
             .field("workflow", &self.workflow)
+            .field("definition", &self.definition.is_some())
             .field("host_context", &self.host_context.is_some())
             .field("log_sink", &self.log_sink.is_some())
             .finish()

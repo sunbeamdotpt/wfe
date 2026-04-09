@@ -1092,6 +1092,7 @@ workflows:
             _def: &str,
             _ver: u32,
             _data: serde_json::Value,
+            _parent_root_workflow_id: Option<String>,
         ) -> Pin<Box<dyn Future<Output = wfe_core::Result<String>> + Send + '_>> {
             *self.called.lock().unwrap() = true;
             Box::pin(async { Ok("child-instance-id".to_string()) })
@@ -1105,6 +1106,7 @@ workflows:
     let wf_step = WfStep::new(0, &factory_key);
     let workflow = WorkflowInstance::new("parent", 1, serde_json::json!({}));
     let ctx = StepExecutionContext {
+        definition: None,
         item: None,
         execution_pointer: &pointer,
         persistence_data: None,

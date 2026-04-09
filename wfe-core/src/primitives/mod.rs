@@ -38,6 +38,7 @@ mod test_helpers {
         workflow: &'a WorkflowInstance,
     ) -> StepExecutionContext<'a> {
         StepExecutionContext {
+            definition: None,
             item: None,
             execution_pointer: pointer,
             persistence_data: pointer.persistence_data.as_ref(),

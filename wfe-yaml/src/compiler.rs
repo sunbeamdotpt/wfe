@@ -47,6 +47,13 @@ pub fn compile(spec: &WorkflowSpec) -> Result<CompiledWorkflow, YamlWorkflowErro
     let mut definition = WorkflowDefinition::new(&spec.id, spec.version);
     definition.name = spec.name.clone();
     definition.description = spec.description.clone();
+    definition.shared_volume =
+        spec.shared_volume
+            .as_ref()
+            .map(|v| wfe_core::models::SharedVolume {
+                mount_path: v.mount_path.clone(),
+                size: v.size.clone(),
+            });
 
     if let Some(ref eb) = spec.error_behavior {
         definition.default_error_behavior = map_error_behavior(eb)?;
@@ -883,6 +890,7 @@ fn build_kubernetes_config(
         image,
         command: config.command.clone(),
         run: config.run.clone(),
+        shell: config.shell.clone(),
         env: config.env.clone(),
         working_dir: config.working_dir.clone(),
         memory: config.memory.clone(),

@@ -14,6 +14,18 @@ pub struct WorkflowInstance {
     /// `id` in lookup APIs. Empty when the instance has not yet been
     /// persisted (the host fills it in before the first insert).
     pub name: String,
+    /// UUID of the top-level ancestor workflow. `None` on the root
+    /// (user-started) workflow; set to the parent's `root_workflow_id`
+    /// (or the parent's `id` if the parent is itself a root) on every
+    /// `SubWorkflowStep`-created child.
+    ///
+    /// Used by the Kubernetes executor to place all workflows in a tree
+    /// under a single namespace — siblings started via `type: workflow`
+    /// steps share the parent's namespace and any provisioned shared
+    /// volume. Backends that don't care about workflow topology can
+    /// ignore this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root_workflow_id: Option<String>,
     pub workflow_definition_id: String,
     pub version: u32,
     pub description: Option<String>,
@@ -36,6 +48,10 @@ impl WorkflowInstance {
             id: uuid::Uuid::new_v4().to_string(),
             // Filled in by WorkflowHost::start_workflow before persisting.
             name: String::new(),
+            // None by default — caller (HostContextImpl) sets this when
+            // starting a sub-workflow so children share the parent tree's
+            // namespace/volume.
+            root_workflow_id: None,
             workflow_definition_id: workflow_definition_id.into(),
             version,
             description: None,

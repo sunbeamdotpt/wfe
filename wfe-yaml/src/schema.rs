@@ -108,10 +108,35 @@ pub struct WorkflowSpec {
     /// Infrastructure services required by this workflow (databases, caches, etc.).
     #[serde(default)]
     pub services: HashMap<String, YamlService>,
+    /// Optional persistent volume shared across every step in this workflow
+    /// run, including sub-workflows. Declared once on the top-level
+    /// orchestrator (e.g. `ci`); ignored on non-root workflows. The Kubernetes
+    /// executor provisions a single PVC per top-level run and mounts it on
+    /// every step container at `mount_path` so steps like `git clone` in one
+    /// sub-workflow are visible to `cargo fmt --check` in another.
+    #[serde(default)]
+    pub shared_volume: Option<YamlSharedVolume>,
     /// Allow unknown top-level keys (e.g. `_templates`) for YAML anchors.
     #[serde(flatten)]
     #[schemars(skip)]
     pub _extra: HashMap<String, serde_yaml::Value>,
+}
+
+/// Shared volume declaration, YAML form.
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct YamlSharedVolume {
+    /// Absolute path to mount the volume at inside every step container.
+    /// Defaults to `/workspace` when unset.
+    #[serde(default = "default_shared_volume_mount")]
+    pub mount_path: String,
+    /// Optional size (e.g. `"20Gi"`). When unset the backend falls back
+    /// to its configured default.
+    #[serde(default)]
+    pub size: Option<String>,
+}
+
+fn default_shared_volume_mount() -> String {
+    "/workspace".to_string()
 }
 
 /// A service definition in YAML format.

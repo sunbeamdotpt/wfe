@@ -29,7 +29,7 @@ pub use service::{
     ReadinessCheck, ReadinessProbe, ServiceDefinition, ServiceEndpoint, ServicePort,
 };
 pub use status::{PointerStatus, WorkflowStatus};
-pub use workflow_definition::{StepOutcome, WorkflowDefinition, WorkflowStep};
+pub use workflow_definition::{SharedVolume, StepOutcome, WorkflowDefinition, WorkflowStep};
 pub use workflow_instance::WorkflowInstance;
 
 /// Serde helper for `Option<Duration>` as milliseconds.

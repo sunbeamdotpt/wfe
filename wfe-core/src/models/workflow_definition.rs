@@ -6,6 +6,37 @@ use super::condition::StepCondition;
 use super::error_behavior::ErrorBehavior;
 use super::service::ServiceDefinition;
 
+/// Declaration of a volume that persists across every step in a workflow
+/// run, including sub-workflows started via `type: workflow` steps. Backends
+/// that support it (currently just Kubernetes) provision a single volume
+/// per top-level workflow instance and mount it on every step container at
+/// `mount_path`. Sub-workflows see the same volume because they share the
+/// parent's isolation domain (namespace, in the K8s case).
+///
+/// Declared once on the top-level workflow (e.g. `ci`) that orchestrates
+/// the sub-workflows. Declarations on non-root workflows are ignored in
+/// favor of the root's declaration.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SharedVolume {
+    /// Absolute path the volume is mounted at inside every step container.
+    /// Typical value: `/workspace`.
+    pub mount_path: String,
+    /// Optional size override (e.g. `"20Gi"`). When unset the backend falls
+    /// back to its configured default (ClusterConfig::default_shared_volume_size
+    /// for the Kubernetes executor).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<String>,
+}
+
+impl Default for SharedVolume {
+    fn default() -> Self {
+        Self {
+            mount_path: "/workspace".to_string(),
+            size: None,
+        }
+    }
+}
+
 /// A compiled workflow definition ready for execution.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowDefinition {
@@ -26,6 +57,12 @@ pub struct WorkflowDefinition {
     /// Infrastructure services required by this workflow (databases, caches, etc.).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub services: Vec<ServiceDefinition>,
+    /// When set, the backend provisions a single persistent volume for the
+    /// top-level workflow instance and mounts it on every step container.
+    /// All sub-workflows inherit the same volume through their shared
+    /// namespace/isolation domain. Sub-workflow declarations are ignored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shared_volume: Option<SharedVolume>,
 }
 
 impl WorkflowDefinition {
@@ -39,6 +76,7 @@ impl WorkflowDefinition {
             default_error_behavior: ErrorBehavior::default(),
             default_error_retry_interval: None,
             services: Vec::new(),
+            shared_volume: None,
         }
     }
 

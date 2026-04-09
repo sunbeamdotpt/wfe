@@ -240,6 +240,7 @@ impl WorkflowExecutor {
                 persistence_data: workflow.execution_pointers[idx].persistence_data.as_ref(),
                 step,
                 workflow: &workflow,
+                definition: Some(definition),
                 cancellation_token,
                 host_context,
                 log_sink: self.log_sink.as_deref(),
