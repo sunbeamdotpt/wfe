@@ -737,7 +737,7 @@ workflows:
     # to fit a full `target/` build + sccache copy with headroom.
     shared_volume:
       mount_path: /workspace
-      size: 30Gi
+      size: 15Gi
     inputs:
       repo_url: string
       commit_sha: string
