@@ -58,6 +58,7 @@ impl SqlitePersistenceProvider {
             "CREATE TABLE IF NOT EXISTS workflows (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL UNIQUE,
+                root_workflow_id TEXT,
                 definition_id TEXT NOT NULL,
                 version INTEGER NOT NULL,
                 description TEXT,
@@ -250,6 +251,9 @@ fn row_to_workflow(
     Ok(WorkflowInstance {
         id: row.try_get("id").map_err(to_persistence_err)?,
         name: row.try_get("name").map_err(to_persistence_err)?,
+        root_workflow_id: row
+            .try_get("root_workflow_id")
+            .map_err(to_persistence_err)?,
         workflow_definition_id: row.try_get("definition_id").map_err(to_persistence_err)?,
         version: row
             .try_get::<i64, _>("version")
@@ -429,6 +433,15 @@ impl WorkflowRepository for SqlitePersistenceProvider {
         } else {
             instance.id.clone()
         };
+        // Fall back to the UUID when the caller didn't assign a human name.
+        // Production callers go through `WorkflowHost::start_workflow` which
+        // always fills this in, but test fixtures and external callers
+        // shouldn't trip the UNIQUE constraint.
+        let name = if instance.name.is_empty() {
+            id.clone()
+        } else {
+            instance.name.clone()
+        };
 
         let status_str = serde_json::to_value(instance.status)
             .map_err(|e| WfeError::Persistence(e.to_string()))?
@@ -443,11 +456,12 @@ impl WorkflowRepository for SqlitePersistenceProvider {
         let mut tx = self.pool.begin().await.map_err(to_persistence_err)?;
 
         sqlx::query(
-            "INSERT INTO workflows (id, name, definition_id, version, description, reference, status, data, next_execution, create_time, complete_time)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            "INSERT INTO workflows (id, name, root_workflow_id, definition_id, version, description, reference, status, data, next_execution, create_time, complete_time)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
         )
         .bind(&id)
-        .bind(&instance.name)
+        .bind(&name)
+        .bind(&instance.root_workflow_id)
         .bind(&instance.workflow_definition_id)
         .bind(instance.version as i64)
         .bind(&instance.description)
@@ -482,11 +496,13 @@ impl WorkflowRepository for SqlitePersistenceProvider {
         let mut tx = self.pool.begin().await.map_err(to_persistence_err)?;
 
         sqlx::query(
-            "UPDATE workflows SET name = ?1, definition_id = ?2, version = ?3, description = ?4, reference = ?5,
-             status = ?6, data = ?7, next_execution = ?8, complete_time = ?9
-             WHERE id = ?10",
+            "UPDATE workflows SET name = ?1, root_workflow_id = ?2, definition_id = ?3,
+             version = ?4, description = ?5, reference = ?6, status = ?7, data = ?8,
+             next_execution = ?9, complete_time = ?10
+             WHERE id = ?11",
         )
         .bind(&instance.name)
+        .bind(&instance.root_workflow_id)
         .bind(&instance.workflow_definition_id)
         .bind(instance.version as i64)
         .bind(&instance.description)
@@ -532,11 +548,13 @@ impl WorkflowRepository for SqlitePersistenceProvider {
         let mut tx = self.pool.begin().await.map_err(to_persistence_err)?;
 
         sqlx::query(
-            "UPDATE workflows SET name = ?1, definition_id = ?2, version = ?3, description = ?4, reference = ?5,
-             status = ?6, data = ?7, next_execution = ?8, complete_time = ?9
-             WHERE id = ?10",
+            "UPDATE workflows SET name = ?1, root_workflow_id = ?2, definition_id = ?3,
+             version = ?4, description = ?5, reference = ?6, status = ?7, data = ?8,
+             next_execution = ?9, complete_time = ?10
+             WHERE id = ?11",
         )
         .bind(&instance.name)
+        .bind(&instance.root_workflow_id)
         .bind(&instance.workflow_definition_id)
         .bind(instance.version as i64)
         .bind(&instance.description)

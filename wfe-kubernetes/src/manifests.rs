@@ -2,7 +2,8 @@ use std::collections::{BTreeMap, HashMap};
 
 use k8s_openapi::api::batch::v1::{Job, JobSpec};
 use k8s_openapi::api::core::v1::{
-    Container, EnvVar, LocalObjectReference, PodSpec, PodTemplateSpec, ResourceRequirements,
+    Container, EnvVar, LocalObjectReference, PersistentVolumeClaimVolumeSource, PodSpec,
+    PodTemplateSpec, ResourceRequirements, Volume, VolumeMount,
 };
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use kube::api::ObjectMeta;
@@ -11,6 +12,18 @@ use crate::config::{ClusterConfig, KubernetesStepConfig};
 
 const LABEL_STEP_NAME: &str = "wfe.sunbeam.pt/step-name";
 const LABEL_MANAGED_BY: &str = "wfe.sunbeam.pt/managed-by";
+/// Name of the pod volume referencing the shared PVC. Stable so VolumeMount
+/// name and Volume name stay in sync inside a single pod spec.
+const SHARED_VOLUME_NAME: &str = "wfe-workspace";
+
+/// Request that the generated Job mount a pre-existing PVC into every
+/// step container at `mount_path`. Passed in by the step executor, which
+/// is responsible for creating the PVC before calling `build_job`.
+#[derive(Debug, Clone)]
+pub struct SharedVolumeMount {
+    pub claim_name: String,
+    pub mount_path: String,
+}
 
 /// Build a Kubernetes Job manifest from step configuration.
 pub fn build_job(
@@ -19,6 +32,7 @@ pub fn build_job(
     namespace: &str,
     env_overrides: &HashMap<String, String>,
     cluster: &ClusterConfig,
+    shared_volume: Option<&SharedVolumeMount>,
 ) -> Job {
     let job_name = sanitize_name(step_name);
 
@@ -41,6 +55,14 @@ pub fn build_job(
     labels.insert(LABEL_STEP_NAME.into(), step_name.to_string());
     labels.insert(LABEL_MANAGED_BY.into(), "wfe-kubernetes".into());
 
+    let volume_mounts = shared_volume.map(|sv| {
+        vec![VolumeMount {
+            name: SHARED_VOLUME_NAME.into(),
+            mount_path: sv.mount_path.clone(),
+            ..Default::default()
+        }]
+    });
+
     let container = Container {
         name: "step".into(),
         image: Some(config.image.clone()),
@@ -50,6 +72,7 @@ pub fn build_job(
         working_dir: config.working_dir.clone(),
         resources: Some(resources),
         image_pull_policy: Some(pull_policy),
+        volume_mounts,
         ..Default::default()
     };
 
@@ -77,6 +100,17 @@ pub fn build_job(
         )
     };
 
+    let volumes = shared_volume.map(|sv| {
+        vec![Volume {
+            name: SHARED_VOLUME_NAME.into(),
+            persistent_volume_claim: Some(PersistentVolumeClaimVolumeSource {
+                claim_name: sv.claim_name.clone(),
+                read_only: Some(false),
+            }),
+            ..Default::default()
+        }]
+    });
+
     Job {
         metadata: ObjectMeta {
             name: Some(job_name),
@@ -98,6 +132,7 @@ pub fn build_job(
                     service_account_name: cluster.service_account.clone(),
                     image_pull_secrets,
                     node_selector,
+                    volumes,
                     ..Default::default()
                 }),
             },
@@ -112,13 +147,15 @@ fn resolve_command(config: &KubernetesStepConfig) -> (Option<Vec<String>>, Optio
     if let Some(ref cmd) = config.command {
         (Some(cmd.clone()), None)
     } else if let Some(ref run) = config.run {
-        // Use bash so that scripts can rely on `set -o pipefail`, process
-        // substitution, arrays, and other bashisms that dash (/bin/sh on
-        // debian-family images) does not support.
-        (
-            Some(vec!["/bin/bash".into(), "-c".into()]),
-            Some(vec![run.clone()]),
-        )
+        // Default to /bin/sh so minimal container images (alpine/busybox,
+        // distroless) work unchanged. Scripts that need bash features
+        // (pipefail, arrays, process substitution) should set
+        // `shell: /bin/bash` explicitly on the step config.
+        let shell = config
+            .shell
+            .clone()
+            .unwrap_or_else(|| "/bin/sh".to_string());
+        (Some(vec![shell, "-c".into()]), Some(vec![run.clone()]))
     } else {
         (None, None)
     }
@@ -208,6 +245,7 @@ mod tests {
             image: "alpine:3.18".into(),
             command: None,
             run: None,
+            shell: None,
             env: HashMap::new(),
             working_dir: None,
             memory: None,
@@ -222,6 +260,7 @@ mod tests {
             "wfe-abc",
             &HashMap::new(),
             &default_cluster(),
+            None,
         );
 
         assert_eq!(job.metadata.name, Some("test-step".into()));
@@ -248,6 +287,7 @@ mod tests {
             image: "node:20".into(),
             command: None,
             run: Some("npm test".into()),
+            shell: None,
             env: HashMap::new(),
             working_dir: Some("/app".into()),
             memory: None,
@@ -256,13 +296,17 @@ mod tests {
             pull_policy: None,
             namespace: None,
         };
-        let job = build_job(&config, "test", "ns", &HashMap::new(), &default_cluster());
+        let job = build_job(
+            &config,
+            "test",
+            "ns",
+            &HashMap::new(),
+            &default_cluster(),
+            None,
+        );
         let container = &job.spec.unwrap().template.spec.unwrap().containers[0];
 
-        assert_eq!(
-            container.command,
-            Some(vec!["/bin/bash".into(), "-c".into()])
-        );
+        assert_eq!(container.command, Some(vec!["/bin/sh".into(), "-c".into()]));
         assert_eq!(container.args, Some(vec!["npm test".into()]));
         assert_eq!(container.working_dir, Some("/app".into()));
     }
@@ -273,6 +317,7 @@ mod tests {
             image: "gcc:latest".into(),
             command: Some(vec!["make".into(), "build".into()]),
             run: None,
+            shell: None,
             env: HashMap::new(),
             working_dir: None,
             memory: None,
@@ -281,7 +326,14 @@ mod tests {
             pull_policy: None,
             namespace: None,
         };
-        let job = build_job(&config, "build", "ns", &HashMap::new(), &default_cluster());
+        let job = build_job(
+            &config,
+            "build",
+            "ns",
+            &HashMap::new(),
+            &default_cluster(),
+            None,
+        );
         let container = &job.spec.unwrap().template.spec.unwrap().containers[0];
 
         assert_eq!(container.command, Some(vec!["make".into(), "build".into()]));
@@ -294,6 +346,7 @@ mod tests {
             image: "alpine".into(),
             command: None,
             run: None,
+            shell: None,
             env: [("APP_ENV".into(), "production".into())].into(),
             working_dir: None,
             memory: None,
@@ -308,7 +361,7 @@ mod tests {
         ]
         .into();
 
-        let job = build_job(&config, "step", "ns", &overrides, &default_cluster());
+        let job = build_job(&config, "step", "ns", &overrides, &default_cluster(), None);
         let container = &job.spec.unwrap().template.spec.unwrap().containers[0];
         let env = container.env.as_ref().unwrap();
 
@@ -327,6 +380,7 @@ mod tests {
             image: "alpine".into(),
             command: None,
             run: None,
+            shell: None,
             env: HashMap::new(),
             working_dir: None,
             memory: Some("512Mi".into()),
@@ -335,7 +389,14 @@ mod tests {
             pull_policy: None,
             namespace: None,
         };
-        let job = build_job(&config, "step", "ns", &HashMap::new(), &default_cluster());
+        let job = build_job(
+            &config,
+            "step",
+            "ns",
+            &HashMap::new(),
+            &default_cluster(),
+            None,
+        );
         let container = &job.spec.unwrap().template.spec.unwrap().containers[0];
         let resources = container.resources.as_ref().unwrap();
 
@@ -359,6 +420,7 @@ mod tests {
             image: "alpine".into(),
             command: None,
             run: None,
+            shell: None,
             env: HashMap::new(),
             working_dir: None,
             memory: None,
@@ -367,7 +429,7 @@ mod tests {
             pull_policy: Some("Always".into()),
             namespace: None,
         };
-        let job = build_job(&config, "step", "ns", &HashMap::new(), &cluster);
+        let job = build_job(&config, "step", "ns", &HashMap::new(), &cluster, None);
         let pod_spec = job.spec.unwrap().template.spec.unwrap();
 
         assert_eq!(pod_spec.service_account_name, Some("wfe-runner".into()));
@@ -387,6 +449,7 @@ mod tests {
             image: "alpine".into(),
             command: None,
             run: None,
+            shell: None,
             env: HashMap::new(),
             working_dir: None,
             memory: None,
@@ -401,6 +464,7 @@ mod tests {
             "ns",
             &HashMap::new(),
             &default_cluster(),
+            None,
         );
         let labels = job.metadata.labels.as_ref().unwrap();
         assert_eq!(labels.get(LABEL_STEP_NAME), Some(&"my-step".to_string()));

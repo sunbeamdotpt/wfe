@@ -36,8 +36,10 @@ impl HostContext for HostContextImpl {
         definition_id: &str,
         version: u32,
         data: serde_json::Value,
+        parent_root_workflow_id: Option<String>,
     ) -> Pin<Box<dyn Future<Output = Result<String>> + Send + '_>> {
         let def_id = definition_id.to_string();
+        let parent_root = parent_root_workflow_id;
         Box::pin(async move {
             // Look up the definition.
             let reg = self.registry.read().await;
@@ -53,6 +55,11 @@ impl HostContext for HostContextImpl {
             if !definition.steps.is_empty() {
                 instance.execution_pointers.push(ExecutionPointer::new(0));
             }
+
+            // Inherit the parent's root so every descendant of a given
+            // top-level workflow lands in the same Kubernetes namespace
+            // and can share a provisioned volume.
+            instance.root_workflow_id = parent_root;
 
             // Auto-assign a human-friendly name before persisting so the
             // child shows up as `{definition_id}-{N}` in lookups and logs.

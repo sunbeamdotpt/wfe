@@ -5,6 +5,7 @@ pub mod logs;
 pub mod manifests;
 pub mod namespace;
 pub mod output;
+pub mod pvc;
 pub mod service_manifests;
 pub mod service_provider;
 pub mod step;
