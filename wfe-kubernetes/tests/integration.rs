@@ -791,3 +791,113 @@ echo "##wfe[output file_count=$COUNT]"
     // Explicit cleanup (the guard still runs on panic paths).
     namespace::delete_namespace(&client, &ns).await.ok();
 }
+
+// ── Regression: sub-workflow inherits shared_volume via data ─────────
+//
+// The real CI topology is: ci (root, declares shared_volume) → checkout
+// sub-workflow (no shared_volume on its definition). The K8s executor
+// must pick up the shared_volume from the inherited `_wfe_shared_volume`
+// key in workflow.data, NOT from the sub-workflow's definition.
+//
+// This test was added after a production bug where the PVC was never
+// created because sub-workflow steps checked context.definition.shared_volume
+// which was None on the child definition.
+#[tokio::test]
+async fn sub_workflow_inherits_shared_volume_from_data() {
+    use tokio_util::sync::CancellationToken;
+    use wfe_core::models::{
+        ExecutionPointer, SharedVolume, WorkflowDefinition, WorkflowInstance, WorkflowStep,
+    };
+    use wfe_core::traits::step::{StepBody, StepExecutionContext};
+
+    let cluster = cluster_config();
+    let client = client::create_client(&cluster).await.unwrap();
+    let root_id = unique_id("subwf-pvc");
+
+    // The *child* definition does NOT declare shared_volume — this is
+    // the whole point. Only the root ci workflow declares it, and the
+    // config propagates via `_wfe_shared_volume` in workflow.data.
+    let child_definition = WorkflowDefinition::new("lint", 1);
+
+    // Simulate the data a sub-workflow receives from a root that has
+    // shared_volume. WorkflowHost::start_workflow_with_name injects
+    // `_wfe_shared_volume` into instance.data; SubWorkflowStep copies
+    // the parent's data into the child.
+    let child_data = serde_json::json!({
+        "repo_url": "https://example.com/repo.git",
+        "_wfe_shared_volume": {
+            "mount_path": "/workspace",
+            "size": "1Gi"
+        }
+    });
+
+    let child_instance = WorkflowInstance {
+        id: unique_id("child"),
+        name: "lint-regression-1".into(),
+        // Points at the root ci workflow — K8s executor derives the
+        // namespace from this, placing us in the root's namespace.
+        root_workflow_id: Some(root_id.clone()),
+        workflow_definition_id: "lint".into(),
+        version: 1,
+        description: None,
+        reference: None,
+        execution_pointers: vec![],
+        next_execution: None,
+        status: wfe_core::models::WorkflowStatus::Runnable,
+        data: child_data,
+        create_time: chrono::Utc::now(),
+        complete_time: None,
+    };
+
+    let ns = namespace::namespace_name(&cluster.namespace_prefix, &root_id);
+
+    // Step config — write a file to /workspace and verify it persists.
+    let mut step_cfg = step_config(
+        "alpine:3.18",
+        "echo pvc-ok > /workspace/pvc-test.txt && cat /workspace/pvc-test.txt",
+    );
+    step_cfg.namespace = Some(ns.clone());
+
+    let mut step = wfe_kubernetes::KubernetesStep::new(step_cfg, cluster.clone(), client.clone());
+
+    let mut ws = WorkflowStep::new(0, "pvc-check");
+    ws.name = Some("pvc-check".into());
+    let pointer = ExecutionPointer::new(0);
+
+    let ctx = StepExecutionContext {
+        item: None,
+        execution_pointer: &pointer,
+        persistence_data: None,
+        step: &ws,
+        workflow: &child_instance,
+        // definition has NO shared_volume — the executor must read
+        // _wfe_shared_volume from workflow.data instead.
+        definition: Some(&child_definition),
+        cancellation_token: CancellationToken::new(),
+        host_context: None,
+        log_sink: None,
+    };
+
+    let result = step.run(&ctx).await.unwrap_or_else(|e| {
+        panic!("pvc-check step failed (regression: sub-workflow shared_volume not inherited): {e}");
+    });
+    assert!(result.proceed);
+
+    // Verify the PVC was actually created in the namespace.
+    use k8s_openapi::api::core::v1::PersistentVolumeClaim;
+    let pvcs: kube::Api<PersistentVolumeClaim> = kube::Api::namespaced(client.clone(), &ns);
+    let pvc = pvcs.get("wfe-workspace").await;
+    assert!(
+        pvc.is_ok(),
+        "PVC 'wfe-workspace' should exist in namespace {ns}"
+    );
+
+    let output = result.output_data.unwrap();
+    let stdout = output["pvc-check.stdout"].as_str().unwrap_or("");
+    assert!(
+        stdout.contains("pvc-ok"),
+        "expected pvc-ok in stdout, got: {stdout}"
+    );
+
+    namespace::delete_namespace(&client, &ns).await.ok();
+}

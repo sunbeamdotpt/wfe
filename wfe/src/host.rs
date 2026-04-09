@@ -395,6 +395,20 @@ impl WorkflowHost {
             instance.execution_pointers.push(pointer);
         }
 
+        // If the definition declares a shared volume, stash it in the
+        // instance's data under a reserved key so sub-workflows inherit it
+        // automatically (via the parent-data-inheritance in SubWorkflowStep).
+        // The K8s executor reads it from workflow.data when
+        // context.definition.shared_volume is None.
+        if let Some(sv) = &definition.shared_volume {
+            if let Some(obj) = instance.data.as_object_mut() {
+                obj.insert(
+                    "_wfe_shared_volume".to_string(),
+                    serde_json::to_value(sv).unwrap_or_default(),
+                );
+            }
+        }
+
         // Assign a human-friendly name. Callers may override (e.g. webhook
         // handlers that want `ci-mainline-a1b2c3`); otherwise use the
         // sequenced default. Validation: reject empty overrides so the name
