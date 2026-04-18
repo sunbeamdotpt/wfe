@@ -1,10 +1,10 @@
 [package]
 name = "wfectl"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-repository.workspace = true
-homepage.workspace = true
+version = "1.9.1"
+edition = "2024"
+license = "MIT"
+repository = "https://src.sunbeam.pt/studio/wfe"
+homepage = "https://src.sunbeam.pt/studio/wfe"
 description = "Command-line client for wfe-server"
 
 [[bin]]
