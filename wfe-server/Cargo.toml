@@ -14,9 +14,9 @@ path = "src/main.rs"
 [dependencies]
 # Internal
 wfe-core = { workspace = true, features = ["test-support"] }
-wfe = { version = "1.9.1", path = "../wfe", registry = "sunbeam" }
-wfe-yaml = { version = "1.9.1", path = "../wfe-yaml", registry = "sunbeam", features = ["rustlang", "buildkit", "containerd", "kubernetes", "deno"] }
-wfe-server-protos = { version = "1.9.1", path = "../wfe-server-protos", registry = "sunbeam" }
+wfe = { workspace = true }
+wfe-yaml = { workspace = true, features = ["rustlang", "buildkit", "containerd", "kubernetes", "deno"] }
+wfe-server-protos = { workspace = true }
 wfe-sqlite = { workspace = true }
 wfe-postgres = { workspace = true }
 wfe-valkey = { workspace = true }
