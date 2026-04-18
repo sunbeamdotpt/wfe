@@ -1,8 +1,8 @@
 [package]
 name = "wfe"
-version = "1.9.1"
-edition = "2024"
-license = "MIT"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
 repository = "https://src.sunbeam.pt/studio/wfe"
 homepage = "https://src.sunbeam.pt/studio/wfe"
 description = "WFE workflow engine - umbrella crate"
