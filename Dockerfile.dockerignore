@@ -1,0 +1,33 @@
+# Sent to buildkit when building platform/wfe/Dockerfile from the
+# workspace root. Mirrors platform/proxy/Dockerfile.dockerignore +
+# platform/sol/Dockerfile.dockerignore.
+
+# Build artifacts
+target/
+**/target/
+**/node_modules/
+
+# VCS / editor / OS
+.git/
+.gitignore
+.worktrees/
+.idea/
+.vscode/
+**/.DS_Store
+.omc/
+
+# Docs — not needed for cargo build
+*.md
+**/*.md
+lean4/
+docs/
+
+# Non-Rust top-level trees the workspace never references.
+forks/
+owned-forks/
+research/
+engines/
+infra/
+
+# 3p/ + apps/ + libs/ + platform/ stay fully included — workspace
+# members + [patch.crates-io] rewrites live there.
