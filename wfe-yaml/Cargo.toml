@@ -1,10 +1,10 @@
 [package]
 name = "wfe-yaml"
-version.workspace = true
+version = "1.9.1"
 edition.workspace = true
 license.workspace = true
-repository = "https://src.sunbeam.pt/studio/wfe"
-homepage = "https://src.sunbeam.pt/studio/wfe"
+repository = "https://github.com/sunbeamdotpt/sunbeam"
+homepage = "https://github.com/sunbeamdotpt/sunbeam"
 description = "YAML workflow definitions for WFE"
 
 [features]
@@ -42,7 +42,7 @@ pretty_assertions = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "process"] }
 tokio-util = "0.7"
 wfe-core = { workspace = true, features = ["test-support"] }
-wfe = { path = "../wfe" }
+# wfe = { workspace = true }  # temp removed to break circular dev-dependency for publishing
 wiremock = { workspace = true }
 tempfile = { workspace = true }
 tracing-subscriber = { workspace = true }

@@ -284,7 +284,7 @@ async fn serve_proto_schema() -> impl axum::response::IntoResponse {
             axum::http::header::CONTENT_TYPE,
             "text/plain; charset=utf-8",
         )],
-        include_str!("../../wfe-server-protos/proto/wfe/v1/wfe.proto"),
+        include_str!("../proto/wfe/v1/wfe.proto"),
     )
 }
 

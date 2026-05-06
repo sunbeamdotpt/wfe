@@ -1,0 +1,286 @@
+syntax = "proto3";
+package wfe.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+
+service Wfe {
+  // === Definitions ===
+  rpc RegisterWorkflow(RegisterWorkflowRequest) returns (RegisterWorkflowResponse);
+  rpc ListDefinitions(ListDefinitionsRequest) returns (ListDefinitionsResponse);
+
+  // === Instances ===
+  rpc StartWorkflow(StartWorkflowRequest) returns (StartWorkflowResponse);
+  rpc GetWorkflow(GetWorkflowRequest) returns (GetWorkflowResponse);
+  rpc CancelWorkflow(CancelWorkflowRequest) returns (CancelWorkflowResponse);
+  rpc SuspendWorkflow(SuspendWorkflowRequest) returns (SuspendWorkflowResponse);
+  rpc ResumeWorkflow(ResumeWorkflowRequest) returns (ResumeWorkflowResponse);
+  rpc SearchWorkflows(SearchWorkflowsRequest) returns (SearchWorkflowsResponse);
+
+  // === Events ===
+  rpc PublishEvent(PublishEventRequest) returns (PublishEventResponse);
+
+  // === Streaming ===
+  rpc WatchLifecycle(WatchLifecycleRequest) returns (stream LifecycleEvent);
+  rpc StreamLogs(StreamLogsRequest) returns (stream LogEntry);
+
+  // === Search ===
+  rpc SearchLogs(SearchLogsRequest) returns (SearchLogsResponse);
+}
+
+// ─── Definitions ─────────────────────────────────────────────────────
+
+message RegisterWorkflowRequest {
+  // Raw YAML content. The server compiles it via wfe-yaml.
+  string yaml = 1;
+  // Optional config map for ((variable)) interpolation.
+  map<string, string> config = 2;
+}
+
+message RegisterWorkflowResponse {
+  repeated RegisteredDefinition definitions = 1;
+}
+
+message RegisteredDefinition {
+  string definition_id = 1;
+  uint32 version = 2;
+  uint32 step_count = 3;
+  // Human-friendly display name declared in the YAML (e.g. "Continuous
+  // Integration"). Empty when the definition did not set one.
+  string name = 4;
+}
+
+message ListDefinitionsRequest {}
+
+message ListDefinitionsResponse {
+  repeated DefinitionSummary definitions = 1;
+}
+
+message DefinitionSummary {
+  string id = 1;
+  uint32 version = 2;
+  string description = 3;
+  uint32 step_count = 4;
+  // Human-friendly display name declared in the YAML (e.g. "Continuous
+  // Integration"). Empty when the definition did not set one; clients should
+  // fall back to `id` for presentation.
+  string name = 5;
+}
+
+// ─── Instances ───────────────────────────────────────────────────────
+
+message StartWorkflowRequest {
+  string definition_id = 1;
+  uint32 version = 2;
+  google.protobuf.Struct data = 3;
+  // Optional caller-supplied name for this instance. Must be unique across
+  // all workflow instances. When unset the server auto-assigns
+  // `{definition_id}-{N}` using a per-definition monotonic counter.
+  string name = 4;
+}
+
+message StartWorkflowResponse {
+  string workflow_id = 1;
+  // Human-friendly name that was assigned to the new instance (either the
+  // caller override or the auto-generated `{definition_id}-{N}`).
+  string name = 2;
+}
+
+message GetWorkflowRequest {
+  // Accepts either the UUID `workflow_id` or the human-friendly instance
+  // name (e.g. "ci-42"). The server tries UUID first, then falls back to
+  // name-based lookup.
+  string workflow_id = 1;
+}
+
+message GetWorkflowResponse {
+  WorkflowInstance instance = 1;
+}
+
+message CancelWorkflowRequest {
+  string workflow_id = 1;
+}
+
+message CancelWorkflowResponse {}
+
+message SuspendWorkflowRequest {
+  string workflow_id = 1;
+}
+
+message SuspendWorkflowResponse {}
+
+message ResumeWorkflowRequest {
+  string workflow_id = 1;
+}
+
+message ResumeWorkflowResponse {}
+
+message SearchWorkflowsRequest {
+  string query = 1;
+  WorkflowStatus status_filter = 2;
+  uint64 skip = 3;
+  uint64 take = 4;
+}
+
+message SearchWorkflowsResponse {
+  repeated WorkflowSearchResult results = 1;
+  uint64 total = 2;
+}
+
+// ─── Events ──────────────────────────────────────────────────────────
+
+message PublishEventRequest {
+  string event_name = 1;
+  string event_key = 2;
+  google.protobuf.Struct data = 3;
+}
+
+message PublishEventResponse {
+  string event_id = 1;
+}
+
+// ─── Lifecycle streaming ─────────────────────────────────────────────
+
+message WatchLifecycleRequest {
+  // Empty = all workflows. Set to filter to one.
+  string workflow_id = 1;
+}
+
+message LifecycleEvent {
+  google.protobuf.Timestamp event_time = 1;
+  string workflow_id = 2;
+  string definition_id = 3;
+  uint32 version = 4;
+  LifecycleEventType event_type = 5;
+  // Populated for step events.
+  uint32 step_id = 6;
+  string step_name = 7;
+  // Populated for error events.
+  string error_message = 8;
+}
+
+// ─── Log streaming ──────────────────────────────────────────────────
+
+message StreamLogsRequest {
+  string workflow_id = 1;
+  // Filter to a specific step. Empty = all steps.
+  string step_name = 2;
+  // If true, keep streaming as new logs arrive (tail -f).
+  bool follow = 3;
+}
+
+message LogEntry {
+  string workflow_id = 1;
+  string step_name = 2;
+  uint32 step_id = 3;
+  LogStream stream = 4;
+  bytes data = 5;
+  google.protobuf.Timestamp timestamp = 6;
+}
+
+// ─── Log search ─────────────────────────────────────────────────────
+
+message SearchLogsRequest {
+  // Full-text search query.
+  string query = 1;
+  // Optional filters.
+  string workflow_id = 2;
+  string step_name = 3;
+  LogStream stream_filter = 4;
+  uint64 skip = 5;
+  uint64 take = 6;
+}
+
+message SearchLogsResponse {
+  repeated LogSearchResult results = 1;
+  uint64 total = 2;
+}
+
+message LogSearchResult {
+  string workflow_id = 1;
+  string definition_id = 2;
+  string step_name = 3;
+  string line = 4;
+  LogStream stream = 5;
+  google.protobuf.Timestamp timestamp = 6;
+}
+
+// ─── Shared types ───────────────────────────────────────────────────
+
+message WorkflowInstance {
+  string id = 1;
+  string definition_id = 2;
+  uint32 version = 3;
+  string description = 4;
+  string reference = 5;
+  WorkflowStatus status = 6;
+  google.protobuf.Struct data = 7;
+  google.protobuf.Timestamp create_time = 8;
+  google.protobuf.Timestamp complete_time = 9;
+  repeated ExecutionPointer execution_pointers = 10;
+  // Human-friendly unique name, auto-assigned as `{definition_id}-{N}` at
+  // start time, or the caller-supplied override from StartWorkflowRequest.
+  // Interchangeable with `id` in Get/Cancel/Suspend/Resume/Watch/Logs RPCs.
+  string name = 11;
+}
+
+message ExecutionPointer {
+  string id = 1;
+  uint32 step_id = 2;
+  string step_name = 3;
+  PointerStatus status = 4;
+  google.protobuf.Timestamp start_time = 5;
+  google.protobuf.Timestamp end_time = 6;
+  uint32 retry_count = 7;
+  bool active = 8;
+}
+
+message WorkflowSearchResult {
+  string id = 1;
+  string definition_id = 2;
+  uint32 version = 3;
+  WorkflowStatus status = 4;
+  string reference = 5;
+  string description = 6;
+  google.protobuf.Timestamp create_time = 7;
+  // Human-friendly instance name (e.g. "ci-42").
+  string name = 8;
+}
+
+enum WorkflowStatus {
+  WORKFLOW_STATUS_UNSPECIFIED = 0;
+  WORKFLOW_STATUS_RUNNABLE = 1;
+  WORKFLOW_STATUS_SUSPENDED = 2;
+  WORKFLOW_STATUS_COMPLETE = 3;
+  WORKFLOW_STATUS_TERMINATED = 4;
+}
+
+enum PointerStatus {
+  POINTER_STATUS_UNSPECIFIED = 0;
+  POINTER_STATUS_PENDING = 1;
+  POINTER_STATUS_RUNNING = 2;
+  POINTER_STATUS_COMPLETE = 3;
+  POINTER_STATUS_SLEEPING = 4;
+  POINTER_STATUS_WAITING_FOR_EVENT = 5;
+  POINTER_STATUS_FAILED = 6;
+  POINTER_STATUS_SKIPPED = 7;
+  POINTER_STATUS_CANCELLED = 8;
+}
+
+enum LifecycleEventType {
+  LIFECYCLE_EVENT_TYPE_UNSPECIFIED = 0;
+  LIFECYCLE_EVENT_TYPE_STARTED = 1;
+  LIFECYCLE_EVENT_TYPE_COMPLETED = 2;
+  LIFECYCLE_EVENT_TYPE_TERMINATED = 3;
+  LIFECYCLE_EVENT_TYPE_SUSPENDED = 4;
+  LIFECYCLE_EVENT_TYPE_RESUMED = 5;
+  LIFECYCLE_EVENT_TYPE_ERROR = 6;
+  LIFECYCLE_EVENT_TYPE_STEP_STARTED = 7;
+  LIFECYCLE_EVENT_TYPE_STEP_COMPLETED = 8;
+}
+
+enum LogStream {
+  LOG_STREAM_UNSPECIFIED = 0;
+  LOG_STREAM_STDOUT = 1;
+  LOG_STREAM_STDERR = 2;
+}
