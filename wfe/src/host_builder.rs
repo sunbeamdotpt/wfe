@@ -27,6 +27,7 @@ pub struct WorkflowHostBuilder {
 }
 
 impl WorkflowHostBuilder {
+    /// Create a new builder with all optional fields unset.
     pub fn new() -> Self {
         Self {
             persistence: None,
@@ -39,51 +40,74 @@ impl WorkflowHostBuilder {
         }
     }
 
-    /// Set the persistence provider (required).
+    /// Set the persistence provider (**required**).
+    ///
+    /// Stores workflow definitions, instances, execution pointers, and events.
+    /// See `wfe-sqlite` or `wfe-postgres` for ready-made implementations.
     pub fn use_persistence(mut self, persistence: Arc<dyn PersistenceProvider>) -> Self {
         self.persistence = Some(persistence);
         self
     }
 
-    /// Set the distributed lock provider (required).
+    /// Set the distributed lock provider (**required**).
+    ///
+    /// Ensures only one executor processes a given workflow instance at a time.
+    /// See `wfe-sqlite` (local file locks) or `wfe-valkey` (distributed Redis locks).
     pub fn use_lock_provider(mut self, lock_provider: Arc<dyn DistributedLockProvider>) -> Self {
         self.lock_provider = Some(lock_provider);
         self
     }
 
-    /// Set the queue provider (required).
+    /// Set the queue provider (**required**).
+    ///
+    /// Enqueues workflow and event work items for background consumers.
+    /// See `wfe-sqlite` (in-process queue) or `wfe-valkey` (distributed queue).
     pub fn use_queue_provider(mut self, queue_provider: Arc<dyn QueueProvider>) -> Self {
         self.queue_provider = Some(queue_provider);
         self
     }
 
     /// Set an optional lifecycle publisher.
+    ///
+    /// Receives events whenever a workflow or pointer changes status
+    /// (started, completed, failed, suspended, etc.).
     pub fn use_lifecycle(mut self, lifecycle: Arc<dyn LifecyclePublisher>) -> Self {
         self.lifecycle = Some(lifecycle);
         self
     }
 
     /// Set an optional search index.
+    ///
+    /// Enables full-text search over workflow instances and logs.
+    /// See `wfe-opensearch` for an OpenSearch-backed implementation.
     pub fn use_search(mut self, search: Arc<dyn SearchIndex>) -> Self {
         self.search = Some(search);
         self
     }
 
     /// Set an optional log sink for real-time step output streaming.
+    ///
+    /// Step output written to `context.log_sink` is forwarded to this sink.
     pub fn use_log_sink(mut self, sink: Arc<dyn wfe_core::traits::LogSink>) -> Self {
         self.log_sink = Some(sink);
         self
     }
 
     /// Set an optional service provider for provisioning infrastructure services.
+    ///
+    /// Used by executor steps that need to spin up external services
+    /// (e.g. Kubernetes jobs, containers).
     pub fn use_service_provider(mut self, provider: Arc<dyn ServiceProvider>) -> Self {
         self.service_provider = Some(provider);
         self
     }
 
-    /// Build the `WorkflowHost`.
+    /// Build the [`WorkflowHost`].
     ///
-    /// Returns an error if persistence, lock_provider, or queue_provider have not been set.
+    /// # Errors
+    ///
+    /// Returns an error if any required provider (`persistence`, `lock_provider`,
+    /// `queue_provider`) has not been set.
     pub fn build(self) -> wfe_core::Result<WorkflowHost> {
         let persistence = self.persistence.ok_or_else(|| {
             WfeError::Other(

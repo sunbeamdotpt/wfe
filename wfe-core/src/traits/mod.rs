@@ -1,22 +1,41 @@
-/// Lifecycle.
+//! Core traits that define the WFE plugin architecture.
+//!
+//! Implement these traits to provide persistence, locking, queuing, lifecycle
+//! events, search, logging, and service provisioning.
+//!
+//! | Trait | Purpose | Example Implementations |
+//! |-------|---------|------------------------|
+//! | [`StepBody`](crate::traits::step::StepBody) | Define a workflow step | Your own types |
+//! | [`WorkflowData`](crate::traits::step::WorkflowData) | Data flowing between steps | Any serializable type |
+//! | [`HostContext`](crate::traits::step::HostContext) | Start child workflows from a step | `WorkflowHost` |
+//! | [`PersistenceProvider`](crate::traits::persistence::PersistenceProvider) | Store workflow state | `wfe-sqlite`, `wfe-postgres` |
+//! | [`DistributedLockProvider`](crate::traits::lock::DistributedLockProvider) | Prevent concurrent execution | `wfe-sqlite`, `wfe-valkey` |
+//! | [`QueueProvider`](crate::traits::queue::QueueProvider) | Enqueue/dequeue work | `wfe-sqlite`, `wfe-valkey` |
+//! | [`LifecyclePublisher`](crate::traits::lifecycle::LifecyclePublisher) | Broadcast status changes | `wfe-valkey` |
+//! | [`SearchIndex`](crate::traits::search::SearchIndex) | Full-text search | `wfe-opensearch` |
+//! | [`LogSink`](crate::traits::log_sink::LogSink) | Stream step output | Custom webhook sink |
+//! | [`ServiceProvider`](crate::traits::service::ServiceProvider) | Provision infra | `wfe-kubernetes` |
+//! | [`WorkflowRegistry`](crate::traits::registry::WorkflowRegistry) | Store definitions | `InMemoryWorkflowRegistry` |
+
+/// Broadcast workflow lifecycle events (started, completed, failed, etc.).
 pub mod lifecycle;
-/// Lock.
+/// Distributed locking for workflow instances.
 pub mod lock;
-/// Log sink.
+/// Real-time step output streaming.
 pub mod log_sink;
-/// Middleware.
+/// Step and workflow middleware hooks.
 pub mod middleware;
-/// Persistence.
+/// Persistence for workflow state, events, and subscriptions.
 pub mod persistence;
-/// Queue.
+/// Work queue for workflow and event consumers.
 pub mod queue;
-/// Registry.
+/// Workflow definition registry.
 pub mod registry;
-/// Search.
+/// Full-text search over workflow instances.
 pub mod search;
-/// Service.
+/// Infrastructure service provisioning.
 pub mod service;
-/// Step.
+/// The core step trait and execution context.
 pub mod step;
 
 pub use lifecycle::LifecyclePublisher;

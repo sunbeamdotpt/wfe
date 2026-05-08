@@ -1,32 +1,37 @@
-/// Condition.
+//! Core data models for workflows, execution pointers, events, and results.
+//!
+//! These types are the building blocks of the WFE runtime. Most are serialized
+//! to JSON when persisted or sent over the wire.
+
+/// Step condition evaluation (used by `if_do` and `while_do`).
 pub mod condition;
-/// Error behavior.
+/// Error handling behavior for failed steps.
 pub mod error_behavior;
-/// Event.
+/// External events and subscriptions.
 pub mod event;
-/// Execution error.
+/// Errors that occur during step execution.
 pub mod execution_error;
-/// Execution pointer.
+/// The runtime pointer tracking a step's execution state.
 pub mod execution_pointer;
-/// Execution result.
+/// The result returned by a step, controlling flow and persistence.
 pub mod execution_result;
-/// Lifecycle.
+/// Lifecycle event types (started, completed, failed, etc.).
 pub mod lifecycle;
-/// Poll config.
+/// HTTP polling configuration for `PollEndpointStep`.
 pub mod poll_config;
-/// Queue type.
+/// Work queue classification (workflow vs event queue).
 pub mod queue_type;
-/// Scheduled command.
+/// Commands scheduled for future execution.
 pub mod scheduled_command;
-/// Schema.
+/// JSON Schema support for workflow definitions.
 pub mod schema;
-/// Service.
+/// Service definitions and readiness probes.
 pub mod service;
-/// Status.
+/// Workflow and pointer status enums.
 pub mod status;
-/// Workflow definition.
+/// The static workflow definition (steps, outcomes, metadata).
 pub mod workflow_definition;
-/// Workflow instance.
+/// The mutable runtime instance of a workflow.
 pub mod workflow_instance;
 
 pub use condition::{ComparisonOp, FieldComparison, StepCondition};

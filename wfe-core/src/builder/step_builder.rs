@@ -25,7 +25,9 @@ impl<D: WorkflowData> StepBuilder<D> {
         Self { builder, step_id }
     }
 
-    /// Set the display name of the current step.
+    /// Set the human-readable display name of the current step.
+    ///
+    /// This name appears in logs, the execution trace, and the web UI.
     pub fn name(mut self, name: &str) -> Self {
         self.builder.steps[self.step_id].name = Some(name.to_string());
         self
@@ -38,6 +40,19 @@ impl<D: WorkflowData> StepBuilder<D> {
     }
 
     /// Set the error handling behavior for this step.
+    ///
+    /// When a step returns `Err` from its `run` method,
+    /// the executor checks this behavior to decide what to do next.
+    ///
+    /// # Example
+    /// ```ignore
+    /// .then::< risky::Step>()
+    ///     .name("Risky")
+    ///     .on_error(ErrorBehavior::Retry {
+    ///         interval: Duration::from_secs(5),
+    ///         max_retries: 3,
+    ///     })
+    /// ```
     pub fn on_error(mut self, behavior: ErrorBehavior) -> Self {
         self.builder.steps[self.step_id].error_behavior = Some(behavior);
         self
@@ -51,14 +66,28 @@ impl<D: WorkflowData> StepBuilder<D> {
         self
     }
 
-    /// Add a compensation step for saga rollback.
+    /// Register a compensation step for saga rollback.
+    ///
+    /// When this step fails inside a [`saga`](Self::saga) container, the executor
+    /// runs the compensation steps in reverse order to undo partial work.
+    ///
+    /// # Example
+    /// ```ignore
+    /// .then::<ChargeCard>()
+    ///     .name("Charge")
+    ///     .compensate_with::<RefundCard>()
+    /// ```
     pub fn compensate_with<C: StepBody + Default + 'static>(mut self) -> Self {
         let comp_id = self.builder.add_step(std::any::type_name::<C>());
         self.builder.steps[self.step_id].compensation_step_id = Some(comp_id);
         self
     }
 
-    /// Chain the next step. Wires an outcome from the current step to the new one.
+    /// Chain the next step sequentially.
+    ///
+    /// Wires an outcome from the current step to the new one so that when the
+    /// current step returns [`ExecutionResult::next`](crate::models::ExecutionResult::next),
+    /// execution continues with `S`.
     pub fn then<S: StepBody + Default + 'static>(mut self) -> StepBuilder<D> {
         let next_id = self.builder.add_step(std::any::type_name::<S>());
         self.builder.wire_outcome(self.step_id, next_id, None);
@@ -78,7 +107,19 @@ impl<D: WorkflowData> StepBuilder<D> {
         StepBuilder::new(self.builder, next_id)
     }
 
-    /// Insert a WaitFor step.
+    /// Suspend the workflow until an external event arrives.
+    ///
+    /// The workflow pauses and the executor releases the lock. When you call
+    /// `WorkflowHost::publish_event` (from the `wfe` crate) with
+    /// a matching `event_name` and `event_key`, the workflow resumes from this point.
+    ///
+    /// # Example
+    /// ```ignore
+    /// .then::<RequestApproval>()
+    ///     .name("Request Approval")
+    /// .wait_for("approval", "order-123")
+    ///     .name("Wait for approval")
+    /// ```
     pub fn wait_for(mut self, event_name: &str, event_key: &str) -> StepBuilder<D> {
         let next_id = self
             .builder
@@ -92,7 +133,10 @@ impl<D: WorkflowData> StepBuilder<D> {
         StepBuilder::new(self.builder, next_id)
     }
 
-    /// Insert a Delay step.
+    /// Pause execution for a fixed duration.
+    ///
+    /// The executor persists the workflow, sleeps for the given duration, then
+    /// re-queues the instance for continued execution.
     pub fn delay(mut self, duration: std::time::Duration) -> StepBuilder<D> {
         let next_id = self
             .builder
@@ -105,8 +149,12 @@ impl<D: WorkflowData> StepBuilder<D> {
         StepBuilder::new(self.builder, next_id)
     }
 
-    /// Insert an If container step with child steps built by the closure.
-    /// The type parameter S is the step type used for the If condition evaluation.
+    /// Conditional branching.
+    ///
+    /// The closure builds the child steps that run when the condition evaluates
+    /// to `true`. Use `.then::<ConditionStep>().if_do(|b| { ... })` where
+    /// `ConditionStep` returns [`ExecutionResult::branch("true")`](crate::models::ExecutionResult::branch)
+    /// or `branch("false")` to control which path is taken.
     pub fn if_do<S: StepBody + Default + 'static>(
         mut self,
         build_children: impl FnOnce(&mut WorkflowBuilder<D>),
@@ -130,7 +178,12 @@ impl<D: WorkflowData> StepBuilder<D> {
         StepBuilder::new(self.builder, if_id)
     }
 
-    /// Insert a While container step.
+    /// Loop while a condition holds.
+    ///
+    /// The closure builds the body of the loop. A condition step (type `S`)
+    /// should return [`ExecutionResult::next()`](crate::models::ExecutionResult::next)
+    /// to continue looping or `ExecutionResult::next()` with a condition that evaluates to `false`
+    /// to break out.
     pub fn while_do<S: StepBody + Default + 'static>(
         mut self,
         build_children: impl FnOnce(&mut WorkflowBuilder<D>),
@@ -152,7 +205,12 @@ impl<D: WorkflowData> StepBuilder<D> {
         StepBuilder::new(self.builder, while_id)
     }
 
-    /// Insert a ForEach container step.
+    /// Iterate over a collection.
+    ///
+    /// The step type `S` receives each item via
+    /// [`StepExecutionContext::item`](crate::traits::step::StepExecutionContext::item).
+    /// The collection is taken from the workflow data field configured in the
+    /// step's `step_config`.
     pub fn for_each<S: StepBody + Default + 'static>(
         mut self,
         build_children: impl FnOnce(&mut WorkflowBuilder<D>),
@@ -174,7 +232,20 @@ impl<D: WorkflowData> StepBuilder<D> {
         StepBuilder::new(self.builder, fe_id)
     }
 
-    /// Insert a Saga container step with child steps.
+    /// Transaction-like container with compensation on failure.
+    ///
+    /// Child steps run normally. If any child fails, the executor runs
+    /// compensation steps (registered via [`compensate_with`](Self::compensate_with))
+    /// in reverse order to undo partial work.
+    ///
+    /// # Example
+    /// ```ignore
+    /// .saga(|b| {
+    ///     b.add_step_typed::<ReserveInventory>("reserve", None);
+    ///     b.add_step_typed::<ChargeCard>("charge", None);
+    ///     b.add_step_typed::<ShipOrder>("ship", None);
+    /// })
+    /// ```
     pub fn saga(mut self, build_children: impl FnOnce(&mut WorkflowBuilder<D>)) -> StepBuilder<D> {
         let saga_id = self.builder.add_step(std::any::type_name::<
             primitives::saga_container::SagaContainerStep,
@@ -194,7 +265,10 @@ impl<D: WorkflowData> StepBuilder<D> {
         StepBuilder::new(self.builder, saga_id)
     }
 
-    /// Start a parallel block.
+    /// Run multiple branches concurrently.
+    ///
+    /// All branches inside the [`ParallelBuilder`] execute in parallel. The
+    /// workflow continues to the next step only after **all** branches complete.
     pub fn parallel(
         mut self,
         build_branches: impl FnOnce(ParallelBuilder<D>) -> ParallelBuilder<D>,
@@ -214,12 +288,24 @@ impl<D: WorkflowData> StepBuilder<D> {
         StepBuilder::new(builder, seq_id)
     }
 
-    /// Mark this step as the terminal step (no further outcomes).
+    /// Finish building the current branch and return the [`WorkflowBuilder`].
+    ///
+    /// Call this when you are done chaining steps. You can then call
+    /// [`WorkflowBuilder::build`] to compile the definition.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let def = WorkflowBuilder::<MyData>::new()
+    ///     .start_with::<A>()
+    ///     .then::<B>()
+    ///     .end_workflow()
+    ///     .build("my-workflow", 1);
+    /// ```
     pub fn end_workflow(self) -> WorkflowBuilder<D> {
         self.builder
     }
 
-    /// Access the compiled definition directly (shortcut for end_workflow().build()).
+    /// Shortcut for `end_workflow().build(id, version)`.
     pub fn build(self, id: impl Into<String>, version: u32) -> crate::models::WorkflowDefinition {
         self.builder.build(id, version)
     }

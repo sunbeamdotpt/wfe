@@ -1,9 +1,9 @@
 //! wfe-valkey — Valkey/Redis distributed lock, queue, and lifecycle publisher for WFE.
-/// Lifecycle.
+/// Valkey-backed lifecycle event publisher (pub/sub).
 pub mod lifecycle;
-/// Lock.
+/// Valkey-backed distributed lock provider.
 pub mod lock;
-/// Queue.
+/// Valkey-backed work queue.
 pub mod queue;
 
 pub use lifecycle::ValkeyLifecyclePublisher;

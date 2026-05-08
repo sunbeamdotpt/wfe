@@ -114,7 +114,14 @@ impl WorkflowHost {
         sr.register::<sub_workflow::SubWorkflowStep>();
     }
 
-    /// Spawn background polling tasks for processing workflows and events.
+    /// Spawn background consumer tasks for processing workflows and events.
+    ///
+    /// This registers all built-in primitives, ensures the persistence store exists,
+    /// and starts two background loops:
+    /// - **Workflow consumer** — dequeues workflow instances and runs them through the executor.
+    /// - **Event consumer** — dequeues external events and routes them to waiting workflows.
+    ///
+    /// You must call this before starting any workflow instances.
     pub async fn start(&self) -> Result<()> {
         self.register_primitives().await;
         self.persistence.ensure_store_exists().await?;
@@ -290,6 +297,10 @@ impl WorkflowHost {
     }
 
     /// Signal shutdown of all background tasks.
+    /// Signal all background consumers to shut down gracefully.
+    ///
+    /// The consumers finish their current iteration and exit. In-flight workflow
+    /// execution is not interrupted, but no new work is picked up after this call.
     pub async fn stop(&self) {
         self.shutdown.cancel();
         if let Err(e) = self.queue_provider.stop().await {
@@ -306,6 +317,20 @@ impl WorkflowHost {
     }
 
     /// Register a workflow definition built via a closure that configures a `WorkflowBuilder`.
+    /// Register a workflow definition built with the fluent builder API.
+    ///
+    /// The closure receives a fresh [`WorkflowBuilder`] and must call
+    /// `.end_workflow()` inside the closure. The definition is stored in the
+    /// in-memory registry and can be retrieved by `(id, version)`.
+    ///
+    /// # Example
+    /// ```ignore
+    /// host.register_workflow::<MyData>(
+    ///     &|builder| builder.start_with::<StepA>().then::<StepB>().end_workflow(),
+    ///     "my-workflow",
+    ///     1,
+    /// ).await;
+    /// ```
     pub async fn register_workflow<D: WorkflowData>(
         &self,
         builder_fn: &dyn Fn(WorkflowBuilder<D>) -> WorkflowBuilder<D>,
@@ -321,12 +346,21 @@ impl WorkflowHost {
     }
 
     /// Register a pre-built `WorkflowDefinition` directly.
+    /// Register a pre-built [`WorkflowDefinition`].
+    ///
+    /// Use this when you have already compiled the definition (e.g. from YAML)
+    /// and just need to register it with the host.
     pub async fn register_workflow_definition(&self, definition: WorkflowDefinition) {
         let mut reg = self.registry.write().await;
         reg.register(definition);
     }
 
     /// Register a step type with the step registry.
+    /// Register a step type so the executor can construct it at runtime.
+    ///
+    /// Every concrete type used in the workflow builder (via `start_with`, `then`, etc.)
+    /// must be registered before the workflow is executed. Steps are looked up by
+    /// their fully-qualified type name.
     pub async fn register_step<S: StepBody + Default + 'static>(&self) {
         let mut sr = self.step_registry.write().await;
         sr.register::<S>();
@@ -371,6 +405,9 @@ impl WorkflowHost {
             workflow.name = tracing::field::Empty,
         )
     )]
+    /// Start a new workflow instance with a custom human-readable name.
+    ///
+    /// Otherwise identical to [`start_workflow`](Self::start_workflow).
     pub async fn start_workflow_with_name(
         &self,
         definition_id: &str,
@@ -488,6 +525,10 @@ impl WorkflowHost {
     }
 
     /// Suspend a running workflow.
+    /// Pause a running workflow.
+    ///
+    /// Returns `true` if the workflow was active and is now suspended.
+    /// Suspended workflows do not consume execution slots until resumed.
     pub async fn suspend_workflow(&self, id_or_name: &str) -> Result<bool> {
         let mut instance = self.get_workflow(id_or_name).await?;
         if instance.status != WorkflowStatus::Runnable {
@@ -509,6 +550,9 @@ impl WorkflowHost {
     }
 
     /// Resume a suspended workflow.
+    /// Resume a suspended workflow.
+    ///
+    /// Returns `true` if the workflow was suspended and is now active again.
     pub async fn resume_workflow(&self, id_or_name: &str) -> Result<bool> {
         let mut instance = self.get_workflow(id_or_name).await?;
         if instance.status != WorkflowStatus::Suspended {
@@ -537,6 +581,10 @@ impl WorkflowHost {
     }
 
     /// Terminate a running workflow.
+    /// Forcefully terminate a workflow.
+    ///
+    /// Returns `true` if the workflow was active or suspended and is now terminated.
+    /// Terminated workflows cannot be resumed.
     pub async fn terminate_workflow(&self, id_or_name: &str) -> Result<bool> {
         let mut instance = self.get_workflow(id_or_name).await?;
         if instance.status == WorkflowStatus::Complete
@@ -565,6 +613,7 @@ impl WorkflowHost {
     /// Tries UUID lookup first for the common case. On `WorkflowNotFound`,
     /// falls back to name lookup so callers can address instances
     /// interchangeably (e.g. `ci-42` or the UUID it was assigned).
+    /// Look up a workflow instance by id or human-readable name.
     pub async fn get_workflow(&self, id_or_name: &str) -> Result<WorkflowInstance> {
         match self.persistence.get_workflow_instance(id_or_name).await {
             Ok(w) => Ok(w),
@@ -579,11 +628,13 @@ impl WorkflowHost {
 
     /// Resolve an identifier (UUID or human-friendly name) to the canonical
     /// UUID. Used by mutation APIs that still take `&str id` internally.
+    /// Resolve a human-readable workflow name to its internal UUID.
     pub async fn resolve_workflow_id(&self, id_or_name: &str) -> Result<String> {
         let instance = self.get_workflow(id_or_name).await?;
         Ok(instance.id)
     }
 
+    /// Access the persistence provider.
     /// Access the persistence provider.
     pub fn persistence(&self) -> &Arc<dyn PersistenceProvider> {
         &self.persistence

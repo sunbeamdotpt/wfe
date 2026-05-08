@@ -74,7 +74,39 @@ impl<'a> std::fmt::Debug for StepExecutionContext<'a> {
 }
 
 /// The core unit of work in a workflow. Each step implements this trait.
+///
+/// Steps must be `Send + Sync` because the executor may run them on different
+/// threads. They must also implement `Default` to be usable with the builder API.
+///
+/// # Example
+/// ```ignore
+/// use async_trait::async_trait;
+/// use wfe_core::models::ExecutionResult;
+/// use wfe_core::traits::step::{StepBody, StepExecutionContext};
+///
+/// #[derive(Default)]
+/// struct Greet;
+///
+/// #[async_trait]
+/// impl StepBody for Greet {
+///     async fn run(&mut self, ctx: &StepExecutionContext<'_>) -> wfe_core::Result<ExecutionResult> {
+///         println!("Hello, workflow!");
+///         Ok(ExecutionResult::next())
+///     }
+/// }
+/// ```
 #[async_trait]
 pub trait StepBody: Send + Sync {
+    /// Execute the step.
+    ///
+    /// The [`StepExecutionContext`] provides access to workflow data, the current
+    /// execution pointer, persistence data from previous runs, and a cancellation
+    /// token. Return an [`ExecutionResult`] to control flow:
+    ///
+    /// - [`ExecutionResult::next()`](crate::models::ExecutionResult::next) — continue to the next step
+    /// - [`ExecutionResult::branch(values, data)`](crate::models::ExecutionResult::branch) — follow a named outcome
+    /// - [`ExecutionResult::sleep(duration, data)`](crate::models::ExecutionResult::sleep) — pause execution
+    /// - `Err(WfeError::Execution("msg".into()))` — mark the pointer as failed
+    /// - [`ExecutionResult::persist(data)`](crate::models::ExecutionResult::persist) — persist state and pause
     async fn run(&mut self, context: &StepExecutionContext<'_>) -> crate::Result<ExecutionResult>;
 }

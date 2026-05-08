@@ -1,5 +1,49 @@
 #![warn(missing_docs)]
 //! wfe-yaml — YAML workflow loader, compiler, and shell/Deno executors for WFE.
+//!
+//! This crate lets you define workflows in YAML instead of Rust code. It parses
+//! workflow definitions, validates them, compiles them into a
+//! [`WorkflowDefinition`](wfe_core::models::WorkflowDefinition), and provides
+//! built-in executors for shell scripts and Deno.
+//!
+//! # Quick start
+//! ```ignore
+//! use std::collections::HashMap;
+//!
+//! let config = HashMap::new();
+//! let compiled = wfe_yaml::load_single_workflow_from_str(
+//!     r#"
+//!     workflow:
+//!       id: hello-world
+//!       version: 1
+//!       steps:
+//!         - name: greet
+//!           type: shell
+//!           args:
+//!             command: echo "Hello from YAML!"
+//!     "#,
+//!     &config,
+//! )?;
+//! ```
+//!
+//! # Multi-workflow files
+//! Use the `workflows` key instead of `workflow` to define multiple workflows in
+//! a single file. See [`load_workflow_from_str`] for details.
+//!
+//! # Includes
+//! Use `include:` at the top level to merge workflow specs from other files:
+//! ```yaml
+//! include:
+//!   - common-steps.yaml
+//! workflows:
+//!   - id: my-workflow
+//!     ...
+//! ```
+//!
+//! # Variable interpolation
+//! Strings support `${variable}` substitution from the `config` map passed to
+//! the load functions. This is useful for environment-specific values (e.g.
+//! database URLs, API endpoints).
 /// Compiler.
 pub mod compiler;
 /// Error.

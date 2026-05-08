@@ -47,6 +47,20 @@ impl<D: WorkflowData> WorkflowBuilder<D> {
     }
 
     /// Add the first step of the workflow.
+    ///
+    /// Returns a [`StepBuilder`] so you can configure the step's name, error
+    /// behavior, and compensation before chaining the next step.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let def = WorkflowBuilder::<MyData>::new()
+    ///     .start_with::<FetchData>()
+    ///         .name("Fetch")
+    ///     .then::<Process>()
+    ///         .name("Process")
+    ///     .end_workflow()
+    ///     .build("my-workflow", 1);
+    /// ```
     pub fn start_with<S: StepBody + Default + 'static>(mut self) -> StepBuilder<D> {
         let id = self.steps.len();
         let step = WorkflowStep::new(id, std::any::type_name::<S>());
@@ -100,7 +114,15 @@ impl<D: WorkflowData> WorkflowBuilder<D> {
         }
     }
 
-    /// Compile the builder into a WorkflowDefinition.
+    /// Compile the builder into a [`WorkflowDefinition`].
+    ///
+    /// The `id` and `version` together uniquely identify this workflow blueprint.
+    /// Definitions are registered with a [`WorkflowHost`](crate::traits::HostContext)
+    /// before instances can be started.
+    ///
+    /// **Note:** inline closures added via [`StepBuilder::then_fn`] are discarded
+    /// by this method. Use [`build_with_closures`](Self::build_with_closures) if you
+    /// need to retain them for runtime registration.
     pub fn build(self, id: impl Into<String>, version: u32) -> WorkflowDefinition {
         let mut def = WorkflowDefinition::new(id, version);
         def.steps = self.steps;
@@ -108,8 +130,12 @@ impl<D: WorkflowData> WorkflowBuilder<D> {
         def
     }
 
-    /// Compile the builder into a WorkflowDefinition and return any inline closures
-    /// keyed by step id.
+    /// Compile the builder into a [`WorkflowDefinition`] and return any inline closures.
+    ///
+    /// Inline closures (added with [`StepBuilder::then_fn`]) are keyed by step id
+    /// in the returned `HashMap`. You must register these closures with the
+    /// [`StepRegistry`](crate::executor::StepRegistry) at runtime so the executor
+    /// can invoke them.
     pub fn build_with_closures(
         self,
         id: impl Into<String>,

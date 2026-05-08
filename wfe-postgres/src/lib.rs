@@ -16,7 +16,11 @@ use wfe_core::traits::{
 };
 use wfe_core::{Result, WfeError};
 
-/// Postgrespersistenceprovider.
+/// PostgreSQL-backed persistence provider for the WFE workflow engine.
+///
+/// Stores workflows, execution pointers, events, subscriptions, errors, and
+/// scheduled commands in PostgreSQL tables under the `wfc` schema. The schema
+/// is created automatically on first use.
 pub struct PostgresPersistenceProvider {
     pool: PgPool,
 }

@@ -1,4 +1,27 @@
 #![warn(missing_docs)]
+//! wfe-server — standalone gRPC + HTTP server for the Workflow Engine.
+//!
+//! This binary wires together a [`WorkflowHost`](wfe::WorkflowHost) with
+//! concrete provider implementations (SQLite, Postgres, Valkey, etc.), exposes
+//! it over gRPC, and serves HTTP endpoints for webhooks, health checks, and
+//! schema discovery.
+//!
+//! # Architecture
+//! 1. Parse CLI arguments and load configuration.
+//! 2. Initialize tracing.
+//! 3. Build persistence, lock, and queue providers from config.
+//! 4. Build lifecycle event broadcaster.
+//! 5. Build optional log search index (OpenSearch).
+//! 6. Build log store.
+//! 7. Assemble the [`WorkflowHost`](wfe::WorkflowHost).
+//! 8. Auto-load YAML workflow definitions from disk.
+//! 9. Start the workflow engine.
+//! 10. Start gRPC + HTTP servers with graceful shutdown.
+//!
+//! # Configuration
+//! See `wfe-server --help` for CLI flags. Configuration can also be provided
+//! via a TOML file.
+
 mod auth;
 mod config;
 mod grpc;

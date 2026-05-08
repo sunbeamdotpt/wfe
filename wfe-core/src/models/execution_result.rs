@@ -5,8 +5,11 @@ use serde::{Deserialize, Serialize};
 
 use super::poll_config::PollEndpointConfig;
 
+/// The result returned by a step's [`run`](crate::traits::step::StepBody::run) method.
+///
+/// `ExecutionResult` controls what the executor does next: proceed, branch, sleep,
+/// wait for an event, or persist state for the next execution.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-/// Executionresult.
 pub struct ExecutionResult {
     /// Whether the workflow should proceed to the next step.
     pub proceed: bool,

@@ -1,28 +1,37 @@
-/// Decide.
+//! Built-in control-flow primitives for workflow definitions.
+//!
+//! These steps implement [`StepBody`](crate::traits::step::StepBody) and can be
+//! composed via the builder API to create loops, conditionals, parallel branches,
+//! and more without writing custom code.
+//!
+//! | Primitive | Builder method | Description |
+//! |-----------|---------------|-------------|
+//! | [`DecideStep`](crate::primitives::DecideStep) | — (used by `if_do`) | Return an outcome value for routing |
+//! | [`DelayStep`](crate::primitives::DelayStep) | `StepBuilder::delay` | Sleep for a duration |
+//! | [`EndStep`](crate::primitives::EndStep) | `StepBuilder::end_workflow` | Terminate the workflow |
+//! | [`ForEachStep`](crate::primitives::ForEachStep) | `StepBuilder::for_each` | Iterate over a collection |
+//! | [`IfStep`](crate::primitives::IfStep) | `StepBuilder::if_do` | Conditional branch |
+//! | [`PollEndpointStep`](crate::primitives::PollEndpointStep) | — | Poll an HTTP endpoint until success |
+//! | [`RecurStep`](crate::primitives::RecurStep) | — | Schedule a recurring workflow |
+//! | [`SagaContainerStep`](crate::primitives::SagaContainerStep) | `StepBuilder::saga` | Saga with compensation steps |
+//! | [`ScheduleStep`](crate::primitives::ScheduleStep) | — | Schedule a command for later execution |
+//! | [`SequenceStep`](crate::primitives::SequenceStep) | — | Run a child workflow as a step |
+//! | [`SubWorkflowStep`](crate::primitives::SubWorkflowStep) | `StepBuilder::add_child` | Embed a child workflow |
+//! | [`WaitForStep`](crate::primitives::WaitForStep) | `StepBuilder::wait_for` | Block until an event arrives |
+//! | [`WhileStep`](crate::primitives::WhileStep) | `StepBuilder::while_do` | Loop while a condition holds |
+
 pub mod decide;
-/// Delay.
 pub mod delay;
-/// End step.
 pub mod end_step;
-/// Foreach step.
 pub mod foreach_step;
-/// If step.
 pub mod if_step;
-/// Poll endpoint.
 pub mod poll_endpoint;
-/// Recur.
 pub mod recur;
-/// Saga container.
 pub mod saga_container;
-/// Schedule.
 pub mod schedule;
-/// Sequence.
 pub mod sequence;
-/// Sub workflow.
 pub mod sub_workflow;
-/// Wait for.
 pub mod wait_for;
-/// While step.
 pub mod while_step;
 
 pub use decide::DecideStep;

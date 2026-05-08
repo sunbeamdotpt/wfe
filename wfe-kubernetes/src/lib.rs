@@ -1,25 +1,25 @@
 //! wfe-kubernetes — Kubernetes step executor and service provider for WFE.
-/// Cleanup.
+/// Resource cleanup utilities.
 pub mod cleanup;
-/// Client.
+/// Kubernetes API client wrapper.
 pub mod client;
-/// Config.
+/// Cluster and step configuration types.
 pub mod config;
-/// Logs.
+/// Pod log streaming.
 pub mod logs;
-/// Manifests.
+/// YAML manifest generation.
 pub mod manifests;
-/// Namespace.
+/// Namespace management.
 pub mod namespace;
-/// Output.
+/// Step output handling.
 pub mod output;
-/// Pvc.
+/// Persistent volume claim helpers.
 pub mod pvc;
-/// Service manifests.
+/// Service YAML manifest generation.
 pub mod service_manifests;
-/// Service provider.
+/// [`ServiceProvider`](wfe_core::traits::service::ServiceProvider) implementation.
 pub mod service_provider;
-/// Step.
+/// [`StepBody`](wfe_core::traits::step::StepBody) implementation for Kubernetes jobs.
 pub mod step;
 
 pub use config::{ClusterConfig, KubernetesStepConfig};
