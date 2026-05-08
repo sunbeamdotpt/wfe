@@ -1,9 +1,13 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Queuetype.
 pub enum QueueType {
+    /// Workflow.
     Workflow,
+    /// Event.
     Event,
+    /// Index.
     Index,
 }
 

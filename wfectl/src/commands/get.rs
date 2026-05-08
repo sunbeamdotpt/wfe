@@ -9,12 +9,14 @@ use crate::output::{OutputFormat, fmt_proto_time, render_kv, render_table};
 use crate::struct_util::prost_struct_to_json;
 
 #[derive(Debug, Args)]
+/// Getargs.
 pub struct GetArgs {
     /// Workflow instance identifier — either the UUID (`id`) or the
     /// human-friendly name (e.g. "ci-42"). The server resolves either form.
     pub workflow_id: String,
 }
 
+/// Run.
 pub async fn run(args: GetArgs, mut client: AuthClient, format: OutputFormat) -> Result<()> {
     let resp = client
         .get_workflow(GetWorkflowRequest {

@@ -8,6 +8,7 @@ use crate::client::AuthClient;
 use crate::output::{OutputFormat, fmt_proto_time, render_table};
 
 #[derive(Debug, Args)]
+/// Listargs.
 pub struct ListArgs {
     /// Free-text query.
     #[arg(long)]
@@ -25,10 +26,15 @@ pub struct ListArgs {
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 #[value(rename_all = "lowercase")]
+/// Statusfilter.
 pub enum StatusFilter {
+    /// Runnable.
     Runnable,
+    /// Suspended.
     Suspended,
+    /// Complete.
     Complete,
+    /// Terminated.
     Terminated,
 }
 
@@ -43,6 +49,7 @@ impl From<StatusFilter> for WorkflowStatus {
     }
 }
 
+/// Run.
 pub async fn run(args: ListArgs, mut client: AuthClient, format: OutputFormat) -> Result<()> {
     let status: WorkflowStatus = args
         .status

@@ -6,7 +6,9 @@ use crate::traits::step::{StepBody, StepExecutionContext};
 
 /// A step that iterates over a collection, branching for each element.
 pub struct ForEachStep {
+    /// Collection.
     pub collection: Vec<serde_json::Value>,
+    /// Run parallel.
     pub run_parallel: bool,
 }
 

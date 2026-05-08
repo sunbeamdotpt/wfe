@@ -1,7 +1,12 @@
+/// Builder.
 pub mod builder;
+/// Event.
 pub mod event;
+/// Host.
 pub mod host;
+/// Step.
 pub mod step;
+/// Workflow.
 pub mod workflow;
 
 deno_core::extension!(

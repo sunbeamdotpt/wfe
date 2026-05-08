@@ -6,26 +6,47 @@ use serde::{Deserialize, Serialize};
 use super::status::PointerStatus;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Executionpointer.
 pub struct ExecutionPointer {
+    /// Id.
     pub id: String,
+    /// Step id.
     pub step_id: usize,
+    /// Active.
     pub active: bool,
+    /// Status.
     pub status: PointerStatus,
+    /// Sleep until.
     pub sleep_until: Option<DateTime<Utc>>,
+    /// Persistence data.
     pub persistence_data: Option<serde_json::Value>,
+    /// Start time.
     pub start_time: Option<DateTime<Utc>>,
+    /// End time.
     pub end_time: Option<DateTime<Utc>>,
+    /// Event name.
     pub event_name: Option<String>,
+    /// Event key.
     pub event_key: Option<String>,
+    /// Event published.
     pub event_published: bool,
+    /// Event data.
     pub event_data: Option<serde_json::Value>,
+    /// Step name.
     pub step_name: Option<String>,
+    /// Retry count.
     pub retry_count: u32,
+    /// Children.
     pub children: Vec<String>,
+    /// Context item.
     pub context_item: Option<serde_json::Value>,
+    /// Predecessor id.
     pub predecessor_id: Option<String>,
+    /// Outcome.
     pub outcome: Option<serde_json::Value>,
+    /// Scope.
     pub scope: Vec<String>,
+    /// Extension attributes.
     pub extension_attributes: HashMap<String, serde_json::Value>,
 }
 

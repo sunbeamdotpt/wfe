@@ -10,7 +10,9 @@ use crate::traits::step::{StepBody, StepExecutionContext};
 /// until a stop condition is met.
 #[derive(Default)]
 pub struct RecurStep {
+    /// Interval.
     pub interval: Duration,
+    /// Stop condition.
     pub stop_condition: bool,
 }
 

@@ -16,10 +16,13 @@ pub const DEFAULT_ISSUER: &str = "https://auth.sunbeam.pt/";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default = "default_server")]
+    /// Server.
     pub server: String,
     #[serde(default = "default_issuer")]
+    /// Issuer.
     pub issuer: String,
     #[serde(default)]
+    /// Default format.
     pub default_format: OutputFormatPref,
 }
 
@@ -35,9 +38,12 @@ impl Default for Config {
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+/// Outputformatpref.
 pub enum OutputFormatPref {
     #[default]
+    /// Table.
     Table,
+    /// Json.
     Json,
 }
 

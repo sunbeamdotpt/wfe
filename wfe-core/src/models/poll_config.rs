@@ -4,16 +4,23 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// Httpmethod.
 pub enum HttpMethod {
     #[default]
+    /// Get.
     Get,
+    /// Post.
     Post,
+    /// Put.
     Put,
+    /// Patch.
     Patch,
+    /// Delete.
     Delete,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Pollcondition.
 pub enum PollCondition {
     /// Check a JSON path equals a value: e.g. JsonPathEquals("$.status", "complete")
     JsonPathEquals {
@@ -33,18 +40,25 @@ impl Default for PollCondition {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+/// Pollendpointconfig.
 pub struct PollEndpointConfig {
     /// URL template. Supports `{placeholder}` interpolation from workflow data.
     pub url: String,
+    /// Method.
     pub method: HttpMethod,
     #[serde(default)]
+    /// Headers.
     pub headers: HashMap<String, String>,
     #[serde(default)]
+    /// Body.
     pub body: Option<serde_json::Value>,
     #[serde(with = "super::duration_millis")]
+    /// Interval.
     pub interval: Duration,
     #[serde(with = "super::duration_millis")]
+    /// Timeout.
     pub timeout: Duration,
+    /// Condition.
     pub condition: PollCondition,
 }
 

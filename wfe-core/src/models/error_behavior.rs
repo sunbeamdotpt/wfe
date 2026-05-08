@@ -3,15 +3,20 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Errorbehavior.
 pub enum ErrorBehavior {
+    /// Retry.
     Retry {
         #[serde(with = "duration_millis")]
         interval: Duration,
         #[serde(default = "default_max_retries")]
         max_retries: u32,
     },
+    /// Suspend.
     Suspend,
+    /// Terminate.
     Terminate,
+    /// Compensate.
     Compensate,
 }
 
@@ -33,10 +38,12 @@ mod duration_millis {
 
     use serde::{Deserialize, Deserializer, Serializer};
 
+/// Serialize.
     pub fn serialize<S: Serializer>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_u64(duration.as_millis() as u64)
     }
 
+/// Deserialize.
     pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Duration, D::Error> {
         let millis = u64::deserialize(deserializer)?;
         Ok(Duration::from_millis(millis))

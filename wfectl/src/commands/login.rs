@@ -24,6 +24,7 @@ use crate::auth::{
 use crate::config;
 
 #[derive(Debug, Args)]
+/// Loginargs.
 pub struct LoginArgs {
     /// OIDC issuer URL (e.g., https://auth.sunbeam.pt/).
     #[arg(long)]
@@ -46,6 +47,7 @@ const ERROR_HTML: &str = r#"<!doctype html>
 <p>See the terminal for details.</p>
 </body></html>"#;
 
+/// Run.
 pub async fn run(args: LoginArgs, server_cfg: &config::Config) -> Result<()> {
     let issuer = args.issuer.unwrap_or_else(|| server_cfg.issuer.clone());
     let domain = auth::domain_from_issuer(&issuer)?;

@@ -12,7 +12,9 @@ use crate::state::WfeState;
 /// We don't use StepBuilder (pub(crate)) — instead we work directly with
 /// WorkflowBuilder's public `steps` field, `add_step`, and `wire_outcome`.
 pub struct JsBuilderState {
+    /// Wb.
     pub wb: WorkflowBuilder<serde_json::Value>,
+    /// Current step.
     pub current_step: Option<usize>,
 }
 

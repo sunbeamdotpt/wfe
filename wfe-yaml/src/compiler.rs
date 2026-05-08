@@ -28,8 +28,11 @@ use crate::schema::{
 /// Configuration for a sub-workflow step.
 #[derive(Debug, Clone, Serialize)]
 pub struct SubWorkflowConfig {
+    /// Workflow id.
     pub workflow_id: String,
+    /// Version.
     pub version: u32,
+    /// Output keys.
     pub output_keys: Vec<String>,
 }
 
@@ -38,7 +41,9 @@ pub type StepFactory = Box<dyn Fn() -> Box<dyn StepBody> + Send + Sync>;
 
 /// A compiled workflow ready to be registered with the WFE host.
 pub struct CompiledWorkflow {
+    /// Definition.
     pub definition: WorkflowDefinition,
+    /// Step factories.
     pub step_factories: Vec<(String, StepFactory)>,
 }
 

@@ -31,14 +31,23 @@ pub struct FieldComparison {
 /// Comparison operators for field conditions.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ComparisonOp {
+    /// Equals.
     Equals,
+    /// Notequals.
     NotEquals,
+    /// Gt.
     Gt,
+    /// Gte.
     Gte,
+    /// Lt.
     Lt,
+    /// Lte.
     Lte,
+    /// Contains.
     Contains,
+    /// Isnull.
     IsNull,
+    /// Isnotnull.
     IsNotNull,
 }
 

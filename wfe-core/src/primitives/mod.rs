@@ -1,15 +1,28 @@
+/// Decide.
 pub mod decide;
+/// Delay.
 pub mod delay;
+/// End step.
 pub mod end_step;
+/// Foreach step.
 pub mod foreach_step;
+/// If step.
 pub mod if_step;
+/// Poll endpoint.
 pub mod poll_endpoint;
+/// Recur.
 pub mod recur;
+/// Saga container.
 pub mod saga_container;
+/// Schedule.
 pub mod schedule;
+/// Sequence.
 pub mod sequence;
+/// Sub workflow.
 pub mod sub_workflow;
+/// Wait for.
 pub mod wait_for;
+/// While step.
 pub mod while_step;
 
 pub use decide::DecideStep;
@@ -32,6 +45,7 @@ mod test_helpers {
     use crate::traits::step::StepExecutionContext;
     use tokio_util::sync::CancellationToken;
 
+/// Make context.
     pub fn make_context<'a>(
         pointer: &'a ExecutionPointer,
         step: &'a WorkflowStep,
@@ -50,10 +64,12 @@ mod test_helpers {
         }
     }
 
+/// Default workflow.
     pub fn default_workflow() -> WorkflowInstance {
         WorkflowInstance::new("test-workflow", 1, serde_json::json!({}))
     }
 
+/// Default step.
     pub fn default_step() -> WorkflowStep {
         WorkflowStep::new(0, "TestStep")
     }

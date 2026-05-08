@@ -1,3 +1,4 @@
+//! wfe-opensearch — OpenSearch index provider for workflow and log search in WFE.
 use async_trait::async_trait;
 use opensearch::http::transport::Transport;
 use opensearch::{IndexParts, OpenSearch, SearchParts};

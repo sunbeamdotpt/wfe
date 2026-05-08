@@ -8,6 +8,7 @@ use wfe_server_protos::wfe::v1::{LogStream, StreamLogsRequest};
 use crate::client::AuthClient;
 
 #[derive(Debug, Args)]
+/// Logsargs.
 pub struct LogsArgs {
     /// Workflow instance identifier — UUID or human-friendly name (e.g. "ci-42").
     pub workflow_id: String,
@@ -19,6 +20,7 @@ pub struct LogsArgs {
     pub follow: bool,
 }
 
+/// Run.
 pub async fn run(args: LogsArgs, mut client: AuthClient) -> Result<()> {
     let mut stream = client
         .stream_logs(StreamLogsRequest {

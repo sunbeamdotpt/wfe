@@ -55,7 +55,9 @@ pub struct TlsConfig {
 /// Credentials for authenticating with a container registry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RegistryAuth {
+    /// Username.
     pub username: String,
+    /// Password.
     pub password: String,
 }
 

@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use uuid::Uuid;
 use wfe_core::traits::DistributedLockProvider;
 
+/// Valkeylockprovider.
 pub struct ValkeyLockProvider {
     conn: redis::aio::MultiplexedConnection,
     prefix: String,

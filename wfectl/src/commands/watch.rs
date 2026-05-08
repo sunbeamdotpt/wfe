@@ -9,11 +9,13 @@ use crate::client::AuthClient;
 use crate::output::fmt_proto_time;
 
 #[derive(Debug, Args)]
+/// Watchargs.
 pub struct WatchArgs {
     /// Optional workflow ID to filter to. Empty = all workflows.
     pub workflow_id: Option<String>,
 }
 
+/// Run.
 pub async fn run(args: WatchArgs, mut client: AuthClient) -> Result<()> {
     let mut stream = client
         .watch_lifecycle(WatchLifecycleRequest {

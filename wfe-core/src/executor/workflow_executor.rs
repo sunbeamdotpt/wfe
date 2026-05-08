@@ -18,11 +18,17 @@ use crate::{Result, WfeError};
 
 /// The core workflow executor. Processes a single workflow instance per `execute()` call.
 pub struct WorkflowExecutor {
+    /// Persistence.
     pub persistence: Arc<dyn PersistenceProvider>,
+    /// Lock provider.
     pub lock_provider: Arc<dyn DistributedLockProvider>,
+    /// Queue provider.
     pub queue_provider: Arc<dyn QueueProvider>,
+    /// Lifecycle.
     pub lifecycle: Option<Arc<dyn LifecyclePublisher>>,
+    /// Search.
     pub search: Option<Arc<dyn SearchIndex>>,
+    /// Log sink.
     pub log_sink: Option<Arc<dyn crate::traits::LogSink>>,
 }
 

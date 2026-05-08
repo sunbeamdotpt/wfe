@@ -26,7 +26,9 @@ pub type InlineClosureBox = Box<dyn Fn() -> ExecutionResult + Send + Sync>;
 ///     .build("my-workflow", 1);
 /// ```
 pub struct WorkflowBuilder<D: WorkflowData> {
+    /// Steps.
     pub steps: Vec<WorkflowStep>,
+    /// Last step.
     pub last_step: Option<usize>,
     /// Inline closures keyed by step id, stored for later registration.
     pub(crate) inline_closures: HashMap<usize, InlineClosureBox>,
@@ -34,6 +36,7 @@ pub struct WorkflowBuilder<D: WorkflowData> {
 }
 
 impl<D: WorkflowData> WorkflowBuilder<D> {
+/// New.
     pub fn new() -> Self {
         Self {
             steps: Vec::new(),

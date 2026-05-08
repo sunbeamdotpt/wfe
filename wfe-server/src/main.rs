@@ -1,3 +1,4 @@
+#![warn(missing_docs)]
 mod auth;
 mod config;
 mod grpc;

@@ -6,6 +6,7 @@ use crate::traits::step::{StepBody, StepExecutionContext};
 /// A decision step that returns an outcome value for routing.
 #[derive(Default)]
 pub struct DecideStep {
+    /// Expression value.
     pub expression_value: serde_json::Value,
 }
 

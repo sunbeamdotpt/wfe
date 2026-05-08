@@ -5,6 +5,7 @@ use tonic::{Request, Response, Status};
 use wfe_server_protos::wfe::v1::wfe_server::Wfe;
 use wfe_server_protos::wfe::v1::*;
 
+/// Wfeservice.
 pub struct WfeService {
     host: Arc<wfe::WorkflowHost>,
     lifecycle_bus: Arc<crate::lifecycle_bus::BroadcastLifecyclePublisher>,

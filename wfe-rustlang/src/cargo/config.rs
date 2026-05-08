@@ -6,17 +6,29 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum CargoCommand {
+    /// Build.
     Build,
+    /// Test.
     Test,
+    /// Check.
     Check,
+    /// Clippy.
     Clippy,
+    /// Fmt.
     Fmt,
+    /// Doc.
     Doc,
+    /// Publish.
     Publish,
+    /// Audit.
     Audit,
+    /// Deny.
     Deny,
+    /// Nextest.
     Nextest,
+    /// Llvmcov.
     LlvmCov,
+    /// Docmdx.
     DocMdx,
 }
 
@@ -76,6 +88,7 @@ impl CargoCommand {
 /// Shared configuration for all cargo step types.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CargoConfig {
+    /// Command.
     pub command: CargoCommand,
     /// Rust toolchain override (e.g. "nightly", "1.78.0").
     #[serde(default)]

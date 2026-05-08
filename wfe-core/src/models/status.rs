@@ -1,26 +1,42 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Workflowstatus.
 pub enum WorkflowStatus {
     #[default]
+    /// Runnable.
     Runnable,
+    /// Suspended.
     Suspended,
+    /// Complete.
     Complete,
+    /// Terminated.
     Terminated,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Pointerstatus.
 pub enum PointerStatus {
     #[default]
+    /// Pending.
     Pending,
+    /// Running.
     Running,
+    /// Complete.
     Complete,
+    /// Skipped.
     Skipped,
+    /// Sleeping.
     Sleeping,
+    /// Waitingforevent.
     WaitingForEvent,
+    /// Failed.
     Failed,
+    /// Compensated.
     Compensated,
+    /// Cancelled.
     Cancelled,
+    /// Pendingpredecessor.
     PendingPredecessor,
 }
 

@@ -54,13 +54,21 @@ pub struct Cli {
 #[derive(Debug, Deserialize, Clone)]
 #[serde(default)]
 pub struct ServerConfig {
+    /// Grpc addr.
     pub grpc_addr: SocketAddr,
+    /// Http addr.
     pub http_addr: SocketAddr,
+    /// Persistence.
     pub persistence: PersistenceConfig,
+    /// Queue.
     pub queue: QueueConfig,
+    /// Search.
     pub search: Option<SearchConfig>,
+    /// Auth.
     pub auth: AuthConfig,
+    /// Webhook.
     pub webhook: WebhookConfig,
+    /// Workflows dir.
     pub workflows_dir: Option<PathBuf>,
 }
 
@@ -81,10 +89,13 @@ impl Default for ServerConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(tag = "backend")]
+/// Persistenceconfig.
 pub enum PersistenceConfig {
     #[serde(rename = "sqlite")]
+    /// Sqlite.
     Sqlite { path: String },
     #[serde(rename = "postgres")]
+    /// Postgres.
     Postgres { url: String },
 }
 
@@ -98,10 +109,13 @@ impl Default for PersistenceConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(tag = "backend")]
+/// Queueconfig.
 pub enum QueueConfig {
     #[serde(rename = "memory")]
+    /// Inmemory.
     InMemory,
     #[serde(rename = "valkey")]
+    /// Valkey.
     Valkey { url: String },
 }
 
@@ -112,11 +126,14 @@ impl Default for QueueConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+/// Searchconfig.
 pub struct SearchConfig {
+    /// Url.
     pub url: String,
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]
+/// Authconfig.
 pub struct AuthConfig {
     /// Static bearer tokens (simple auth, no OIDC needed).
     #[serde(default)]
@@ -134,20 +151,29 @@ pub struct AuthConfig {
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]
+/// Webhookconfig.
 pub struct WebhookConfig {
     #[serde(default)]
+    /// Triggers.
     pub triggers: Vec<WebhookTrigger>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
+/// Webhooktrigger.
 pub struct WebhookTrigger {
+    /// Source.
     pub source: String,
+    /// Event.
     pub event: String,
     #[serde(default)]
+    /// Match ref.
     pub match_ref: Option<String>,
+    /// Workflow id.
     pub workflow_id: String,
+    /// Version.
     pub version: u32,
     #[serde(default)]
+    /// Data mapping.
     pub data_mapping: HashMap<String, String>,
 }
 

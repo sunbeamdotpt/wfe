@@ -5,13 +5,21 @@ use serde::{Deserialize, Serialize};
 /// Describes a single type in the workflow schema type system.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum SchemaType {
+    /// String.
     String,
+    /// Number.
     Number,
+    /// Integer.
     Integer,
+    /// Bool.
     Bool,
+    /// Optional.
     Optional(Box<SchemaType>),
+    /// List.
     List(Box<SchemaType>),
+    /// Map.
     Map(Box<SchemaType>),
+    /// Any.
     Any,
 }
 
@@ -19,8 +27,10 @@ pub enum SchemaType {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct WorkflowSchema {
     #[serde(default)]
+    /// Inputs.
     pub inputs: HashMap<String, SchemaType>,
     #[serde(default)]
+    /// Outputs.
     pub outputs: HashMap<String, SchemaType>,
 }
 

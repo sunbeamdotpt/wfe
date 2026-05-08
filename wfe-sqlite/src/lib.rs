@@ -1,3 +1,4 @@
+//! wfe-sqlite — SQLite persistence provider for the WFE workflow engine.
 use std::collections::HashMap;
 
 use async_trait::async_trait;

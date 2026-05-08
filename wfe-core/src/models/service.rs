@@ -35,8 +35,10 @@ pub struct ServiceDefinition {
 /// A port exposed by a service.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ServicePort {
+    /// Container port.
     pub container_port: u16,
     #[serde(default)]
+    /// Name.
     pub name: Option<String>,
     /// Protocol: "TCP" (default) or "UDP".
     #[serde(default = "default_protocol")]
@@ -60,6 +62,7 @@ fn default_protocol() -> String {
 /// How to determine if a service is ready.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReadinessProbe {
+    /// Check.
     pub check: ReadinessCheck,
     /// Poll interval in milliseconds.
     #[serde(default = "default_5000")]
@@ -87,8 +90,11 @@ pub enum ReadinessCheck {
 /// Runtime endpoint info for a provisioned service.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ServiceEndpoint {
+    /// Name.
     pub name: String,
+    /// Host.
     pub host: String,
+    /// Ports.
     pub ports: Vec<ServicePort>,
 }
 

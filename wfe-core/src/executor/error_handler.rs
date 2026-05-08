@@ -6,6 +6,7 @@ use crate::models::{
 
 /// Outcome of handling a step error.
 pub struct ErrorHandlerResult {
+    /// New pointers.
     pub new_pointers: Vec<ExecutionPointer>,
     /// If set, the workflow status should be changed to this value.
     pub workflow_status: Option<WorkflowStatus>,

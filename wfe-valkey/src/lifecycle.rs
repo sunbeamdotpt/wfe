@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use wfe_core::models::LifecycleEvent;
 use wfe_core::traits::LifecyclePublisher;
 
+/// Valkeylifecyclepublisher.
 pub struct ValkeyLifecyclePublisher {
     conn: redis::aio::MultiplexedConnection,
     prefix: String,

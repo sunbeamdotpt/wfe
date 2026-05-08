@@ -21,7 +21,9 @@ const SHARED_VOLUME_NAME: &str = "wfe-workspace";
 /// is responsible for creating the PVC before calling `build_job`.
 #[derive(Debug, Clone)]
 pub struct SharedVolumeMount {
+    /// Claim name.
     pub claim_name: String,
+    /// Mount path.
     pub mount_path: String,
 }
 

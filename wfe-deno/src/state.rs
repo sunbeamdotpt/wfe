@@ -9,12 +9,19 @@ use crate::ops::builder::JsBuilderState;
 
 /// Central state shared between all ops via `OpState`.
 pub struct WfeState {
+    /// Host.
     pub host: Option<Arc<WorkflowHost>>,
+    /// Step request tx.
     pub step_request_tx: mpsc::Sender<StepRequest>,
+    /// Step request rx.
     pub step_request_rx: Option<mpsc::Receiver<StepRequest>>,
+    /// Builders.
     pub builders: HashMap<u32, JsBuilderState>,
+    /// Next builder id.
     pub next_builder_id: u32,
+    /// Inflight.
     pub inflight: HashMap<u32, oneshot::Sender<Result<serde_json::Value, String>>>,
+    /// Next request id.
     pub next_request_id: u32,
 }
 

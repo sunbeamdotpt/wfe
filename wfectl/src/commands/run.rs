@@ -11,6 +11,7 @@ use crate::output::OutputFormat;
 use crate::struct_util::json_object_to_struct;
 
 #[derive(Debug, Args)]
+/// Runargs.
 pub struct RunArgs {
     /// Workflow definition ID.
     pub definition_id: String,
@@ -30,6 +31,7 @@ pub struct RunArgs {
     pub name: Option<String>,
 }
 
+/// Run.
 pub async fn run(args: RunArgs, mut client: AuthClient, format: OutputFormat) -> Result<()> {
     let data_json = match (args.data_json.as_ref(), args.data.as_ref()) {
         (Some(json), _) => json.clone(),

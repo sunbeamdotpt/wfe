@@ -7,6 +7,7 @@ use crate::traits::step::{StepBody, StepExecutionContext};
 /// A container step for saga transactions.
 /// Manages child step execution and compensation on failure.
 pub struct SagaContainerStep {
+    /// Revert children after compensation.
     pub revert_children_after_compensation: bool,
 }
 

@@ -4,13 +4,21 @@
 /// so wfe-yaml can parse type strings without depending on wfe-core's schema module.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SchemaType {
+    /// String.
     String,
+    /// Number.
     Number,
+    /// Integer.
     Integer,
+    /// Bool.
     Bool,
+    /// Any.
     Any,
+    /// Optional.
     Optional(Box<SchemaType>),
+    /// List.
     List(Box<SchemaType>),
+    /// Map.
     Map(Box<SchemaType>),
 }
 

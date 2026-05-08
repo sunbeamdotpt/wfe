@@ -12,22 +12,30 @@ use crate::executors::deno::permissions::PermissionChecker;
 /// Options for the fetch call (method, headers, body).
 #[derive(Deserialize, Default)]
 pub struct FetchOptions {
+    /// Method.
     pub method: Option<String>,
+    /// Headers.
     pub headers: Option<HashMap<String, String>>,
+    /// Body.
     pub body: Option<String>,
 }
 
 /// Response returned to JavaScript from fetch.
 #[derive(Serialize)]
 pub struct FetchResponse {
+    /// Status.
     pub status: u16,
+    /// Ok.
     pub ok: bool,
+    /// Headers.
     pub headers: HashMap<String, String>,
+    /// Body.
     pub body: String,
 }
 
 #[op2]
 #[serde]
+/// Op fetch.
 pub async fn op_fetch(
     state: Rc<RefCell<OpState>>,
     #[string] url: String,

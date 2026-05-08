@@ -5,6 +5,7 @@ use wfe_core::traits::step::{StepBody, StepExecutionContext};
 
 use crate::rustup::config::{RustupCommand, RustupConfig};
 
+/// Rustupstep.
 pub struct RustupStep {
     config: RustupConfig,
 }

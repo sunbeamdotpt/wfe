@@ -8,6 +8,7 @@ use crate::client::AuthClient;
 use crate::output::{OutputFormat, fmt_proto_time, render_table};
 
 #[derive(Debug, Args)]
+/// Searchlogsargs.
 pub struct SearchLogsArgs {
     /// Full-text search query.
     pub query: String,
@@ -30,8 +31,11 @@ pub struct SearchLogsArgs {
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 #[value(rename_all = "lowercase")]
+/// Streamfilter.
 pub enum StreamFilter {
+    /// Stdout.
     Stdout,
+    /// Stderr.
     Stderr,
 }
 
@@ -44,6 +48,7 @@ impl From<StreamFilter> for LogStream {
     }
 }
 
+/// Run.
 pub async fn run(args: SearchLogsArgs, mut client: AuthClient, format: OutputFormat) -> Result<()> {
     let stream_filter: LogStream = args
         .stream

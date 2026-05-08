@@ -1,14 +1,20 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Commandname.
 pub enum CommandName {
+    /// Processworkflow.
     ProcessWorkflow,
+    /// Processevent.
     ProcessEvent,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Scheduledcommand.
 pub struct ScheduledCommand {
+    /// Command name.
     pub command_name: CommandName,
+    /// Data.
     pub data: String,
     /// Epoch milliseconds when the command should execute.
     pub execute_time: i64,

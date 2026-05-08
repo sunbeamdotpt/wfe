@@ -1,9 +1,18 @@
+#![warn(missing_docs)]
+//! wfe-yaml — YAML workflow loader, compiler, and shell/Deno executors for WFE.
+/// Compiler.
 pub mod compiler;
+/// Error.
 pub mod error;
+/// Executors.
 pub mod executors;
+/// Interpolation.
 pub mod interpolation;
+/// Schema.
 pub mod schema;
+/// Types.
 pub mod types;
+/// Validation.
 pub mod validation;
 
 use std::collections::{HashMap, HashSet};
@@ -19,8 +28,10 @@ use crate::error::YamlWorkflowError;
 #[derive(Deserialize)]
 pub struct YamlWorkflowFileWithIncludes {
     #[serde(default)]
+    /// Include.
     pub include: Vec<String>,
     #[serde(flatten)]
+    /// File.
     pub file: schema::YamlWorkflowFile,
 }
 

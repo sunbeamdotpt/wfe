@@ -2,29 +2,45 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Lifecycleevent.
 pub struct LifecycleEvent {
+    /// Event time utc.
     pub event_time_utc: DateTime<Utc>,
+    /// Workflow instance id.
     pub workflow_instance_id: String,
+    /// Workflow definition id.
     pub workflow_definition_id: String,
+    /// Version.
     pub version: u32,
+    /// Reference.
     pub reference: Option<String>,
+    /// Event type.
     pub event_type: LifecycleEventType,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Lifecycleeventtype.
 pub enum LifecycleEventType {
+    /// Started.
     Started,
+    /// Resumed.
     Resumed,
+    /// Suspended.
     Suspended,
+    /// Completed.
     Completed,
+    /// Terminated.
     Terminated,
+    /// Error.
     Error {
         message: String,
     },
+    /// Stepstarted.
     StepStarted {
         step_id: usize,
         step_name: Option<String>,
     },
+    /// Stepcompleted.
     StepCompleted {
         step_id: usize,
         step_name: Option<String>,

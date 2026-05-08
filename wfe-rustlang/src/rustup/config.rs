@@ -28,6 +28,7 @@ impl RustupCommand {
 /// Configuration for rustup step types.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RustupConfig {
+    /// Command.
     pub command: RustupCommand,
     /// Toolchain to install or scope components/targets to (e.g. "nightly", "1.78.0").
     #[serde(default)]

@@ -1,12 +1,22 @@
+/// Lifecycle.
 pub mod lifecycle;
+/// Lock.
 pub mod lock;
+/// Log sink.
 pub mod log_sink;
+/// Middleware.
 pub mod middleware;
+/// Persistence.
 pub mod persistence;
+/// Queue.
 pub mod queue;
+/// Registry.
 pub mod registry;
+/// Search.
 pub mod search;
+/// Service.
 pub mod service;
+/// Step.
 pub mod step;
 
 pub use lifecycle::LifecyclePublisher;

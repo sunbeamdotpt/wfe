@@ -1,5 +1,9 @@
+//! wfe-deno — Deno/V8 bindings for executing JavaScript/TypeScript workflow steps.
+/// Bridge.
 pub mod bridge;
+/// Ops.
 pub mod ops;
+/// State.
 pub mod state;
 
 use deno_core::{JsRuntime, RuntimeOptions};

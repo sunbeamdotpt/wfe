@@ -7,6 +7,7 @@ use crate::traits::step::{StepBody, StepExecutionContext};
 /// A looping step that repeats its children while a condition is true.
 #[derive(Default)]
 pub struct WhileStep {
+    /// Condition.
     pub condition: bool,
 }
 

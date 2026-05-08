@@ -8,6 +8,7 @@ use crate::traits::step::{StepBody, StepExecutionContext};
 /// The actual HTTP polling is handled by the executor, not this step.
 #[derive(Default)]
 pub struct PollEndpointStep {
+    /// Config.
     pub config: PollEndpointConfig,
 }
 

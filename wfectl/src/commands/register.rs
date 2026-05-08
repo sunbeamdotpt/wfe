@@ -11,6 +11,7 @@ use crate::client::AuthClient;
 use crate::output::{OutputFormat, render_table};
 
 #[derive(Debug, Args)]
+/// Registerargs.
 pub struct RegisterArgs {
     /// Path to a workflow YAML file.
     pub file: PathBuf,
@@ -25,6 +26,7 @@ fn parse_kv(raw: &str) -> Result<(String, String), String> {
         .ok_or_else(|| format!("expected key=value, got: {raw}"))
 }
 
+/// Run.
 pub async fn run(args: RegisterArgs, mut client: AuthClient, format: OutputFormat) -> Result<()> {
     let yaml = std::fs::read_to_string(&args.file)
         .with_context(|| format!("failed to read {}", args.file.display()))?;

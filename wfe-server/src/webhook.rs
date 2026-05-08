@@ -15,7 +15,9 @@ type HmacSha256 = Hmac<Sha256>;
 /// Shared state for webhook handlers.
 #[derive(Clone)]
 pub struct WebhookState {
+    /// Host.
     pub host: Arc<wfe::WorkflowHost>,
+    /// Config.
     pub config: ServerConfig,
 }
 
@@ -263,9 +265,13 @@ pub async fn health_check() -> impl IntoResponse {
 // ── Types ───────────────────────────────────────────────────────────
 
 #[derive(serde::Deserialize)]
+/// Genericeventpayload.
 pub struct GenericEventPayload {
+    /// Event name.
     pub event_name: String,
+    /// Event key.
     pub event_key: String,
+    /// Data.
     pub data: Option<serde_json::Value>,
 }
 

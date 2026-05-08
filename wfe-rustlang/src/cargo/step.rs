@@ -5,6 +5,7 @@ use wfe_core::traits::step::{StepBody, StepExecutionContext};
 
 use crate::cargo::config::{CargoCommand, CargoConfig};
 
+/// Cargostep.
 pub struct CargoStep {
     config: CargoConfig,
 }

@@ -7,12 +7,14 @@ use crate::auth;
 use crate::config;
 
 #[derive(Debug, Args)]
+/// Logoutargs.
 pub struct LogoutArgs {
     /// OIDC issuer to log out from (defaults to configured issuer).
     #[arg(long)]
     pub issuer: Option<String>,
 }
 
+/// Run.
 pub async fn run(args: LogoutArgs, server_cfg: &config::Config) -> Result<()> {
     let issuer = args.issuer.unwrap_or_else(|| server_cfg.issuer.clone());
     let domain = auth::domain_from_issuer(&issuer)?;

@@ -1,7 +1,12 @@
+/// Fixtures.
 pub mod fixtures;
+/// In memory lifecycle.
 pub mod in_memory_lifecycle;
+/// In memory lock.
 pub mod in_memory_lock;
+/// In memory persistence.
 pub mod in_memory_persistence;
+/// In memory queue.
 pub mod in_memory_queue;
 
 // Test suite macros (exported via #[macro_export] at crate level)

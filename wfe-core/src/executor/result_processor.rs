@@ -6,7 +6,9 @@ use crate::models::{
 
 /// Outcome of processing an ExecutionResult: new pointers, subscriptions, and output data.
 pub struct ProcessResult {
+    /// New pointers.
     pub new_pointers: Vec<ExecutionPointer>,
+    /// Subscriptions.
     pub subscriptions: Vec<EventSubscription>,
     /// Output data to merge into workflow.data (from step's output_data field).
     pub output_data: Option<serde_json::Value>,

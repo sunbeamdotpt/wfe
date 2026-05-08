@@ -2,12 +2,19 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Event.
 pub struct Event {
+    /// Id.
     pub id: String,
+    /// Event name.
     pub event_name: String,
+    /// Event key.
     pub event_key: String,
+    /// Event data.
     pub event_data: serde_json::Value,
+    /// Event time.
     pub event_time: DateTime<Utc>,
+    /// Is processed.
     pub is_processed: bool,
 }
 
@@ -29,17 +36,29 @@ impl Event {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Eventsubscription.
 pub struct EventSubscription {
+    /// Id.
     pub id: String,
+    /// Workflow id.
     pub workflow_id: String,
+    /// Step id.
     pub step_id: usize,
+    /// Execution pointer id.
     pub execution_pointer_id: String,
+    /// Event name.
     pub event_name: String,
+    /// Event key.
     pub event_key: String,
+    /// Subscribe as of.
     pub subscribe_as_of: DateTime<Utc>,
+    /// Subscription data.
     pub subscription_data: Option<serde_json::Value>,
+    /// External token.
     pub external_token: Option<String>,
+    /// External worker id.
     pub external_worker_id: Option<String>,
+    /// External token expiry.
     pub external_token_expiry: Option<DateTime<Utc>>,
 }
 

@@ -39,11 +39,17 @@ impl LogDocument {
 /// Result from a log search query.
 #[derive(Debug, Clone)]
 pub struct LogSearchHit {
+    /// Workflow id.
     pub workflow_id: String,
+    /// Definition id.
     pub definition_id: String,
+    /// Step name.
     pub step_name: String,
+    /// Line.
     pub line: String,
+    /// Stream.
     pub stream: String,
+    /// Timestamp.
     pub timestamp: DateTime<Utc>,
 }
 

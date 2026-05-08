@@ -8,12 +8,14 @@ use crate::config;
 use crate::output::{OutputFormat, render_kv};
 
 #[derive(Debug, Args)]
+/// Whoamiargs.
 pub struct WhoamiArgs {
     /// OIDC issuer to inspect (defaults to configured issuer).
     #[arg(long)]
     pub issuer: Option<String>,
 }
 
+/// Run.
 pub async fn run(
     args: WhoamiArgs,
     server_cfg: &config::Config,

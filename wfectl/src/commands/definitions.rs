@@ -8,17 +8,21 @@ use crate::client::AuthClient;
 use crate::output::{OutputFormat, render_table};
 
 #[derive(Debug, Args)]
+/// Definitionsargs.
 pub struct DefinitionsArgs {
     #[command(subcommand)]
+    /// Cmd.
     pub cmd: DefinitionsCmd,
 }
 
 #[derive(Debug, Subcommand)]
+/// Definitionscmd.
 pub enum DefinitionsCmd {
     /// List all registered workflow definitions.
     List,
 }
 
+/// Run.
 pub async fn run(
     args: DefinitionsArgs,
     mut client: AuthClient,

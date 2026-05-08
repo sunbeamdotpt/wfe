@@ -7,6 +7,7 @@ use crate::traits::step::{StepBody, StepExecutionContext};
 
 /// A step that sleeps for a specified duration before proceeding.
 pub struct DelayStep {
+    /// Duration.
     pub duration: Duration,
 }
 

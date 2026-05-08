@@ -5,6 +5,7 @@ use super::execution_pointer::ExecutionPointer;
 use super::status::{PointerStatus, WorkflowStatus};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Workflowinstance.
 pub struct WorkflowInstance {
     /// UUID — the primary key, always unique, never changes.
     pub id: String,
@@ -26,15 +27,25 @@ pub struct WorkflowInstance {
     /// ignore this field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub root_workflow_id: Option<String>,
+    /// Workflow definition id.
     pub workflow_definition_id: String,
+    /// Version.
     pub version: u32,
+    /// Description.
     pub description: Option<String>,
+    /// Reference.
     pub reference: Option<String>,
+    /// Execution pointers.
     pub execution_pointers: Vec<ExecutionPointer>,
+    /// Next execution.
     pub next_execution: Option<i64>,
+    /// Status.
     pub status: WorkflowStatus,
+    /// Data.
     pub data: serde_json::Value,
+    /// Create time.
     pub create_time: DateTime<Utc>,
+    /// Complete time.
     pub complete_time: Option<DateTime<Utc>>,
 }
 

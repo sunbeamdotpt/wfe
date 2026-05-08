@@ -7,6 +7,7 @@ use crate::traits::step::{StepBody, StepExecutionContext};
 /// A conditional step that branches execution based on a boolean condition.
 #[derive(Default)]
 pub struct IfStep {
+    /// Condition.
     pub condition: bool,
 }
 

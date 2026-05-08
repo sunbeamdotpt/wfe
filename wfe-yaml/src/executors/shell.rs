@@ -7,14 +7,21 @@ use wfe_core::models::ExecutionResult;
 use wfe_core::traits::step::{StepBody, StepExecutionContext};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Shellconfig.
 pub struct ShellConfig {
+    /// Run.
     pub run: String,
+    /// Shell.
     pub shell: String,
+    /// Env.
     pub env: HashMap<String, String>,
+    /// Working dir.
     pub working_dir: Option<String>,
+    /// Timeout ms.
     pub timeout_ms: Option<u64>,
 }
 
+/// Shellstep.
 pub struct ShellStep {
     config: ShellConfig,
 }

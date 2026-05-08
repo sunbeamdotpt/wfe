@@ -46,7 +46,9 @@
 //! of this up.
 
 pub mod config;
+/// Service provider.
 pub mod service_provider;
+/// Step.
 pub mod step;
 
 pub use config::{ContainerdConfig, RegistryAuth, TlsConfig, VolumeMountConfig};

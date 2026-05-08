@@ -48,11 +48,16 @@ pub struct WorkflowDefinition {
     /// logs (e.g. "Continuous Integration"). Falls back to `id` when unset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Version.
     pub version: u32,
+    /// Description.
     pub description: Option<String>,
+    /// Steps.
     pub steps: Vec<WorkflowStep>,
+    /// Default error behavior.
     pub default_error_behavior: ErrorBehavior,
     #[serde(default, with = "super::option_duration_millis")]
+    /// Default error retry interval.
     pub default_error_retry_interval: Option<Duration>,
     /// Infrastructure services required by this workflow (databases, caches, etc.).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -89,16 +94,26 @@ impl WorkflowDefinition {
 /// A single step in a workflow definition.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowStep {
+    /// Id.
     pub id: usize,
+    /// Name.
     pub name: Option<String>,
+    /// External id.
     pub external_id: Option<String>,
+    /// Step type.
     pub step_type: String,
+    /// Children.
     pub children: Vec<usize>,
+    /// Outcomes.
     pub outcomes: Vec<StepOutcome>,
+    /// Error behavior.
     pub error_behavior: Option<ErrorBehavior>,
+    /// Compensation step id.
     pub compensation_step_id: Option<usize>,
+    /// Do compensate.
     pub do_compensate: bool,
     #[serde(default)]
+    /// Saga.
     pub saga: bool,
     /// Serializable configuration for primitive steps (e.g. event_name, duration).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -130,8 +145,11 @@ impl WorkflowStep {
 /// Routing outcome from a step.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StepOutcome {
+    /// Next step.
     pub next_step: usize,
+    /// Label.
     pub label: Option<String>,
+    /// Value.
     pub value: Option<serde_json::Value>,
 }
 

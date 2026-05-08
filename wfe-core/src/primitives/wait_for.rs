@@ -7,7 +7,9 @@ use crate::traits::step::{StepBody, StepExecutionContext};
 /// A step that waits for an external event before proceeding.
 #[derive(Default)]
 pub struct WaitForStep {
+    /// Event name.
     pub event_name: String,
+    /// Event key.
     pub event_key: String,
 }
 

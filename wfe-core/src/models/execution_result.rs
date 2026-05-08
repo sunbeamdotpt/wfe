@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use super::poll_config::PollEndpointConfig;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+/// Executionresult.
 pub struct ExecutionResult {
     /// Whether the workflow should proceed to the next step.
     pub proceed: bool,

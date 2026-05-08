@@ -21,45 +21,60 @@ pub enum YamlCondition {
 #[derive(Debug, Deserialize, Serialize, Clone, JsonSchema)]
 pub struct YamlCombinator {
     #[serde(default)]
+    /// All.
     pub all: Option<Vec<YamlCondition>>,
     #[serde(default)]
+    /// Any.
     pub any: Option<Vec<YamlCondition>>,
     #[serde(default)]
+    /// None.
     pub none: Option<Vec<YamlCondition>>,
     #[serde(default)]
+    /// One of.
     pub one_of: Option<Vec<YamlCondition>>,
     #[serde(default)]
+    /// Not.
     pub not: Option<Box<YamlCondition>>,
 }
 
 /// A leaf comparison condition that compares a field value.
 #[derive(Debug, Deserialize, Serialize, Clone, JsonSchema)]
 pub struct YamlComparison {
+    /// Field.
     pub field: String,
     #[serde(default)]
     #[schemars(with = "Option<serde_json::Value>")]
+    /// Equals.
     pub equals: Option<serde_yaml::Value>,
     #[serde(default)]
     #[schemars(with = "Option<serde_json::Value>")]
+    /// Not equals.
     pub not_equals: Option<serde_yaml::Value>,
     #[serde(default)]
     #[schemars(with = "Option<serde_json::Value>")]
+    /// Gt.
     pub gt: Option<serde_yaml::Value>,
     #[serde(default)]
     #[schemars(with = "Option<serde_json::Value>")]
+    /// Gte.
     pub gte: Option<serde_yaml::Value>,
     #[serde(default)]
     #[schemars(with = "Option<serde_json::Value>")]
+    /// Lt.
     pub lt: Option<serde_yaml::Value>,
     #[serde(default)]
     #[schemars(with = "Option<serde_json::Value>")]
+    /// Lte.
     pub lte: Option<serde_yaml::Value>,
     #[serde(default)]
     #[schemars(with = "Option<serde_json::Value>")]
+    /// Contains.
     pub contains: Option<serde_yaml::Value>,
     #[serde(default)]
+    /// Is null.
     pub is_null: Option<bool>,
     #[serde(default)]
+    /// Is not null.
     pub is_not_null: Option<bool>,
 }
 
@@ -76,6 +91,7 @@ pub struct YamlWorkflowFile {
 /// with code that deserializes `YamlWorkflow` directly.
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct YamlWorkflow {
+    /// Workflow.
     pub workflow: WorkflowSpec,
 }
 
@@ -405,23 +421,31 @@ pub struct DenoPermissionsYaml {
 /// Data reference for step inputs/outputs.
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct DataRef {
+    /// Name.
     pub name: String,
+    /// Path.
     pub path: Option<String>,
+    /// Json path.
     pub json_path: Option<String>,
 }
 
 /// TLS configuration for BuildKit connections.
 #[derive(Debug, Deserialize, Serialize, Clone, JsonSchema)]
 pub struct TlsConfigYaml {
+    /// Ca.
     pub ca: Option<String>,
+    /// Cert.
     pub cert: Option<String>,
+    /// Key.
     pub key: Option<String>,
 }
 
 /// Registry authentication credentials.
 #[derive(Debug, Deserialize, Serialize, Clone, JsonSchema)]
 pub struct RegistryAuthYaml {
+    /// Username.
     pub username: String,
+    /// Password.
     pub password: String,
 }
 

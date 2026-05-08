@@ -1,3 +1,4 @@
+//! wfe-postgres — PostgreSQL persistence provider for the WFE workflow engine.
 use std::collections::HashMap;
 
 use async_trait::async_trait;
@@ -15,6 +16,7 @@ use wfe_core::traits::{
 };
 use wfe_core::{Result, WfeError};
 
+/// Postgrespersistenceprovider.
 pub struct PostgresPersistenceProvider {
     pool: PgPool,
 }

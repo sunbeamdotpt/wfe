@@ -6,7 +6,9 @@ use super::config::DenoPermissions;
 /// Error returned when a permission check fails.
 #[derive(Debug, Clone)]
 pub struct PermissionError {
+    /// Kind.
     pub kind: &'static str,
+    /// Resource.
     pub resource: String,
 }
 
@@ -28,7 +30,9 @@ pub struct PermissionChecker {
     read_paths: Vec<String>,
     write_paths: Vec<String>,
     env_vars: Vec<String>,
+    /// Allow run.
     pub allow_run: bool,
+    /// Allow dynamic import.
     pub allow_dynamic_import: bool,
 }
 

@@ -4,19 +4,28 @@ use chrono::{DateTime, Utc};
 /// A chunk of log output from a step execution.
 #[derive(Debug, Clone)]
 pub struct LogChunk {
+    /// Workflow id.
     pub workflow_id: String,
+    /// Definition id.
     pub definition_id: String,
+    /// Step id.
     pub step_id: usize,
+    /// Step name.
     pub step_name: String,
+    /// Stream.
     pub stream: LogStreamType,
+    /// Data.
     pub data: Vec<u8>,
+    /// Timestamp.
     pub timestamp: DateTime<Utc>,
 }
 
 /// Whether a log chunk is from stdout or stderr.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LogStreamType {
+    /// Stdout.
     Stdout,
+    /// Stderr.
     Stderr,
 }
 

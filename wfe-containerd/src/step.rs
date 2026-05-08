@@ -33,6 +33,7 @@ const DEFAULT_NAMESPACE: &str = "default";
 /// Default snapshotter for rootless containerd.
 const DEFAULT_SNAPSHOTTER: &str = "overlayfs";
 
+/// Containerdstep.
 pub struct ContainerdStep {
     config: ContainerdConfig,
 }

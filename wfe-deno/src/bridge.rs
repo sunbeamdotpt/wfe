@@ -9,9 +9,13 @@ use wfe_core::traits::step::{StepBody, StepExecutionContext};
 
 /// A request sent from the executor (tokio) to the V8 thread.
 pub struct StepRequest {
+    /// Request id.
     pub request_id: u32,
+    /// Step type.
     pub step_type: String,
+    /// Context.
     pub context: serde_json::Value,
+    /// Response tx.
     pub response_tx: oneshot::Sender<Result<serde_json::Value, String>>,
 }
 
@@ -71,39 +75,61 @@ impl StepBody for JsStepBody {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JsStepContext {
+    /// Item.
     pub item: Option<serde_json::Value>,
+    /// Persistence data.
     pub persistence_data: Option<serde_json::Value>,
+    /// Step.
     pub step: JsStepInfo,
+    /// Workflow.
     pub workflow: JsWorkflowInfo,
+    /// Pointer.
     pub pointer: JsPointerInfo,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+/// Jsstepinfo.
 pub struct JsStepInfo {
+    /// Id.
     pub id: usize,
+    /// Name.
     pub name: Option<String>,
+    /// Step type.
     pub step_type: String,
+    /// Step config.
     pub step_config: Option<serde_json::Value>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+/// Jsworkflowinfo.
 pub struct JsWorkflowInfo {
+    /// Id.
     pub id: String,
+    /// Definition id.
     pub definition_id: String,
+    /// Version.
     pub version: u32,
+    /// Status.
     pub status: String,
+    /// Data.
     pub data: serde_json::Value,
+    /// Create time.
     pub create_time: DateTime<Utc>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+/// Jspointerinfo.
 pub struct JsPointerInfo {
+    /// Id.
     pub id: String,
+    /// Step id.
     pub step_id: usize,
+    /// Step name.
     pub step_name: Option<String>,
+    /// Retry count.
     pub retry_count: u32,
 }
 
@@ -141,13 +167,21 @@ pub fn serialize_context(ctx: &StepExecutionContext<'_>) -> serde_json::Value {
 #[serde(rename_all = "camelCase")]
 pub struct JsExecutionResult {
     #[serde(default = "default_true")]
+    /// Proceed.
     pub proceed: bool,
+    /// Outcome value.
     pub outcome_value: Option<serde_json::Value>,
+    /// Sleep for.
     pub sleep_for: Option<u64>,
+    /// Persistence data.
     pub persistence_data: Option<serde_json::Value>,
+    /// Event name.
     pub event_name: Option<String>,
+    /// Event key.
     pub event_key: Option<String>,
+    /// Branch values.
     pub branch_values: Option<Vec<serde_json::Value>>,
+    /// Output data.
     pub output_data: Option<serde_json::Value>,
 }
 

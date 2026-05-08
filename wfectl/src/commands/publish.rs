@@ -11,6 +11,7 @@ use crate::output::OutputFormat;
 use crate::struct_util::json_object_to_struct;
 
 #[derive(Debug, Args)]
+/// Publishargs.
 pub struct PublishArgs {
     /// Event name (e.g., "order.paid").
     pub event_name: String,
@@ -24,6 +25,7 @@ pub struct PublishArgs {
     pub data_json: Option<String>,
 }
 
+/// Run.
 pub async fn run(args: PublishArgs, mut client: AuthClient, format: OutputFormat) -> Result<()> {
     let data_json = match (args.data_json.as_ref(), args.data.as_ref()) {
         (Some(json), _) => json.clone(),

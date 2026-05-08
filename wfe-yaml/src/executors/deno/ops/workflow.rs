@@ -5,16 +5,19 @@ use deno_core::op2;
 
 /// Workflow data available to the script via `inputs()`.
 pub struct WorkflowInputs {
+    /// Data.
     pub data: serde_json::Value,
 }
 
 /// Accumulates key/value outputs set by the script via `output(key, value)`.
 pub struct StepOutputs {
+    /// Map.
     pub map: HashMap<String, serde_json::Value>,
 }
 
 /// Metadata about the currently executing step.
 pub struct StepMeta {
+    /// Name.
     pub name: String,
 }
 

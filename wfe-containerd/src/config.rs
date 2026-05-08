@@ -3,53 +3,80 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Containerdconfig.
 pub struct ContainerdConfig {
+    /// Image.
     pub image: String,
+    /// Command.
     pub command: Option<Vec<String>>,
+    /// Run.
     pub run: Option<String>,
     #[serde(default)]
+    /// Env.
     pub env: HashMap<String, String>,
     #[serde(default)]
+    /// Volumes.
     pub volumes: Vec<VolumeMountConfig>,
+    /// Working dir.
     pub working_dir: Option<String>,
     #[serde(default = "default_user")]
+    /// User.
     pub user: String,
     #[serde(default = "default_network")]
+    /// Network.
     pub network: String,
+    /// Memory.
     pub memory: Option<String>,
+    /// Cpu.
     pub cpu: Option<String>,
     #[serde(default = "default_pull")]
+    /// Pull.
     pub pull: String,
     #[serde(default = "default_containerd_addr")]
+    /// Containerd addr.
     pub containerd_addr: String,
     /// CLI binary name: "nerdctl" (default) or "docker".
     #[serde(default = "default_cli")]
     pub cli: String,
     #[serde(default)]
+    /// Tls.
     pub tls: TlsConfig,
     #[serde(default)]
+    /// Registry auth.
     pub registry_auth: HashMap<String, RegistryAuth>,
+    /// Timeout ms.
     pub timeout_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Volumemountconfig.
 pub struct VolumeMountConfig {
+    /// Source.
     pub source: String,
+    /// Target.
     pub target: String,
     #[serde(default)]
+    /// Readonly.
     pub readonly: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+/// Tlsconfig.
 pub struct TlsConfig {
+    /// Ca.
     pub ca: Option<String>,
+    /// Cert.
     pub cert: Option<String>,
+    /// Key.
     pub key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Registryauth.
 pub struct RegistryAuth {
+    /// Username.
     pub username: String,
+    /// Password.
     pub password: String,
 }
 

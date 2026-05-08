@@ -2,10 +2,15 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Executionerror.
 pub struct ExecutionError {
+    /// Error time.
     pub error_time: DateTime<Utc>,
+    /// Workflow id.
     pub workflow_id: String,
+    /// Execution pointer id.
     pub execution_pointer_id: String,
+    /// Message.
     pub message: String,
 }
 

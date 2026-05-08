@@ -25,13 +25,19 @@ pub const CALLBACK_PORTS: [u16; 5] = [9876, 9877, 9878, 9879, 9880];
 /// Persisted OAuth token state, written to `~/.sunbeam/auth/{domain}.json`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredToken {
+    /// Access token.
     pub access_token: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Refresh token.
     pub refresh_token: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Id token.
     pub id_token: Option<String>,
+    /// Expires at.
     pub expires_at: DateTime<Utc>,
+    /// Issuer.
     pub issuer: String,
+    /// Domain.
     pub domain: String,
 }
 
@@ -58,7 +64,9 @@ impl StoredToken {
 /// PKCE verifier + challenge pair.
 #[derive(Debug, Clone)]
 pub struct Pkce {
+    /// Verifier.
     pub verifier: String,
+    /// Challenge.
     pub challenge: String,
 }
 
@@ -157,7 +165,9 @@ pub fn domain_from_issuer(issuer: &str) -> Result<String> {
 /// OIDC discovery document subset.
 #[derive(Debug, Clone, Deserialize)]
 pub struct DiscoveryDoc {
+    /// Authorization endpoint.
     pub authorization_endpoint: String,
+    /// Token endpoint.
     pub token_endpoint: String,
 }
 

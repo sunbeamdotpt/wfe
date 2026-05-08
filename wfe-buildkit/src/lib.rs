@@ -1,4 +1,7 @@
+//! wfe-buildkit — BuildkitStep for building OCI container images via buildctl.
+/// Config.
 pub mod config;
+/// Step.
 pub mod step;
 
 pub use config::{BuildkitConfig, RegistryAuth, TlsConfig};

@@ -3,6 +3,7 @@ use redis::AsyncCommands;
 use wfe_core::models::QueueType;
 use wfe_core::traits::QueueProvider;
 
+/// Valkeyqueueprovider.
 pub struct ValkeyQueueProvider {
     conn: redis::aio::MultiplexedConnection,
     prefix: String,
