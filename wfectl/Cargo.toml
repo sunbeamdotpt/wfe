@@ -1,6 +1,6 @@
 [package]
 name = "wfectl"
-version = "1.9.1"
+version = "1.9.2"
 edition.workspace = true
 license.workspace = true
 repository = "https://github.com/sunbeamdotpt/sunbeam"
