@@ -15,7 +15,18 @@ impl StepBody for SequenceStep {
         let mut scope = context.execution_pointer.scope.clone();
         scope.push(context.execution_pointer.id.clone());
 
-        if context.workflow.is_branch_complete(&scope) {
+        // If this container has declared children and they haven't been
+        // spawned yet, branch to create execution pointers for all of them.
+        let has_children = !context.step.children.is_empty();
+        let children_spawned = context
+            .workflow
+            .execution_pointers
+            .iter()
+            .any(|p| p.scope == scope);
+
+        if has_children && !children_spawned {
+            Ok(ExecutionResult::branch(vec![json!(null)], None))
+        } else if context.workflow.is_branch_complete(&scope) {
             Ok(ExecutionResult::next())
         } else {
             Ok(ExecutionResult::persist(json!({"children_active": true})))
@@ -78,5 +89,20 @@ mod tests {
         let result = step.run(&ctx).await.unwrap();
         // No children in scope means is_branch_complete returns true (vacuously).
         assert!(result.proceed);
+    }
+
+    #[tokio::test]
+    async fn spawns_children_when_defined() {
+        let mut step = SequenceStep;
+        let pointer = ExecutionPointer::new(0);
+        let mut wf_step = default_step();
+        wf_step.children = vec![1, 2];
+
+        let workflow = default_workflow();
+
+        let ctx = make_context(&pointer, &wf_step, &workflow);
+        let result = step.run(&ctx).await.unwrap();
+        assert!(!result.proceed);
+        assert!(result.branch_values.is_some());
     }
 }

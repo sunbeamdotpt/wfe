@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
-use crate::models::{ExecutionResult, StepOutcome, WorkflowDefinition, WorkflowStep};
+use crate::models::{
+    ErrorBehavior, ExecutionResult, StepOutcome, WorkflowDefinition, WorkflowStep,
+};
 use crate::traits::step::{StepBody, WorkflowData};
 
 use super::inline_step::InlineStep;
@@ -32,18 +34,30 @@ pub struct WorkflowBuilder<D: WorkflowData> {
     pub last_step: Option<usize>,
     /// Inline closures keyed by step id, stored for later registration.
     pub(crate) inline_closures: HashMap<usize, InlineClosureBox>,
+    /// Default error behavior for steps that don't override it.
+    pub(crate) default_error_behavior: Option<ErrorBehavior>,
     _phantom: PhantomData<D>,
 }
 
 impl<D: WorkflowData> WorkflowBuilder<D> {
-/// New.
+    /// New.
     pub fn new() -> Self {
         Self {
             steps: Vec::new(),
             last_step: None,
             inline_closures: HashMap::new(),
+            default_error_behavior: None,
             _phantom: PhantomData,
         }
+    }
+
+    /// Set the default error behavior for all steps in this workflow.
+    ///
+    /// Steps that don't have their own [`on_error`](crate::builder::StepBuilder::on_error)
+    /// configuration will use this behavior when they fail.
+    pub fn default_error_behavior(mut self, behavior: ErrorBehavior) -> Self {
+        self.default_error_behavior = Some(behavior);
+        self
     }
 
     /// Add the first step of the workflow.
@@ -126,6 +140,9 @@ impl<D: WorkflowData> WorkflowBuilder<D> {
     pub fn build(self, id: impl Into<String>, version: u32) -> WorkflowDefinition {
         let mut def = WorkflowDefinition::new(id, version);
         def.steps = self.steps;
+        if let Some(eb) = self.default_error_behavior {
+            def.default_error_behavior = eb;
+        }
         // Note: inline closures are dropped here. Use `build_with_closures` to retain them.
         def
     }
@@ -143,6 +160,9 @@ impl<D: WorkflowData> WorkflowBuilder<D> {
     ) -> (WorkflowDefinition, HashMap<usize, InlineClosureBox>) {
         let mut def = WorkflowDefinition::new(id, version);
         def.steps = self.steps;
+        if let Some(eb) = self.default_error_behavior {
+            def.default_error_behavior = eb;
+        }
         (def, self.inline_closures)
     }
 
@@ -158,6 +178,9 @@ impl<D: WorkflowData> WorkflowBuilder<D> {
     ) -> WorkflowDefinition {
         let mut def = WorkflowDefinition::new(id, version);
         def.steps = self.steps;
+        if let Some(eb) = self.default_error_behavior {
+            def.default_error_behavior = eb;
+        }
         for (step_id, closure) in self.inline_closures {
             let closure = std::sync::Arc::new(closure);
             let key = format!("{}::{step_id}", std::any::type_name::<InlineStep>());
@@ -472,5 +495,26 @@ mod tests {
         assert_eq!(def.steps.len(), 2);
         assert!(def.steps[1].step_type.contains("InlineStep"));
         assert_eq!(def.steps[0].outcomes[0].next_step, 1);
+    }
+
+    #[test]
+    fn default_error_behavior_preserved_in_build() {
+        let def = WorkflowBuilder::<TestData>::new()
+            .default_error_behavior(ErrorBehavior::Terminate)
+            .start_with::<StepA>()
+            .end_workflow()
+            .build("test", 1);
+
+        assert_eq!(def.default_error_behavior, ErrorBehavior::Terminate);
+    }
+
+    #[test]
+    fn default_error_behavior_omitted_uses_default() {
+        let def = WorkflowBuilder::<TestData>::new()
+            .start_with::<StepA>()
+            .end_workflow()
+            .build("test", 1);
+
+        assert_eq!(def.default_error_behavior, ErrorBehavior::default());
     }
 }
