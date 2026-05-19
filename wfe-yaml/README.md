@@ -77,6 +77,7 @@ let compiled = wfe_yaml::load_workflow_from_str(&yaml_str, &config)?;
 | `YamlStep` | Step definition: name, type, config, inputs/outputs, parallel children, error handling hooks (`on_success`, `on_failure`, `ensure`). |
 | `ShellStep` | Executes shell commands via `tokio::process::Command`. Captures stdout/stderr, parses `##wfe[output name=value]` directives. |
 | `DenoStep` | Executes JS/TS in an embedded Deno runtime with configurable permissions. |
+| `GitRepoStep` | Clones a git repository with `gix`, stores the working tree as a tarball in the artifact store. |
 
 ### Shell step features
 
@@ -94,6 +95,32 @@ let compiled = wfe_yaml::load_workflow_from_str(&yaml_str, &config)?;
 - Granular permissions: `net`, `read`, `write`, `env`, `run`, `dynamic_import`
 - `Wfe.getData()` / `Wfe.setOutput()` host bindings
 - V8-level timeout enforcement (catches infinite loops)
+
+### Git-repo step features
+
+- Pure-Rust cloning via `gix` — no `git` CLI dependency
+- Shallow clones via `config.depth`
+- Branch and commit checkout
+- Artifact caching: the cloned working tree is tar-gzipped and stored in the artifact store
+- Artifact override: skip the clone entirely when an input key already holds an artifact ref
+
+#### Artifact override (recommended for CI)
+
+The `git-repo` step supports an `input` field that references a key in workflow data. If that key contains an artifact ref (`{"__wfe_artifact": "sha256:..."}`), the step skips the network clone and extracts the cached artifact directly:
+
+```yaml
+- name: clone
+  type: git-repo
+  config:
+    run: https://github.com/org/repo.git
+    branch: main
+    input: repo_artifact
+    working_dir: /workspace/repo
+```
+
+#### Why normal clones don't cache
+
+The artifact store is content-addressed (SHA-256). Two tar archives of the same git checkout usually have different digests because tar captures non-deterministic metadata (mtimes, directory ordering, permissions). This means the store sees every clone as a new artifact. Use the `input` override path when you want to skip clones and rely on a previously stored artifact.
 
 ## Features
 

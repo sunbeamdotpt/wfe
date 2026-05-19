@@ -1,10 +1,10 @@
 #![warn(missing_docs)]
-//! wfe-yaml — YAML workflow loader, compiler, and shell/Deno executors for WFE.
+//! wfe-yaml — YAML workflow loader, compiler, and built-in executors for WFE.
 //!
 //! This crate lets you define workflows in YAML instead of Rust code. It parses
 //! workflow definitions, validates them, compiles them into a
 //! [`WorkflowDefinition`](wfe_core::models::WorkflowDefinition), and provides
-//! built-in executors for shell scripts and Deno.
+//! built-in executors for shell scripts, Deno, and git clones.
 //!
 //! # Quick start
 //! ```ignore
