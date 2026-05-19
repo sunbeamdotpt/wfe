@@ -249,9 +249,9 @@ fn validate_steps(
                     step.name
                 )));
             }
-            if config.context.is_none() {
+            if config.context.is_none() && config.input.is_none() {
                 return Err(YamlWorkflowError::Validation(format!(
-                    "BuildKit step '{}' must have 'config.context'",
+                    "BuildKit step '{}' must have 'config.context' (or 'config.input' for artifact override)",
                     step.name
                 )));
             }

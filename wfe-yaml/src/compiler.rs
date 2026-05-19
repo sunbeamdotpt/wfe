@@ -776,12 +776,22 @@ fn build_buildkit_config(step: &YamlStep) -> Result<BuildkitConfig, YamlWorkflow
         ))
     })?;
 
-    let context = config.context.clone().ok_or_else(|| {
-        YamlWorkflowError::Compilation(format!(
+    let context = config.context.clone().unwrap_or_else(|| {
+        // When an artifact input overrides the context at runtime,
+        // a placeholder default is sufficient at compile time.
+        if config.input.is_some() {
+            ".".to_string()
+        } else {
+            String::new()
+        }
+    });
+
+    if context.is_empty() {
+        return Err(YamlWorkflowError::Compilation(format!(
             "BuildKit step '{}' must have 'config.context'",
             step.name
-        ))
-    })?;
+        )));
+    }
 
     let timeout_ms = config.timeout.as_ref().and_then(|t| parse_duration_ms(t));
 
