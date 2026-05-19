@@ -44,6 +44,9 @@ pub struct ContainerdConfig {
     #[serde(default)]
     /// Registry auth.
     pub registry_auth: HashMap<String, RegistryAuth>,
+    /// Artifact inputs to mount as volumes before running.
+    /// Map of artifact name → container mount point path.
+    pub inputs: Option<HashMap<String, String>>,
     /// Timeout ms.
     pub timeout_ms: Option<u64>,
 }
@@ -137,6 +140,7 @@ mod tests {
                     password: "pass".to_string(),
                 },
             )]),
+            inputs: None,
             timeout_ms: Some(30000),
         };
 

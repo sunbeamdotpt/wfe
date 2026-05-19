@@ -58,6 +58,7 @@ fn minimal_config(addr: &str) -> ContainerdConfig {
         cli: "nerdctl".to_string(),
         tls: TlsConfig::default(),
         registry_auth: HashMap::new(),
+        inputs: None,
         timeout_ms: None,
     }
 }
@@ -77,6 +78,7 @@ fn make_context<'a>(
         cancellation_token: tokio_util::sync::CancellationToken::new(),
         host_context: None,
         log_sink: None,
+        artifact_store: None,
     }
 }
 

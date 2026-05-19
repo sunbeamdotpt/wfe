@@ -39,6 +39,12 @@ pub struct BuildkitConfig {
     /// Registry authentication credentials keyed by registry host.
     #[serde(default)]
     pub registry_auth: HashMap<String, RegistryAuth>,
+    /// Artifact inputs to mount before building.
+    /// Map of artifact name → mount point path.
+    pub inputs: Option<HashMap<String, String>>,
+    /// Workflow data key containing an artifact ref to use as build context.
+    /// When set, the artifact is extracted and replaces `context` for this build.
+    pub input: Option<String>,
     /// Execution timeout in milliseconds.
     pub timeout_ms: Option<u64>,
 }
@@ -104,6 +110,8 @@ mod tests {
                 key: Some("/certs/key.pem".to_string()),
             },
             registry_auth,
+            inputs: None,
+            input: None,
             timeout_ms: Some(300_000),
         };
 

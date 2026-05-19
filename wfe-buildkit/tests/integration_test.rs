@@ -63,6 +63,8 @@ async fn build_simple_dockerfile_via_grpc() {
         push: false,
         output_type: None,
         output_dest: None,
+        inputs: None,
+        input: None,
         buildkit_addr: buildkit_addr(),
         tls: TlsConfig::default(),
         registry_auth: HashMap::new(),
@@ -83,6 +85,7 @@ async fn build_simple_dockerfile_via_grpc() {
         cancellation_token: cancel,
         host_context: None,
         log_sink: None,
+        artifact_store: None,
     };
 
     let result = step.run(&ctx).await.expect("build should succeed");
@@ -149,6 +152,8 @@ async fn build_with_build_args() {
         push: false,
         output_type: None,
         output_dest: None,
+        inputs: None,
+        input: None,
         buildkit_addr: buildkit_addr(),
         tls: TlsConfig::default(),
         registry_auth: HashMap::new(),
@@ -169,6 +174,7 @@ async fn build_with_build_args() {
         cancellation_token: cancel,
         host_context: None,
         log_sink: None,
+        artifact_store: None,
     };
 
     let result = step
@@ -202,6 +208,8 @@ async fn connect_to_unavailable_daemon_returns_error() {
         push: false,
         output_type: None,
         output_dest: None,
+        inputs: None,
+        input: None,
         buildkit_addr: "unix:///tmp/nonexistent-buildkitd.sock".to_string(),
         tls: TlsConfig::default(),
         registry_auth: HashMap::new(),
@@ -222,6 +230,7 @@ async fn connect_to_unavailable_daemon_returns_error() {
         cancellation_token: cancel,
         host_context: None,
         log_sink: None,
+        artifact_store: None,
     };
 
     let err = step.run(&ctx).await;

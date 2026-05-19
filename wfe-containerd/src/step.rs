@@ -1,10 +1,11 @@
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use tonic::transport::{Channel, Endpoint, Uri};
 use wfe_core::WfeError;
-use wfe_core::models::ExecutionResult;
+use wfe_core::local_artifact_store::extract_artifact_to_dir;
+use wfe_core::models::{ExecutionResult, parse_artifact_ref};
 use wfe_core::traits::step::{StepBody, StepExecutionContext};
 
 use wfe_containerd_protos::containerd::services::containers::v1::{
@@ -36,11 +37,17 @@ const DEFAULT_SNAPSHOTTER: &str = "overlayfs";
 /// Containerdstep.
 pub struct ContainerdStep {
     config: ContainerdConfig,
+    /// Tracks artifact mounts created during mount_artifacts for cleanup.
+    /// Each tuple is (host_path, container_target).
+    artifact_mounts: Vec<(PathBuf, String)>,
 }
 
 impl ContainerdStep {
     pub fn new(config: ContainerdConfig) -> Self {
-        Self { config }
+        Self {
+            config,
+            artifact_mounts: Vec::new(),
+        }
     }
 
     /// Connect to the containerd daemon and return a raw tonic `Channel`.
@@ -446,6 +453,7 @@ impl ContainerdStep {
             cli: "nerdctl".to_string(),
             tls: Default::default(),
             registry_auth: Default::default(),
+            inputs: None,
             timeout_ms: None,
         };
 
@@ -615,12 +623,85 @@ fn parse_user_spec(user: &str) -> (u32, u32) {
 
 #[async_trait]
 impl StepBody for ContainerdStep {
+    async fn mount_artifacts(
+        &mut self,
+        context: &StepExecutionContext<'_>,
+    ) -> wfe_core::Result<()> {
+        let Some(ref inputs) = self.config.inputs else {
+            return Ok(());
+        };
+        let Some(store) = context.artifact_store else {
+            return Ok(());
+        };
+        let Some(data_obj) = context.workflow.data.as_object() else {
+            return Ok(());
+        };
+
+        for (name, container_target) in inputs {
+            let Some(value) = data_obj.get(name) else {
+                continue;
+            };
+            let Some(digest) = parse_artifact_ref(value) else {
+                continue;
+            };
+
+            // Use WFE_IO_DIR if set (shared mount for remote daemons),
+            // otherwise fall back to the system temp directory.
+            let base = std::env::var("WFE_IO_DIR")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|_| std::env::temp_dir());
+            let host_dir = base.join(format!("wfe-containerd-{}", uuid::Uuid::new_v4()));
+
+            let reader = store
+                .get(&digest)
+                .await
+                .map_err(|e| WfeError::StepExecution(format!("failed to get artifact: {e}")))?
+                .ok_or_else(|| WfeError::StepExecution(format!("artifact not found: {digest}")))?;
+
+            let mut bytes = Vec::new();
+            let mut reader = reader;
+            tokio::io::AsyncReadExt::read_to_end(&mut reader, &mut bytes)
+                .await
+                .map_err(|e| WfeError::StepExecution(format!("failed to read artifact: {e}")))?;
+
+            tokio::task::spawn_blocking({
+                let host_dir = host_dir.clone();
+                move || extract_artifact_to_dir(std::io::Cursor::new(bytes), &host_dir)
+            })
+            .await
+            .map_err(|e| WfeError::StepExecution(format!("extract task panicked: {e}")))??;
+
+            self.artifact_mounts.push((host_dir, container_target.clone()));
+        }
+
+        Ok(())
+    }
+
+    async fn unmount_artifacts(
+        &mut self,
+        _context: &StepExecutionContext<'_>,
+    ) -> wfe_core::Result<()> {
+        for (host_dir, _target) in self.artifact_mounts.drain(..) {
+            let _ = tokio::fs::remove_dir_all(&host_dir).await;
+        }
+        Ok(())
+    }
+
     async fn run(
         &mut self,
         context: &StepExecutionContext<'_>,
     ) -> wfe_core::Result<ExecutionResult> {
         let step_name = context.step.name.as_deref().unwrap_or("unknown");
         let namespace = DEFAULT_NAMESPACE;
+
+        // Add artifact mounts as volumes for the OCI spec.
+        for (host_dir, container_target) in &self.artifact_mounts {
+            self.config.volumes.push(crate::config::VolumeMountConfig {
+                source: host_dir.to_string_lossy().to_string(),
+                target: container_target.clone(),
+                readonly: false,
+            });
+        }
 
         // 1. Connect to containerd.
         let addr = &self.config.containerd_addr;
@@ -958,6 +1039,7 @@ mod tests {
             cli: "nerdctl".to_string(),
             tls: TlsConfig::default(),
             registry_auth: HashMap::new(),
+            inputs: None,
             timeout_ms: None,
         }
     }

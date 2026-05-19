@@ -824,6 +824,8 @@ fn build_buildkit_config(step: &YamlStep) -> Result<BuildkitConfig, YamlWorkflow
         push: config.push.unwrap_or(false),
         output_type: config.output_type.clone(),
         output_dest: config.output_dest.clone(),
+        inputs: Some(config.inputs.clone()).filter(|m| !m.is_empty()),
+        input: config.input.clone(),
         buildkit_addr: config
             .buildkit_addr
             .clone()
@@ -915,6 +917,7 @@ fn build_containerd_config(step: &YamlStep) -> Result<ContainerdConfig, YamlWork
         cli: config.cli.clone().unwrap_or_else(|| "nerdctl".to_string()),
         tls,
         registry_auth,
+        inputs: Some(config.inputs.clone()).filter(|m| !m.is_empty()),
         timeout_ms,
     })
 }
