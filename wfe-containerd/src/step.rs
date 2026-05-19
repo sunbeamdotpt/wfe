@@ -1,11 +1,10 @@
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use async_trait::async_trait;
 use tonic::transport::{Channel, Endpoint, Uri};
 use wfe_core::WfeError;
-use wfe_core::local_artifact_store::extract_artifact_to_dir;
-use wfe_core::models::{ExecutionResult, parse_artifact_ref};
+use wfe_core::models::ExecutionResult;
 use wfe_core::traits::step::{StepBody, StepExecutionContext};
 
 use wfe_containerd_protos::containerd::services::containers::v1::{
@@ -13,7 +12,10 @@ use wfe_containerd_protos::containerd::services::containers::v1::{
     containers_client::ContainersClient,
 };
 use wfe_containerd_protos::containerd::services::content::v1::{
-    ReadContentRequest, content_client::ContentClient,
+    ReadContentRequest, WriteAction, WriteContentRequest, content_client::ContentClient,
+};
+use wfe_containerd_protos::containerd::services::diff::v1::{
+    ApplyRequest, diff_client::DiffClient,
 };
 use wfe_containerd_protos::containerd::services::images::v1::{
     GetImageRequest, images_client::ImagesClient,
@@ -21,6 +23,7 @@ use wfe_containerd_protos::containerd::services::images::v1::{
 use wfe_containerd_protos::containerd::services::snapshots::v1::{
     MountsRequest, PrepareSnapshotRequest, snapshots_client::SnapshotsClient,
 };
+use wfe_containerd_protos::containerd::types::Descriptor;
 use wfe_containerd_protos::containerd::services::tasks::v1::{
     CreateTaskRequest, DeleteTaskRequest, StartRequest, WaitRequest, tasks_client::TasksClient,
 };
@@ -37,16 +40,16 @@ const DEFAULT_SNAPSHOTTER: &str = "overlayfs";
 /// Containerdstep.
 pub struct ContainerdStep {
     config: ContainerdConfig,
-    /// Tracks artifact mounts created during mount_artifacts for cleanup.
-    /// Each tuple is (host_path, container_target).
-    artifact_mounts: Vec<(PathBuf, String)>,
+    /// Tracks artifact content descriptors uploaded during mount_artifacts.
+    /// Each tuple is (container_target, descriptor).
+    artifact_applies: Vec<(String, Descriptor)>,
 }
 
 impl ContainerdStep {
     pub fn new(config: ContainerdConfig) -> Self {
         Self {
             config,
-            artifact_mounts: Vec::new(),
+            artifact_applies: Vec::new(),
         }
     }
 
@@ -104,6 +107,90 @@ impl ContainerdStep {
         };
 
         Ok(channel)
+    }
+
+    /// Upload bytes to containerd's content store.
+    ///
+    /// Computes the sha256 digest client-side, streams the data via the
+    /// `Content.Write` bidirectional gRPC, and commits with the expected
+    /// digest. Returns the digest and size.
+    async fn upload_content(
+        channel: &Channel,
+        namespace: &str,
+        data: &[u8],
+    ) -> Result<(String, i64), WfeError> {
+        use sha2::{Digest, Sha256};
+
+        let digest = format!("sha256:{:x}", Sha256::digest(data));
+        let size = data.len() as i64;
+
+        let mut client = ContentClient::new(channel.clone());
+
+        // Create a stream of WriteContentRequest messages.
+        let mut requests = Vec::new();
+
+        // Write the data in a single COMMIT message (small enough for artifacts).
+        requests.push(WriteContentRequest {
+            action: WriteAction::Commit as i32,
+            r#ref: digest.clone(),
+            total: size,
+            expected: digest.clone(),
+            offset: 0,
+            data: data.to_vec(),
+            labels: HashMap::new(),
+        });
+
+        let stream = tokio_stream::iter(requests);
+        let req = Self::with_namespace(stream, namespace);
+
+        let mut response = client
+            .write(req)
+            .await
+            .map_err(|e| WfeError::StepExecution(format!("content write failed: {e}")))?
+            .into_inner();
+
+        // Wait for the commit response.
+        while let Some(resp) = response
+            .message()
+            .await
+            .map_err(|e| WfeError::StepExecution(format!("content write stream error: {e}")))?
+        {
+            if resp.action == WriteAction::Commit as i32 {
+                break;
+            }
+        }
+
+        Ok((digest, size))
+    }
+
+    /// Apply a diff (tar archive) to a set of snapshot mounts.
+    ///
+    /// Uses containerd's `Diff.Apply` RPC to extract the artifact into the
+    /// container's rootfs snapshot.
+    async fn apply_diff(
+        channel: &Channel,
+        namespace: &str,
+        mounts: Vec<wfe_containerd_protos::containerd::types::Mount>,
+        descriptor: Descriptor,
+    ) -> Result<(), WfeError> {
+        let mut client = DiffClient::new(channel.clone());
+
+        let req = Self::with_namespace(
+            ApplyRequest {
+                diff: Some(descriptor),
+                mounts,
+                payloads: HashMap::new(),
+                sync_fs: false,
+            },
+            namespace,
+        );
+
+        client
+            .apply(req)
+            .await
+            .map_err(|e| WfeError::StepExecution(format!("Diff.Apply failed: {e}")))?;
+
+        Ok(())
     }
 
     /// Check whether an image exists in containerd's image store.
@@ -630,48 +717,38 @@ impl StepBody for ContainerdStep {
         let Some(ref inputs) = self.config.inputs else {
             return Ok(());
         };
-        let Some(store) = context.artifact_store else {
+
+        if inputs.is_empty() {
             return Ok(());
+        }
+
+        let Some(volume) = context.artifact_volume else {
+            return Err(WfeError::StepExecution(
+                "artifact volume required but not provided".to_string(),
+            ));
         };
-        let Some(data_obj) = context.workflow.data.as_object() else {
-            return Ok(());
-        };
+
+        let addr = &self.config.containerd_addr;
+        let channel = Self::connect(addr).await?;
+        let namespace = DEFAULT_NAMESPACE;
 
         for (name, container_target) in inputs {
-            let Some(value) = data_obj.get(name) else {
-                continue;
-            };
-            let Some(digest) = parse_artifact_ref(value) else {
-                continue;
-            };
+            let prefix = container_target.strip_prefix('/').unwrap_or(container_target);
+            let repackaged = volume
+                .repackage_with_prefix(name, prefix)
+                .map_err(|e| WfeError::StepExecution(format!("failed to repackage artifact: {e}")))?;
 
-            // Use WFE_IO_DIR if set (shared mount for remote daemons),
-            // otherwise fall back to the system temp directory.
-            let base = std::env::var("WFE_IO_DIR")
-                .map(std::path::PathBuf::from)
-                .unwrap_or_else(|_| std::env::temp_dir());
-            let host_dir = base.join(format!("wfe-containerd-{}", uuid::Uuid::new_v4()));
+            let (digest, size) = Self::upload_content(&channel, namespace, &repackaged).await?;
 
-            let reader = store
-                .get(&digest)
-                .await
-                .map_err(|e| WfeError::StepExecution(format!("failed to get artifact: {e}")))?
-                .ok_or_else(|| WfeError::StepExecution(format!("artifact not found: {digest}")))?;
-
-            let mut bytes = Vec::new();
-            let mut reader = reader;
-            tokio::io::AsyncReadExt::read_to_end(&mut reader, &mut bytes)
-                .await
-                .map_err(|e| WfeError::StepExecution(format!("failed to read artifact: {e}")))?;
-
-            tokio::task::spawn_blocking({
-                let host_dir = host_dir.clone();
-                move || extract_artifact_to_dir(std::io::Cursor::new(bytes), &host_dir)
-            })
-            .await
-            .map_err(|e| WfeError::StepExecution(format!("extract task panicked: {e}")))??;
-
-            self.artifact_mounts.push((host_dir, container_target.clone()));
+            self.artifact_applies.push((
+                container_target.clone(),
+                Descriptor {
+                    media_type: "application/vnd.oci.image.layer.v1.tar+gzip".to_string(),
+                    digest,
+                    size,
+                    annotations: HashMap::new(),
+                },
+            ));
         }
 
         Ok(())
@@ -681,9 +758,9 @@ impl StepBody for ContainerdStep {
         &mut self,
         _context: &StepExecutionContext<'_>,
     ) -> wfe_core::Result<()> {
-        for (host_dir, _target) in self.artifact_mounts.drain(..) {
-            let _ = tokio::fs::remove_dir_all(&host_dir).await;
-        }
+        // Content store objects are best-effort cleaned up by containerd's GC.
+        // We don't have a bulk-delete API for individual digests.
+        self.artifact_applies.clear();
         Ok(())
     }
 
@@ -693,15 +770,6 @@ impl StepBody for ContainerdStep {
     ) -> wfe_core::Result<ExecutionResult> {
         let step_name = context.step.name.as_deref().unwrap_or("unknown");
         let namespace = DEFAULT_NAMESPACE;
-
-        // Add artifact mounts as volumes for the OCI spec.
-        for (host_dir, container_target) in &self.artifact_mounts {
-            self.config.volumes.push(crate::config::VolumeMountConfig {
-                source: host_dir.to_string_lossy().to_string(),
-                target: container_target.clone(),
-                readonly: false,
-            });
-        }
 
         // 1. Connect to containerd.
         let addr = &self.config.containerd_addr;
@@ -832,6 +900,11 @@ impl StepBody for ContainerdStep {
                 }
             }
         };
+
+        // 6b. Apply artifact diffs to the snapshot.
+        for (_target, descriptor) in &self.artifact_applies {
+            Self::apply_diff(&channel, namespace, mounts.clone(), descriptor.clone()).await?;
+        }
 
         // 7. Create FIFO paths for stdout/stderr capture.
         // Use WFE_IO_DIR if set (e.g., a shared mount with a remote containerd daemon),
