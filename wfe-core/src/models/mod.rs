@@ -3,6 +3,8 @@
 //! These types are the building blocks of the WFE runtime. Most are serialized
 //! to JSON when persisted or sent over the wire.
 
+/// OCI-compatible artifact references and blobs.
+pub mod artifact;
 /// Step condition evaluation (used by `if_do` and `while_do`).
 pub mod condition;
 /// Error handling behavior for failed steps.
@@ -51,6 +53,10 @@ pub use service::{
 pub use status::{PointerStatus, WorkflowStatus};
 pub use workflow_definition::{SharedVolume, StepOutcome, WorkflowDefinition, WorkflowStep};
 pub use workflow_instance::WorkflowInstance;
+pub use artifact::{
+    ArtifactBlob, ArtifactRef, ARTIFACT_REF_KEY, MEDIA_TYPE_OCI_LAYER_GZIP,
+    MEDIA_TYPE_OCI_LAYER_TAR, artifact_ref_value, is_artifact_ref, parse_artifact_ref,
+};
 
 /// Serde helper for `Option<Duration>` as milliseconds.
 pub(crate) mod option_duration_millis {

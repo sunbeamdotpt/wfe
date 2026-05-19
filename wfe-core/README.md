@@ -48,6 +48,8 @@ let definition = WorkflowBuilder::<serde_json::Value>::new()
 | `PersistenceProvider` | Composite trait: `WorkflowRepository + EventRepository + SubscriptionRepository + ScheduledCommandRepository`. |
 | `DistributedLockProvider` | Trait for acquiring/releasing workflow-level locks. |
 | `QueueProvider` | Trait for enqueuing/dequeuing workflow and event work items. |
+| `ArtifactStore` | Content-addressed blob storage for workflow artifacts (OCI Image Layout). |
+| `LocalArtifactStore` | Filesystem-backed `ArtifactStore` at a configurable path. |
 
 ### Built-in primitives
 

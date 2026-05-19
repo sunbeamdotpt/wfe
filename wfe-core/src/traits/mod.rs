@@ -16,7 +16,10 @@
 //! | [`LogSink`](crate::traits::log_sink::LogSink) | Stream step output | Custom webhook sink |
 //! | [`ServiceProvider`](crate::traits::service::ServiceProvider) | Provision infra | `wfe-kubernetes` |
 //! | [`WorkflowRegistry`](crate::traits::registry::WorkflowRegistry) | Store definitions | `InMemoryWorkflowRegistry` |
+//! | [`ArtifactStore`](crate::traits::artifact_store::ArtifactStore) | Content-addressed artifact storage | `LocalArtifactStore` |
 
+/// Content-addressed storage for OCI-compatible artifact blobs.
+pub mod artifact_store;
 /// Broadcast workflow lifecycle events (started, completed, failed, etc.).
 pub mod lifecycle;
 /// Distributed locking for workflow instances.
@@ -51,3 +54,4 @@ pub use registry::WorkflowRegistry;
 pub use search::{Page, SearchFilter, SearchIndex, WorkflowSearchResult};
 pub use service::ServiceProvider;
 pub use step::{HostContext, StepBody, StepExecutionContext, WorkflowData};
+pub use artifact_store::ArtifactStore;

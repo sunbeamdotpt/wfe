@@ -180,4 +180,8 @@ pub mod traits;
 /// In-memory test doubles for every provider trait.
 pub mod test_support;
 
+/// Local filesystem artifact store (OCI Image Layout).
+pub mod local_artifact_store;
+
 pub use error::{Result, WfeError};
+pub use local_artifact_store::{LocalArtifactStore, extract_artifact_to_dir};
