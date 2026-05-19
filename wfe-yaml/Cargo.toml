@@ -28,6 +28,11 @@ tracing = { workspace = true }
 chrono = { workspace = true }
 regex = { workspace = true }
 schemars = { version = "1", features = ["derive"] }
+uuid = { workspace = true }
+gix = { workspace = true }
+tar = { workspace = true }
+flate2 = { workspace = true }
+hex = { workspace = true }
 deno_core = { workspace = true, optional = true }
 deno_error = { workspace = true, optional = true }
 url = { workspace = true, optional = true }
@@ -42,7 +47,7 @@ pretty_assertions = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "process"] }
 tokio-util = "0.7"
 wfe-core = { workspace = true, features = ["test-support"] }
-# wfe = { workspace = true }  # temp removed to break circular dev-dependency for publishing
+wfe = { workspace = true }  # dev-only, re-added for tests
 wiremock = { workspace = true }
 tempfile = { workspace = true }
 tracing-subscriber = { workspace = true }

@@ -9,6 +9,7 @@ use wfe_core::traits::StepBody;
 use crate::error::YamlWorkflowError;
 #[cfg(feature = "deno")]
 use crate::executors::deno::{DenoConfig, DenoPermissions, DenoStep};
+use crate::executors::git_repo::{GitRepoConfig, GitRepoStep};
 use crate::executors::shell::{ShellConfig, ShellStep};
 #[cfg(feature = "buildkit")]
 use wfe_buildkit::{BuildkitConfig, BuildkitStep};
@@ -503,6 +504,18 @@ fn build_step_config_and_factory(
             });
             Ok((key, value, factory))
         }
+        "git-repo" => {
+            let config = build_git_repo_config(step)?;
+            let key = format!("wfe_yaml::git_repo::{}", step.name);
+            let value = serde_json::to_value(&config).map_err(|e| {
+                YamlWorkflowError::Compilation(format!("Failed to serialize git-repo config: {e}"))
+            })?;
+            let config_clone = config.clone();
+            let factory: StepFactory = Box::new(move || {
+                Box::new(GitRepoStep::new(config_clone.clone())) as Box<dyn StepBody>
+            });
+            Ok((key, value, factory))
+        }
         "workflow" => {
             let config = step.config.as_ref().ok_or_else(|| {
                 YamlWorkflowError::Compilation(format!(
@@ -617,6 +630,40 @@ fn build_shell_config(step: &YamlStep) -> Result<ShellConfig, YamlWorkflowError>
         env: config.env.clone(),
         working_dir: config.working_dir.clone(),
         timeout_ms,
+        inputs: Some(config.inputs.clone()).filter(|m| !m.is_empty()),
+    })
+}
+
+fn build_git_repo_config(step: &YamlStep) -> Result<GitRepoConfig, YamlWorkflowError> {
+    let config = step.config.as_ref().ok_or_else(|| {
+        YamlWorkflowError::Compilation(format!(
+            "git-repo step '{}' is missing 'config' section",
+            step.name
+        ))
+    })?;
+
+    let url = config
+        .run
+        .clone()
+        .or_else(|| config.script.clone())
+        .ok_or_else(|| {
+            YamlWorkflowError::Compilation(format!(
+                "git-repo step '{}' must have 'config.run' (the remote URL)",
+                step.name
+            ))
+        })?;
+
+    Ok(GitRepoConfig {
+        url,
+        branch: config.branch.clone(),
+        commit: config.commit.clone(),
+        depth: config.depth,
+        path: config
+            .working_dir
+            .clone()
+            .unwrap_or_else(|| "/workspace/repo".to_string()),
+        output: step.name.clone(),
+        input: config.input.clone(),
     })
 }
 
@@ -775,7 +822,8 @@ fn build_buildkit_config(step: &YamlStep) -> Result<BuildkitConfig, YamlWorkflow
         cache_from: config.cache_from.clone(),
         cache_to: config.cache_to.clone(),
         push: config.push.unwrap_or(false),
-        output_type: None,
+        output_type: config.output_type.clone(),
+        output_dest: config.output_dest.clone(),
         buildkit_addr: config
             .buildkit_addr
             .clone()

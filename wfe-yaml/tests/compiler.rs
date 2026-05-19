@@ -1115,6 +1115,7 @@ workflows:
         cancellation_token: tokio_util::sync::CancellationToken::new(),
         host_context: Some(&host),
         log_sink: None,
+        artifact_store: None,
     };
 
     let result = step.run(&ctx).await.unwrap();

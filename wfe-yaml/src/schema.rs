@@ -280,6 +280,19 @@ pub struct StepConfig {
     pub timeout: Option<String>,
     /// Working directory.
     pub working_dir: Option<String>,
+    /// Artifact inputs to mount: { name: mount_point }.
+    #[serde(default)]
+    pub inputs: HashMap<String, String>,
+
+    // --- Git ---
+    /// Git branch to checkout.
+    pub branch: Option<String>,
+    /// Git commit SHA to checkout.
+    pub commit: Option<String>,
+    /// Clone depth for shallow clones.
+    pub depth: Option<u32>,
+    /// Input key for artifact override.
+    pub input: Option<String>,
 
     // --- Deno ---
     /// Deno sandbox permissions.
@@ -310,6 +323,10 @@ pub struct StepConfig {
     pub cache_to: Vec<String>,
     /// Push built image to registry.
     pub push: Option<bool>,
+    /// Output type: image, docker, oci, local, tar.
+    pub output_type: Option<String>,
+    /// Destination path for non-image exports (e.g. tar file).
+    pub output_dest: Option<String>,
     /// BuildKit daemon address.
     pub buildkit_addr: Option<String>,
     /// TLS configuration.

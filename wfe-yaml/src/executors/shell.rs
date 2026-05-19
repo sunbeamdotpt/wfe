@@ -1,10 +1,13 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use wfe_core::WfeError;
-use wfe_core::models::ExecutionResult;
+use wfe_core::local_artifact_store::extract_artifact_to_dir;
+use wfe_core::models::{ExecutionResult, parse_artifact_ref};
 use wfe_core::traits::step::{StepBody, StepExecutionContext};
+use wfe_core::traits::ArtifactStore;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// Shellconfig.
@@ -19,16 +22,24 @@ pub struct ShellConfig {
     pub working_dir: Option<String>,
     /// Timeout ms.
     pub timeout_ms: Option<u64>,
+    /// Artifact inputs to mount before running.
+    /// Map of artifact name → mount point path.
+    pub inputs: Option<HashMap<String, String>>,
 }
 
 /// Shellstep.
 pub struct ShellStep {
     config: ShellConfig,
+    /// Tracks temp directories created during mount_artifacts for cleanup.
+    mount_points: Vec<PathBuf>,
 }
 
 impl ShellStep {
     pub fn new(config: ShellConfig) -> Self {
-        Self { config }
+        Self {
+            config,
+            mount_points: Vec::new(),
+        }
     }
 
     fn build_command(&self, context: &StepExecutionContext<'_>) -> tokio::process::Command {
@@ -54,11 +65,22 @@ impl ShellStep {
                 if BLOCKED_KEYS.contains(&env_key.as_str()) {
                     continue;
                 }
+                // Skip artifact references — they are resolved to INPUT_* paths.
+                if parse_artifact_ref(value).is_some() {
+                    continue;
+                }
                 let env_val = match value {
                     serde_json::Value::String(s) => s.clone(),
                     other => other.to_string(),
                 };
                 cmd.env(&env_key, &env_val);
+            }
+        }
+
+        // Inject INPUT_<NAME> env vars for mounted artifacts.
+        for mount_point in &self.mount_points {
+            if let Some(name) = mount_point.file_name().and_then(|n| n.to_str()) {
+                cmd.env(format!("INPUT_{}", name.to_uppercase()), mount_point.as_os_str());
             }
         }
 
@@ -229,6 +251,77 @@ impl ShellStep {
 
 #[async_trait]
 impl StepBody for ShellStep {
+    async fn mount_artifacts(
+        &mut self,
+        context: &StepExecutionContext<'_>,
+    ) -> wfe_core::Result<()> {
+        let Some(ref inputs) = self.config.inputs else {
+            return Ok(());
+        };
+        let Some(store) = context.artifact_store else {
+            return Ok(());
+        };
+        let Some(data_obj) = context.workflow.data.as_object() else {
+            return Ok(());
+        };
+
+        for (name, mount_point_str) in inputs {
+            let Some(value) = data_obj.get(name) else {
+                continue;
+            };
+            let Some(digest) = parse_artifact_ref(value) else {
+                continue;
+            };
+
+            let mount_point = PathBuf::from(mount_point_str);
+            // If relative, resolve under a temp dir.
+            let mount_point = if mount_point.is_absolute() {
+                mount_point
+            } else {
+                let tmp = std::env::temp_dir().join(format!("wfe-shell-{}", uuid::Uuid::new_v4()));
+                tmp.join(&mount_point)
+            };
+
+            let reader = store
+                .get(&digest)
+                .await
+                .map_err(|e| WfeError::StepExecution(format!("failed to get artifact: {e}")))?
+                .ok_or_else(|| {
+                    WfeError::StepExecution(format!("artifact not found: {digest}"))
+                })?;
+
+            // We need a sync reader for tar::Archive, so read into memory.
+            // For large artifacts this should be streamed, but most workflow
+            // inputs (source trees) are manageable in memory.
+            let mut bytes = Vec::new();
+            let mut reader = reader;
+            tokio::io::AsyncReadExt::read_to_end(&mut reader, &mut bytes)
+                .await
+                .map_err(|e| WfeError::StepExecution(format!("failed to read artifact: {e}")))?;
+
+            tokio::task::spawn_blocking({
+                let mount_point = mount_point.clone();
+                move || extract_artifact_to_dir(std::io::Cursor::new(bytes), &mount_point)
+            })
+            .await
+            .map_err(|e| WfeError::StepExecution(format!("extract task panicked: {e}")))??;
+
+            self.mount_points.push(mount_point);
+        }
+
+        Ok(())
+    }
+
+    async fn unmount_artifacts(
+        &mut self,
+        _context: &StepExecutionContext<'_>,
+    ) -> wfe_core::Result<()> {
+        for mount_point in self.mount_points.drain(..) {
+            let _ = tokio::fs::remove_dir_all(&mount_point).await;
+        }
+        Ok(())
+    }
+
     async fn run(
         &mut self,
         context: &StepExecutionContext<'_>,
