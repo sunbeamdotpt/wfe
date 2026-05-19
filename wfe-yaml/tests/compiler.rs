@@ -1116,6 +1116,8 @@ workflows:
         host_context: Some(&host),
         log_sink: None,
         artifact_store: None,
+        artifact_volume: None,
+        artifact_package: None,
     };
 
     let result = step.run(&ctx).await.unwrap();
@@ -1334,4 +1336,18 @@ workflow:
         container.when.is_some(),
         "Parallel container should have when condition"
     );
+}
+
+
+#[test]
+#[cfg(all(feature = "buildkit", feature = "containerd", feature = "kubernetes"))]
+fn compile_proxy_workflow() {
+    let yaml = std::fs::read_to_string("../../proxy/workflows.yaml").unwrap();
+    let config = std::collections::HashMap::new();
+    let workflows = wfe_yaml::load_workflow_from_str(&yaml, &config).unwrap();
+    assert_eq!(workflows.len(), 1);
+    let compiled = &workflows[0];
+    assert_eq!(compiled.definition.id, "proxy-ci");
+    assert_eq!(compiled.definition.steps.len(), 4);
+    assert_eq!(compiled.step_factories.len(), 4);
 }
