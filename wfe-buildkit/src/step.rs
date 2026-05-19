@@ -11,7 +11,7 @@ use wfe_buildkit_protos::moby::buildkit::v1::{
 };
 use wfe_core::WfeError;
 use wfe_core::local_artifact_store::extract_artifact_to_dir;
-use wfe_core::models::{ExecutionResult, parse_artifact_ref};
+use wfe_core::models::ExecutionResult;
 use wfe_core::traits::step::{StepBody, StepExecutionContext};
 
 use crate::config::BuildkitConfig;
@@ -460,65 +460,40 @@ impl StepBody for BuildkitStep {
         &mut self,
         context: &StepExecutionContext<'_>,
     ) -> wfe_core::Result<()> {
-        let Some(store) = context.artifact_store else {
-            return Ok(());
-        };
-        let Some(data_obj) = context.workflow.data.as_object() else {
+        let Some(volume) = context.artifact_volume else {
             return Ok(());
         };
 
         // Handle `input` field: artifact ref overrides the build context.
         if let Some(ref input_key) = self.config.input {
-            if let Some(artifact) = data_obj
+            let bytes = volume
                 .get(input_key)
-                .and_then(|v| v.get("__wfe_artifact"))
-                .and_then(|v| v.as_str())
-            {
-                let reader = store
-                    .get(artifact)
-                    .await
-                    .map_err(|e| {
-                        WfeError::StepExecution(format!("failed to get artifact: {e}"))
-                    })?
-                    .ok_or_else(|| {
-                        WfeError::StepExecution(format!("artifact not found: {artifact}"))
-                    })?;
+                .cloned()
+                .ok_or_else(|| {
+                    WfeError::StepExecution(format!(
+                        "artifact '{input_key}' not in volume"
+                    ))
+                })?;
 
-                let mut bytes = Vec::new();
-                let mut reader = reader;
-                tokio::io::AsyncReadExt::read_to_end(&mut reader, &mut bytes)
-                    .await
-                    .map_err(|e| {
-                        WfeError::StepExecution(format!("failed to read artifact: {e}"))
-                    })?;
+            let base = std::env::var("WFE_IO_DIR")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|_| std::env::temp_dir());
+            let tmp_dir = base.join(format!("wfe-buildkit-{}", uuid::Uuid::new_v4()));
+            tokio::task::spawn_blocking({
+                let tmp_dir = tmp_dir.clone();
+                move || extract_artifact_to_dir(std::io::Cursor::new(bytes), &tmp_dir)
+            })
+            .await
+            .map_err(|e| WfeError::StepExecution(format!("extract task panicked: {e}")))??;
 
-                let base = std::env::var("WFE_IO_DIR")
-                    .map(std::path::PathBuf::from)
-                    .unwrap_or_else(|_| std::env::temp_dir());
-                let tmp_dir = base.join(format!("wfe-buildkit-{}", uuid::Uuid::new_v4()));
-                tokio::task::spawn_blocking({
-                    let tmp_dir = tmp_dir.clone();
-                    move || extract_artifact_to_dir(std::io::Cursor::new(bytes), &tmp_dir)
-                })
-                .await
-                .map_err(|e| WfeError::StepExecution(format!("extract task panicked: {e}")))??;
-
-                self.original_context = Some(self.config.context.clone());
-                self.config.context = tmp_dir.to_string_lossy().to_string();
-                self.mount_points.push(tmp_dir);
-            }
+            self.original_context = Some(self.config.context.clone());
+            self.config.context = tmp_dir.to_string_lossy().to_string();
+            self.mount_points.push(tmp_dir);
         }
 
         // Handle `inputs` map: extract artifacts to specified mount points.
         if let Some(ref inputs) = self.config.inputs {
             for (name, mount_point_str) in inputs {
-                let Some(value) = data_obj.get(name) else {
-                    continue;
-                };
-                let Some(digest) = parse_artifact_ref(value) else {
-                    continue;
-                };
-
                 let mount_point = PathBuf::from(mount_point_str);
                 let mount_point = if mount_point.is_absolute() {
                     mount_point
@@ -530,22 +505,13 @@ impl StepBody for BuildkitStep {
                     tmp.join(&mount_point)
                 };
 
-                let reader = store
-                    .get(&digest)
-                    .await
-                    .map_err(|e| {
-                        WfeError::StepExecution(format!("failed to get artifact: {e}"))
-                    })?
+                let bytes = volume
+                    .get(name)
+                    .cloned()
                     .ok_or_else(|| {
-                        WfeError::StepExecution(format!("artifact not found: {digest}"))
-                    })?;
-
-                let mut bytes = Vec::new();
-                let mut reader = reader;
-                tokio::io::AsyncReadExt::read_to_end(&mut reader, &mut bytes)
-                    .await
-                    .map_err(|e| {
-                        WfeError::StepExecution(format!("failed to read artifact: {e}"))
+                        WfeError::StepExecution(format!(
+                            "artifact '{name}' not in volume"
+                        ))
                     })?;
 
                 tokio::task::spawn_blocking({

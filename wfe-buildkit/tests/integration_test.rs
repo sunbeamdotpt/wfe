@@ -86,6 +86,8 @@ async fn build_simple_dockerfile_via_grpc() {
         host_context: None,
         log_sink: None,
         artifact_store: None,
+        artifact_volume: None,
+        artifact_package: None,
     };
 
     let result = step.run(&ctx).await.expect("build should succeed");
@@ -175,6 +177,8 @@ async fn build_with_build_args() {
         host_context: None,
         log_sink: None,
         artifact_store: None,
+        artifact_volume: None,
+        artifact_package: None,
     };
 
     let result = step
@@ -231,6 +235,8 @@ async fn connect_to_unavailable_daemon_returns_error() {
         host_context: None,
         log_sink: None,
         artifact_store: None,
+        artifact_volume: None,
+        artifact_package: None,
     };
 
     let err = step.run(&ctx).await;
