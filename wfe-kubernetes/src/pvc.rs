@@ -15,6 +15,7 @@ use std::collections::BTreeMap;
 use k8s_openapi::api::core::v1::{
     PersistentVolumeClaim, PersistentVolumeClaimSpec, VolumeResourceRequirements,
 };
+use k8s_openapi::api::storage::v1::StorageClass;
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use kube::api::{ObjectMeta, PostParams};
 use kube::{Api, Client};
@@ -91,6 +92,45 @@ pub async fn ensure_shared_volume_pvc(
     // If we return immediately the Job's pod is created while the PVC is
     // still Pending, and the scheduler rejects it with "unbound immediate
     // PersistentVolumeClaims".
+    //
+    // However, StorageClasses with `volumeBindingMode: WaitForFirstConsumer`
+    // (e.g. rancher.io/local-path) intentionally delay binding until a pod
+    // is scheduled. For those, we skip the wait — the scheduler will bind
+    // the PVC when the Job's pod is created.
+    let sc_name = storage_class.map(|s| s.to_string());
+    let sc_name = if sc_name.is_some() {
+        sc_name
+    } else {
+        let sc_api: Api<StorageClass> = Api::all(client.clone());
+        match sc_api.list(&Default::default()).await {
+            Ok(list) => list.items.into_iter().find(|sc| {
+                sc.metadata
+                    .annotations
+                    .as_ref()
+                    .map(|a| a.get("storageclass.kubernetes.io/is-default-class") == Some(&"true".to_string()))
+                    .unwrap_or(false)
+            }).and_then(|sc| sc.metadata.name),
+            Err(_) => None,
+        }
+    };
+
+    let wait_for_first_consumer = if let Some(sc_name) = sc_name {
+        let sc_api: Api<StorageClass> = Api::all(client.clone());
+        sc_api
+            .get(&sc_name)
+            .await
+            .ok()
+            .and_then(|sc| sc.volume_binding_mode)
+            .map(|mode| mode == "WaitForFirstConsumer")
+            .unwrap_or(false)
+    } else {
+        false
+    };
+
+    if wait_for_first_consumer {
+        return Ok(());
+    }
+
     for _ in 0..60 {
         if let Ok(pvc) = api.get(name).await {
             if let Some(status) = &pvc.status {

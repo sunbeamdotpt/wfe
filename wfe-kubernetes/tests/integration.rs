@@ -12,7 +12,7 @@ use wfe_kubernetes::namespace;
 /// Path to the Lima sunbeam VM kubeconfig.
 fn kubeconfig_path() -> String {
     let home = std::env::var("HOME").unwrap();
-    format!("{home}/.lima/sunbeam/copied-from-guest/kubeconfig.yaml")
+    format!("{home}/.lima/lima-sunbeam/copied-from-guest/kubeconfig.yaml")
 }
 
 fn cluster_config() -> ClusterConfig {
@@ -107,6 +107,9 @@ async fn run_echo_job() {
         cancellation_token: tokio_util::sync::CancellationToken::new(),
         host_context: None,
         log_sink: None,
+        artifact_store: None,
+        artifact_volume: None,
+        artifact_package: None,
     };
 
     let result = step.run(&ctx).await.unwrap();
@@ -155,6 +158,9 @@ async fn run_job_with_wfe_output() {
         cancellation_token: tokio_util::sync::CancellationToken::new(),
         host_context: None,
         log_sink: None,
+        artifact_store: None,
+        artifact_volume: None,
+        artifact_package: None,
     };
 
     let result = step.run(&ctx).await.unwrap();
@@ -199,6 +205,9 @@ async fn run_job_with_env_vars() {
         cancellation_token: tokio_util::sync::CancellationToken::new(),
         host_context: None,
         log_sink: None,
+        artifact_store: None,
+        artifact_volume: None,
+        artifact_package: None,
     };
 
     let result = step.run(&ctx).await.unwrap();
@@ -237,6 +246,9 @@ async fn run_job_nonzero_exit_fails() {
         cancellation_token: tokio_util::sync::CancellationToken::new(),
         host_context: None,
         log_sink: None,
+        artifact_store: None,
+        artifact_volume: None,
+        artifact_package: None,
     };
 
     let result = step.run(&ctx).await;
@@ -275,6 +287,9 @@ async fn run_job_with_timeout() {
         cancellation_token: tokio_util::sync::CancellationToken::new(),
         host_context: None,
         log_sink: None,
+        artifact_store: None,
+        artifact_volume: None,
+        artifact_package: None,
     };
 
     let result = step.run(&ctx).await;
@@ -668,6 +683,9 @@ async fn multi_step_workflow_with_shared_volume() {
             cancellation_token: CancellationToken::new(),
             host_context: None,
             log_sink: None,
+            artifact_store: None,
+        artifact_volume: None,
+        artifact_package: None,
         };
 
         let result = step.run(&ctx).await.unwrap_or_else(|e| {
@@ -876,6 +894,9 @@ async fn sub_workflow_inherits_shared_volume_from_data() {
         cancellation_token: CancellationToken::new(),
         host_context: None,
         log_sink: None,
+        artifact_store: None,
+        artifact_volume: None,
+        artifact_package: None,
     };
 
     let result = step.run(&ctx).await.unwrap_or_else(|e| {
