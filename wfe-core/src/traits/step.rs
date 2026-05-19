@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
+use crate::artifact_volume::{ArtifactVolume, ArtifactVolumePackage};
 use crate::models::{
     ExecutionPointer, ExecutionResult, WorkflowDefinition, WorkflowInstance, WorkflowStep,
 };
@@ -56,8 +57,12 @@ pub struct StepExecutionContext<'a> {
     pub host_context: Option<&'a dyn HostContext>,
     /// Log sink for streaming step output. None if not configured.
     pub log_sink: Option<&'a dyn super::LogSink>,
-    /// Artifact store for resolving and mounting OCI-compatible inputs.
+    /// Artifact store for backward compatibility.
     pub artifact_store: Option<&'a dyn ArtifactStore>,
+    /// Resolved artifact volume for this step. Preferred over `artifact_store`.
+    pub artifact_volume: Option<&'a ArtifactVolume>,
+    /// Serialized artifact package for distributed scenarios.
+    pub artifact_package: Option<ArtifactVolumePackage>,
 }
 
 // Manual Debug impl since dyn HostContext is not Debug.
@@ -73,6 +78,8 @@ impl<'a> std::fmt::Debug for StepExecutionContext<'a> {
             .field("host_context", &self.host_context.is_some())
             .field("log_sink", &self.log_sink.is_some())
             .field("artifact_store", &self.artifact_store.is_some())
+            .field("artifact_volume", &self.artifact_volume.is_some())
+            .field("artifact_package", &self.artifact_package.is_some())
             .finish()
     }
 }

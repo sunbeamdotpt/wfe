@@ -10,6 +10,7 @@ use super::step_registry::StepRegistry;
 use crate::models::{
     Event, ExecutionError, PointerStatus, QueueType, WorkflowDefinition, WorkflowStatus,
 };
+use crate::artifact_volume::ArtifactVolume;
 use crate::traits::{
     ArtifactStore, DistributedLockProvider, LifecyclePublisher, PersistenceProvider, QueueProvider,
     SearchIndex, StepExecutionContext,
@@ -246,7 +247,28 @@ impl WorkflowExecutor {
             ))
             .await;
 
-            // c. Build StepExecutionContext (borrows workflow immutably).
+            // c. Resolve artifact volume for this step.
+            let inputs = step.artifact_inputs();
+            let (artifact_volume, artifact_package) = if !inputs.is_empty() {
+                if let Some(ref store) = self.artifact_store {
+                    match ArtifactVolume::resolve(&inputs, &workflow.data, store.as_ref()).await {
+                        Ok(volume) => {
+                            let package = volume.package().ok();
+                            (Some(volume), package)
+                        }
+                        Err(e) => {
+                            error!(workflow_id, step_id, error = %e, "failed to resolve artifact volume");
+                            (None, None)
+                        }
+                    }
+                } else {
+                    (None, None)
+                }
+            } else {
+                (None, None)
+            };
+
+            // d. Build StepExecutionContext (borrows workflow immutably).
             let cancellation_token = tokio_util::sync::CancellationToken::new();
             let context = StepExecutionContext {
                 item: workflow.execution_pointers[idx].context_item.as_ref(),
@@ -259,6 +281,8 @@ impl WorkflowExecutor {
                 host_context,
                 log_sink: self.log_sink.as_deref(),
                 artifact_store: self.artifact_store.as_deref(),
+                artifact_volume: artifact_volume.as_ref(),
+                artifact_package,
             };
 
             // d. Mount artifacts, run step, unmount artifacts.

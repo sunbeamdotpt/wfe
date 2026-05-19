@@ -230,6 +230,8 @@ mod tests {
             host_context: Some(host),
             log_sink: None,
             artifact_store: None,
+            artifact_volume: None,
+            artifact_package: None,
         }
     }
 

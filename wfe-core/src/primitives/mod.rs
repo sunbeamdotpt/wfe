@@ -71,6 +71,8 @@ mod test_helpers {
             host_context: None,
             log_sink: None,
             artifact_store: None,
+            artifact_volume: None,
+            artifact_package: None,
         }
     }
 

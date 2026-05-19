@@ -72,6 +72,8 @@ mod tests {
             host_context: None,
             log_sink: None,
             artifact_store: None,
+            artifact_volume: None,
+            artifact_package: None,
         };
         mw.pre_step(&ctx).await.unwrap();
     }
@@ -94,6 +96,8 @@ mod tests {
             host_context: None,
             log_sink: None,
             artifact_store: None,
+            artifact_volume: None,
+            artifact_package: None,
         };
         let result = ExecutionResult::next();
         mw.post_step(&ctx, &result).await.unwrap();
