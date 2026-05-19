@@ -126,22 +126,51 @@ impl BuildkitStep {
         attrs
     }
 
-    /// Build exporter configuration for image output.
+    /// Build exporter configuration based on output type.
     fn build_exporters(&self) -> Vec<Exporter> {
-        if self.config.tags.is_empty() {
-            return vec![];
-        }
+        let output_type = self.config.output_type.as_deref().unwrap_or("image");
 
-        let mut export_attrs = HashMap::new();
-        export_attrs.insert("name".to_string(), self.config.tags.join(","));
-        if self.config.push {
-            export_attrs.insert("push".to_string(), "true".to_string());
+        match output_type {
+            "docker" | "oci" | "tar" => {
+                let mut export_attrs = HashMap::new();
+                if !self.config.tags.is_empty() {
+                    export_attrs.insert("name".to_string(), self.config.tags.join(","));
+                }
+                if let Some(ref dest) = self.config.output_dest {
+                    export_attrs.insert("dest".to_string(), dest.clone());
+                }
+                let exporter_type = if output_type == "tar" { "docker" } else { output_type };
+                vec![Exporter {
+                    r#type: exporter_type.to_string(),
+                    attrs: export_attrs,
+                }]
+            }
+            "local" => {
+                let mut export_attrs = HashMap::new();
+                if let Some(ref dest) = self.config.output_dest {
+                    export_attrs.insert("dest".to_string(), dest.clone());
+                }
+                vec![Exporter {
+                    r#type: "local".to_string(),
+                    attrs: export_attrs,
+                }]
+            }
+            _ => {
+                // Default "image" exporter.
+                if self.config.tags.is_empty() {
+                    return vec![];
+                }
+                let mut export_attrs = HashMap::new();
+                export_attrs.insert("name".to_string(), self.config.tags.join(","));
+                if self.config.push {
+                    export_attrs.insert("push".to_string(), "true".to_string());
+                }
+                vec![Exporter {
+                    r#type: "image".to_string(),
+                    attrs: export_attrs,
+                }]
+            }
         }
-
-        vec![Exporter {
-            r#type: "image".to_string(),
-            attrs: export_attrs,
-        }]
     }
 
     /// Build cache options from the configuration.
@@ -375,6 +404,7 @@ pub fn build_output_data(
     stderr: &str,
     digest: Option<&str>,
     tags: &[String],
+    output_dest: Option<&str>,
 ) -> serde_json::Value {
     let mut outputs = serde_json::Map::new();
 
@@ -393,6 +423,13 @@ pub fn build_output_data(
                     .map(|t| serde_json::Value::String(t.clone()))
                     .collect(),
             ),
+        );
+    }
+
+    if let Some(dest) = output_dest {
+        outputs.insert(
+            format!("{step_name}.output_dest"),
+            serde_json::Value::String(dest.to_string()),
         );
     }
 
@@ -452,6 +489,7 @@ impl StepBody for BuildkitStep {
             "", // gRPC builds don't produce traditional stderr
             digest.as_deref(),
             &self.config.tags,
+            self.config.output_dest.as_deref(),
         );
 
         Ok(ExecutionResult {
@@ -481,6 +519,7 @@ mod tests {
             cache_to: vec![],
             push: false,
             output_type: None,
+            output_dest: None,
             buildkit_addr: "unix:///run/buildkit/buildkitd.sock".to_string(),
             tls: TlsConfig::default(),
             registry_auth: HashMap::new(),
@@ -665,7 +704,7 @@ mod tests {
     fn build_output_data_with_digest_and_tags() {
         let digest = "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
         let tags = vec!["myapp:latest".to_string(), "myapp:v1".to_string()];
-        let result = build_output_data("build", "out", "err", Some(digest), &tags);
+        let result = build_output_data("build", "out", "err", Some(digest), &tags, None);
 
         let obj = result.as_object().unwrap();
         assert_eq!(obj["build.digest"], digest);
@@ -679,7 +718,7 @@ mod tests {
 
     #[test]
     fn build_output_data_without_digest() {
-        let result = build_output_data("step1", "hello", "", None, &[]);
+        let result = build_output_data("step1", "hello", "", None, &[], None);
 
         let obj = result.as_object().unwrap();
         assert!(!obj.contains_key("step1.digest"));
@@ -691,7 +730,7 @@ mod tests {
     #[test]
     fn build_output_data_with_digest_no_tags() {
         let digest = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
-        let result = build_output_data("img", "ok", "warn", Some(digest), &[]);
+        let result = build_output_data("img", "ok", "warn", Some(digest), &[], None);
 
         let obj = result.as_object().unwrap();
         assert_eq!(obj["img.digest"], digest);
@@ -703,7 +742,7 @@ mod tests {
     #[test]
     fn build_output_data_no_digest_with_tags() {
         let tags = vec!["app:v2".to_string()];
-        let result = build_output_data("s", "", "", None, &tags);
+        let result = build_output_data("s", "", "", None, &tags, None);
 
         let obj = result.as_object().unwrap();
         assert!(!obj.contains_key("s.digest"));
@@ -712,11 +751,19 @@ mod tests {
 
     #[test]
     fn build_output_data_empty_strings() {
-        let result = build_output_data("x", "", "", None, &[]);
+        let result = build_output_data("x", "", "", None, &[], None);
         let obj = result.as_object().unwrap();
         assert_eq!(obj["x.stdout"], "");
         assert_eq!(obj["x.stderr"], "");
         assert_eq!(obj.len(), 2);
+    }
+
+    #[test]
+    fn build_output_data_with_output_dest() {
+        let result = build_output_data("build", "out", "err", None, &[], Some("/tmp/image.tar"));
+        let obj = result.as_object().unwrap();
+        assert_eq!(obj["build.output_dest"], "/tmp/image.tar");
+        assert_eq!(obj.len(), 3);
     }
 
     // ---------------------------------------------------------------
@@ -809,6 +856,58 @@ mod tests {
         let exporters = step.build_exporters();
         assert_eq!(exporters.len(), 1);
         assert!(!exporters[0].attrs.contains_key("push"));
+    }
+
+    #[test]
+    fn exporters_docker_with_tags_and_dest() {
+        let mut config = minimal_config();
+        config.output_type = Some("docker".to_string());
+        config.output_dest = Some("/tmp/out.tar".to_string());
+        config.tags = vec!["myapp:latest".to_string()];
+        let step = BuildkitStep::new(config);
+        let exporters = step.build_exporters();
+        assert_eq!(exporters.len(), 1);
+        assert_eq!(exporters[0].r#type, "docker");
+        assert_eq!(exporters[0].attrs.get("name"), Some(&"myapp:latest".to_string()));
+        assert_eq!(exporters[0].attrs.get("dest"), Some(&"/tmp/out.tar".to_string()));
+    }
+
+    #[test]
+    fn exporters_tar_maps_to_docker() {
+        let mut config = minimal_config();
+        config.output_type = Some("tar".to_string());
+        config.output_dest = Some("/tmp/image.tar".to_string());
+        config.tags = vec!["app:v1".to_string()];
+        let step = BuildkitStep::new(config);
+        let exporters = step.build_exporters();
+        assert_eq!(exporters.len(), 1);
+        assert_eq!(exporters[0].r#type, "docker");
+        assert_eq!(exporters[0].attrs.get("dest"), Some(&"/tmp/image.tar".to_string()));
+    }
+
+    #[test]
+    fn exporters_local_with_dest() {
+        let mut config = minimal_config();
+        config.output_type = Some("local".to_string());
+        config.output_dest = Some("/tmp/rootfs".to_string());
+        let step = BuildkitStep::new(config);
+        let exporters = step.build_exporters();
+        assert_eq!(exporters.len(), 1);
+        assert_eq!(exporters[0].r#type, "local");
+        assert_eq!(exporters[0].attrs.get("dest"), Some(&"/tmp/rootfs".to_string()));
+        assert!(!exporters[0].attrs.contains_key("name"));
+    }
+
+    #[test]
+    fn exporters_docker_without_dest() {
+        let mut config = minimal_config();
+        config.output_type = Some("docker".to_string());
+        config.tags = vec!["myapp:latest".to_string()];
+        let step = BuildkitStep::new(config);
+        let exporters = step.build_exporters();
+        assert_eq!(exporters.len(), 1);
+        assert_eq!(exporters[0].r#type, "docker");
+        assert!(!exporters[0].attrs.contains_key("dest"));
     }
 
     // ---------------------------------------------------------------

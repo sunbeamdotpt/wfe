@@ -26,8 +26,10 @@ pub struct BuildkitConfig {
     /// Whether to push the built image.
     #[serde(default)]
     pub push: bool,
-    /// Output type: "image", "local", "tar".
+    /// Output type: "image", "docker", "oci", "local".
     pub output_type: Option<String>,
+    /// Destination path for non-image exports (e.g. tar file or local directory).
+    pub output_dest: Option<String>,
     /// BuildKit daemon address.
     #[serde(default = "default_buildkit_addr")]
     pub buildkit_addr: String,
@@ -94,6 +96,7 @@ mod tests {
             cache_to: vec!["type=registry,ref=myapp:cache,mode=max".to_string()],
             push: true,
             output_type: Some("image".to_string()),
+            output_dest: Some("/tmp/image.tar".to_string()),
             buildkit_addr: "tcp://buildkitd:1234".to_string(),
             tls: TlsConfig {
                 ca: Some("/certs/ca.pem".to_string()),
@@ -116,6 +119,7 @@ mod tests {
         assert_eq!(config.cache_to, deserialized.cache_to);
         assert_eq!(config.push, deserialized.push);
         assert_eq!(config.output_type, deserialized.output_type);
+        assert_eq!(config.output_dest, deserialized.output_dest);
         assert_eq!(config.buildkit_addr, deserialized.buildkit_addr);
         assert_eq!(config.tls.ca, deserialized.tls.ca);
         assert_eq!(config.tls.cert, deserialized.tls.cert);
