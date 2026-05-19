@@ -259,6 +259,7 @@ mod tests {
             artifact_store: None,
             artifact_volume: None,
             artifact_package: None,
+            persistence: None,
         };
 
         let json = serialize_context(&ctx);
@@ -287,6 +288,7 @@ mod tests {
             artifact_store: None,
             artifact_volume: None,
             artifact_package: None,
+            persistence: None,
         };
 
         let json = serialize_context(&ctx);
@@ -415,6 +417,7 @@ mod tests {
             artifact_store: None,
             artifact_volume: None,
             artifact_package: None,
+            persistence: None,
         };
 
         // Spawn a "JS side" that responds to the request.
@@ -456,6 +459,7 @@ mod tests {
             artifact_store: None,
             artifact_volume: None,
             artifact_package: None,
+            persistence: None,
         };
 
         tokio::spawn(async move {
@@ -491,6 +495,7 @@ mod tests {
             artifact_store: None,
             artifact_volume: None,
             artifact_package: None,
+            persistence: None,
         };
 
         tokio::spawn(async move {

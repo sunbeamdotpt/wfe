@@ -283,6 +283,7 @@ impl WorkflowExecutor {
                 artifact_store: self.artifact_store.as_deref(),
                 artifact_volume: artifact_volume.as_ref(),
                 artifact_package,
+                persistence: Some(self.persistence.as_ref()),
             };
 
             // d. Mount artifacts, run step, unmount artifacts.

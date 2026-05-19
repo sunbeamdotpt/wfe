@@ -7,6 +7,7 @@ use crate::models::{
     ExecutionPointer, ExecutionResult, WorkflowDefinition, WorkflowInstance, WorkflowStep,
 };
 use crate::traits::ArtifactStore;
+use super::persistence::PersistenceProvider;
 
 /// Marker trait for all data types that flow between workflow steps.
 /// Anything that is serializable and deserializable qualifies.
@@ -63,9 +64,15 @@ pub struct StepExecutionContext<'a> {
     pub artifact_volume: Option<&'a ArtifactVolume>,
     /// Serialized artifact package for distributed scenarios.
     pub artifact_package: Option<ArtifactVolumePackage>,
+    /// Persistence provider. Available to long-running steps (e.g.
+    /// `SignAndWriteCommitStep`) that need to emit a mid-step heartbeat by
+    /// calling `persistence.persist_workflow(&instance)`. The Postgres
+    /// implementation automatically bumps `last_heartbeat_at = now()` on
+    /// every `persist_workflow` call.
+    pub persistence: Option<&'a dyn PersistenceProvider>,
 }
 
-// Manual Debug impl since dyn HostContext is not Debug.
+// Manual Debug impl since dyn HostContext/PersistenceProvider are not Debug.
 impl<'a> std::fmt::Debug for StepExecutionContext<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("StepExecutionContext")
@@ -80,6 +87,7 @@ impl<'a> std::fmt::Debug for StepExecutionContext<'a> {
             .field("artifact_store", &self.artifact_store.is_some())
             .field("artifact_volume", &self.artifact_volume.is_some())
             .field("artifact_package", &self.artifact_package.is_some())
+            .field("persistence", &self.persistence.is_some())
             .finish()
     }
 }

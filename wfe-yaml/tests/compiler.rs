@@ -1118,6 +1118,7 @@ workflows:
         artifact_store: None,
         artifact_volume: None,
         artifact_package: None,
+        persistence: None,
     };
 
     let result = step.run(&ctx).await.unwrap();

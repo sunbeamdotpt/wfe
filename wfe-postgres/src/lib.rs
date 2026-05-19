@@ -282,7 +282,8 @@ impl WorkflowRepository for PostgresPersistenceProvider {
             r#"UPDATE wfc.workflows SET
                name=$2, root_workflow_id=$3, definition_id=$4, version=$5,
                description=$6, reference=$7, status=$8, data=$9, next_execution=$10,
-               create_time=$11, complete_time=$12
+               create_time=$11, complete_time=$12,
+               last_heartbeat_at=now()
                WHERE id=$1"#,
         )
         .bind(&instance.id)
@@ -326,7 +327,8 @@ impl WorkflowRepository for PostgresPersistenceProvider {
             r#"UPDATE wfc.workflows SET
                name=$2, root_workflow_id=$3, definition_id=$4, version=$5,
                description=$6, reference=$7, status=$8, data=$9, next_execution=$10,
-               create_time=$11, complete_time=$12
+               create_time=$11, complete_time=$12,
+               last_heartbeat_at=now()
                WHERE id=$1"#,
         )
         .bind(&instance.id)

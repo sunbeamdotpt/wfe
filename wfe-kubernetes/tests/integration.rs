@@ -110,6 +110,7 @@ async fn run_echo_job() {
         artifact_store: None,
         artifact_volume: None,
         artifact_package: None,
+        persistence: None,
     };
 
     let result = step.run(&ctx).await.unwrap();
@@ -161,6 +162,7 @@ async fn run_job_with_wfe_output() {
         artifact_store: None,
         artifact_volume: None,
         artifact_package: None,
+        persistence: None,
     };
 
     let result = step.run(&ctx).await.unwrap();
@@ -208,6 +210,7 @@ async fn run_job_with_env_vars() {
         artifact_store: None,
         artifact_volume: None,
         artifact_package: None,
+        persistence: None,
     };
 
     let result = step.run(&ctx).await.unwrap();
@@ -249,6 +252,7 @@ async fn run_job_nonzero_exit_fails() {
         artifact_store: None,
         artifact_volume: None,
         artifact_package: None,
+        persistence: None,
     };
 
     let result = step.run(&ctx).await;
@@ -290,6 +294,7 @@ async fn run_job_with_timeout() {
         artifact_store: None,
         artifact_volume: None,
         artifact_package: None,
+        persistence: None,
     };
 
     let result = step.run(&ctx).await;
@@ -684,8 +689,9 @@ async fn multi_step_workflow_with_shared_volume() {
             host_context: None,
             log_sink: None,
             artifact_store: None,
-        artifact_volume: None,
-        artifact_package: None,
+            artifact_volume: None,
+            artifact_package: None,
+            persistence: None,
         };
 
         let result = step.run(&ctx).await.unwrap_or_else(|e| {
@@ -897,6 +903,7 @@ async fn sub_workflow_inherits_shared_volume_from_data() {
         artifact_store: None,
         artifact_volume: None,
         artifact_package: None,
+        persistence: None,
     };
 
     let result = step.run(&ctx).await.unwrap_or_else(|e| {

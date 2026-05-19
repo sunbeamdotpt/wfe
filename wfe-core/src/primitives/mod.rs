@@ -73,6 +73,7 @@ mod test_helpers {
             artifact_store: None,
             artifact_volume: None,
             artifact_package: None,
+            persistence: None,
         }
     }
 

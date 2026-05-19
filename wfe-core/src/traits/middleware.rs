@@ -74,6 +74,7 @@ mod tests {
             artifact_store: None,
             artifact_volume: None,
             artifact_package: None,
+            persistence: None,
         };
         mw.pre_step(&ctx).await.unwrap();
     }
@@ -98,6 +99,7 @@ mod tests {
             artifact_store: None,
             artifact_volume: None,
             artifact_package: None,
+            persistence: None,
         };
         let result = ExecutionResult::next();
         mw.post_step(&ctx, &result).await.unwrap();
