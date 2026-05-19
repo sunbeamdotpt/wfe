@@ -7,7 +7,7 @@ use wfe_core::WfeError;
 use wfe_core::local_artifact_store::extract_artifact_to_dir;
 use wfe_core::models::{ExecutionResult, parse_artifact_ref};
 use wfe_core::traits::step::{StepBody, StepExecutionContext};
-use wfe_core::traits::ArtifactStore;
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// Shellconfig.
@@ -30,15 +30,16 @@ pub struct ShellConfig {
 /// Shellstep.
 pub struct ShellStep {
     config: ShellConfig,
-    /// Tracks temp directories created during mount_artifacts for cleanup.
-    mount_points: Vec<PathBuf>,
+    /// Tracks artifact mount points created during mount_artifacts for cleanup.
+    /// Map of input name → mount path.
+    mount_points: HashMap<String, PathBuf>,
 }
 
 impl ShellStep {
     pub fn new(config: ShellConfig) -> Self {
         Self {
             config,
-            mount_points: Vec::new(),
+            mount_points: HashMap::new(),
         }
     }
 
@@ -78,10 +79,8 @@ impl ShellStep {
         }
 
         // Inject INPUT_<NAME> env vars for mounted artifacts.
-        for mount_point in &self.mount_points {
-            if let Some(name) = mount_point.file_name().and_then(|n| n.to_str()) {
-                cmd.env(format!("INPUT_{}", name.to_uppercase()), mount_point.as_os_str());
-            }
+        for (name, mount_point) in &self.mount_points {
+            cmd.env(format!("INPUT_{}", name.to_uppercase()), mount_point.as_os_str());
         }
 
         for (key, value) in &self.config.env {
@@ -258,21 +257,18 @@ impl StepBody for ShellStep {
         let Some(ref inputs) = self.config.inputs else {
             return Ok(());
         };
-        let Some(store) = context.artifact_store else {
+
+        if inputs.is_empty() {
             return Ok(());
-        };
-        let Some(data_obj) = context.workflow.data.as_object() else {
-            return Ok(());
+        }
+
+        let Some(volume) = context.artifact_volume else {
+            return Err(WfeError::StepExecution(
+                "artifact volume required but not provided".to_string(),
+            ));
         };
 
         for (name, mount_point_str) in inputs {
-            let Some(value) = data_obj.get(name) else {
-                continue;
-            };
-            let Some(digest) = parse_artifact_ref(value) else {
-                continue;
-            };
-
             let mount_point = PathBuf::from(mount_point_str);
             // If relative, resolve under a temp dir.
             let mount_point = if mount_point.is_absolute() {
@@ -282,22 +278,10 @@ impl StepBody for ShellStep {
                 tmp.join(&mount_point)
             };
 
-            let reader = store
-                .get(&digest)
-                .await
-                .map_err(|e| WfeError::StepExecution(format!("failed to get artifact: {e}")))?
-                .ok_or_else(|| {
-                    WfeError::StepExecution(format!("artifact not found: {digest}"))
-                })?;
-
-            // We need a sync reader for tar::Archive, so read into memory.
-            // For large artifacts this should be streamed, but most workflow
-            // inputs (source trees) are manageable in memory.
-            let mut bytes = Vec::new();
-            let mut reader = reader;
-            tokio::io::AsyncReadExt::read_to_end(&mut reader, &mut bytes)
-                .await
-                .map_err(|e| WfeError::StepExecution(format!("failed to read artifact: {e}")))?;
+            let bytes = volume
+                .get(name)
+                .cloned()
+                .ok_or_else(|| WfeError::StepExecution(format!("artifact '{name}' not in volume")))?;
 
             tokio::task::spawn_blocking({
                 let mount_point = mount_point.clone();
@@ -306,7 +290,7 @@ impl StepBody for ShellStep {
             .await
             .map_err(|e| WfeError::StepExecution(format!("extract task panicked: {e}")))??;
 
-            self.mount_points.push(mount_point);
+            self.mount_points.insert(name.clone(), mount_point);
         }
 
         Ok(())
@@ -316,7 +300,7 @@ impl StepBody for ShellStep {
         &mut self,
         _context: &StepExecutionContext<'_>,
     ) -> wfe_core::Result<()> {
-        for mount_point in self.mount_points.drain(..) {
+        for (_, mount_point) in self.mount_points.drain() {
             let _ = tokio::fs::remove_dir_all(&mount_point).await;
         }
         Ok(())
