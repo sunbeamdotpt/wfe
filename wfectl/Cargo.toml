@@ -15,6 +15,9 @@ path = "src/main.rs"
 # `wfectl validate` compiles YAML locally so users get instant feedback
 # without a server round-trip. Enable the full executor feature set so every
 # step type the server supports is also recognized by the CLI.
+wfe = { workspace = true }
+wfe-core = { workspace = true, features = ["test-support"] }
+wfe-sqlite = { workspace = true }
 wfe-yaml = { workspace = true, features = ["rustlang", "buildkit", "containerd", "kubernetes", "deno"] }
 wfe-server-protos = { workspace = true }
 tonic = { version = "0.14", features = ["tls-native-roots"] }
@@ -31,6 +34,9 @@ tracing-subscriber = { workspace = true }
 chrono = { workspace = true }
 dirs = "5"
 sha2 = "0.10"
+hex = { workspace = true }
+tar = { workspace = true }
+flate2 = { workspace = true }
 base64 = "0.22"
 rand = "0.8"
 url = { workspace = true }

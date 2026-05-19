@@ -24,6 +24,9 @@ pub struct ValidateArgs {
     /// `wfectl register` so validation sees the same interpolated text.
     #[arg(long = "config", short = 'c', value_parser = parse_kv)]
     pub config: Vec<(String, String)>,
+    /// Output the workflow as a Graphviz DOT graph instead of validation metadata.
+    #[arg(long = "graph")]
+    pub graph: bool,
 }
 
 fn parse_kv(raw: &str) -> Result<(String, String), String> {
@@ -47,6 +50,16 @@ pub async fn run(args: ValidateArgs, format: OutputFormat) -> Result<()> {
 
     let compiled = wfe_yaml::load_workflow_from_str(&yaml, &config)
         .with_context(|| format!("YAML compilation failed for {}", args.file.display()))?;
+
+    if args.graph {
+        for (idx, c) in compiled.iter().enumerate() {
+            if compiled.len() > 1 {
+                println!("// Workflow: {} ({})", c.definition.id, idx + 1);
+            }
+            println!("{}", c.definition.to_dot());
+        }
+        return Ok(());
+    }
 
     if matches!(format, OutputFormat::Json) {
         let json = serde_json::json!({
@@ -129,6 +142,7 @@ workflow:
         let args = ValidateArgs {
             file: tmp.path().to_path_buf(),
             config: vec![],
+            graph: false,
         };
         run(args, OutputFormat::Json).await.unwrap();
     }
@@ -153,6 +167,7 @@ workflow:
         let args = ValidateArgs {
             file: tmp.path().to_path_buf(),
             config: vec![],
+            graph: false,
         };
         let err = run(args, OutputFormat::Table).await.unwrap_err();
         let msg = format!("{err:#}");
@@ -167,6 +182,7 @@ workflow:
         let args = ValidateArgs {
             file: PathBuf::from("/definitely/does/not/exist.yaml"),
             config: vec![],
+            graph: false,
         };
         let err = run(args, OutputFormat::Table).await.unwrap_err();
         let msg = format!("{err:#}");

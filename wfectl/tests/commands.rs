@@ -85,31 +85,33 @@ async fn run_command_with_inline_data() {
     let (server, _seen) = spawn_stub().await;
     let client = build_client(&server, "test-token").await.unwrap();
     let args = commands::run::RunArgs {
-        definition_id: "ci".into(),
+        target: "ci".into(),
         version: 1,
-        data: None,
-        data_json: Some(r#"{"key":"value"}"#.into()),
         name: None,
+        inputs: vec![("key".into(), "value".into())],
+        config: vec![],
+        db: None,
+        timeout: 3600,
     };
-    commands::run::run(args, client, OutputFormat::Table)
+    commands::run::run(args, Some(client), OutputFormat::Table)
         .await
         .unwrap();
 }
 
 #[tokio::test]
-async fn run_command_with_data_file() {
+async fn run_command_with_input_pairs() {
     let (server, _seen) = spawn_stub().await;
     let client = build_client(&server, "test-token").await.unwrap();
-    let tmp = tempfile::NamedTempFile::new().unwrap();
-    std::fs::write(tmp.path(), r#"{"deploy":true}"#).unwrap();
     let args = commands::run::RunArgs {
-        definition_id: "ci".into(),
+        target: "ci".into(),
         version: 2,
-        data: Some(tmp.path().to_path_buf()),
-        data_json: None,
         name: None,
+        inputs: vec![("deploy".into(), "true".into())],
+        config: vec![],
+        db: None,
+        timeout: 3600,
     };
-    commands::run::run(args, client, OutputFormat::Json)
+    commands::run::run(args, Some(client), OutputFormat::Json)
         .await
         .unwrap();
 }
@@ -119,30 +121,17 @@ async fn run_command_no_data() {
     let (server, _seen) = spawn_stub().await;
     let client = build_client(&server, "test-token").await.unwrap();
     let args = commands::run::RunArgs {
-        definition_id: "ci".into(),
+        target: "ci".into(),
         version: 1,
-        data: None,
-        data_json: None,
         name: None,
+        inputs: vec![],
+        config: vec![],
+        db: None,
+        timeout: 3600,
     };
-    commands::run::run(args, client, OutputFormat::Table)
+    commands::run::run(args, Some(client), OutputFormat::Table)
         .await
         .unwrap();
-}
-
-#[tokio::test]
-async fn run_command_invalid_json_errors() {
-    let (server, _seen) = spawn_stub().await;
-    let client = build_client(&server, "test-token").await.unwrap();
-    let args = commands::run::RunArgs {
-        definition_id: "ci".into(),
-        version: 1,
-        data: None,
-        data_json: Some("not json".into()),
-        name: None,
-    };
-    let result = commands::run::run(args, client, OutputFormat::Table).await;
-    assert!(result.is_err());
 }
 
 #[tokio::test]

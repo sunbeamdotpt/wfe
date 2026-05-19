@@ -103,6 +103,9 @@ async fn main() -> Result<()> {
         Command::Logout(args) => logout::run(args, &cfg).await,
         Command::Whoami(args) => whoami::run(args, &cfg, cli.output).await,
         Command::Validate(args) => validate::run(args, cli.output).await,
+        Command::Run(args) if run::is_local_target(&args.target) => {
+            run::run(args, None, cli.output).await
+        }
 
         // --- Commands that need an authenticated gRPC client ---
         cmd => {
@@ -121,7 +124,7 @@ async fn dispatch(
     match cmd {
         Command::Register(args) => register::run(args, client, format).await,
         Command::Definitions(args) => definitions::run(args, client, format).await,
-        Command::Run(args) => run::run(args, client, format).await,
+        Command::Run(args) => run::run(args, Some(client), format).await,
         Command::Get(args) => get::run(args, client, format).await,
         Command::List(args) => list::run(args, client, format).await,
         Command::Cancel(args) => cancel::run(args, client).await,
