@@ -6,8 +6,8 @@ use tokio_util::sync::CancellationToken;
 use wfe_core::WfeError;
 use wfe_core::executor::{StepRegistry, WorkflowExecutor};
 use wfe_core::traits::{
-    DistributedLockProvider, LifecyclePublisher, PersistenceProvider, QueueProvider, SearchIndex,
-    ServiceProvider,
+    ArtifactStore, DistributedLockProvider, LifecyclePublisher, PersistenceProvider, QueueProvider,
+    SearchIndex, ServiceProvider,
 };
 
 use crate::host::WorkflowHost;
@@ -24,6 +24,7 @@ pub struct WorkflowHostBuilder {
     search: Option<Arc<dyn SearchIndex>>,
     log_sink: Option<Arc<dyn wfe_core::traits::LogSink>>,
     service_provider: Option<Arc<dyn ServiceProvider>>,
+    artifact_store: Option<Arc<dyn ArtifactStore>>,
 }
 
 impl WorkflowHostBuilder {
@@ -37,6 +38,7 @@ impl WorkflowHostBuilder {
             search: None,
             log_sink: None,
             service_provider: None,
+            artifact_store: None,
         }
     }
 
@@ -102,6 +104,12 @@ impl WorkflowHostBuilder {
         self
     }
 
+    /// Set an optional artifact store for OCI-compatible workflow inputs.
+    pub fn use_artifact_store(mut self, store: Arc<dyn ArtifactStore>) -> Self {
+        self.artifact_store = Some(store);
+        self
+    }
+
     /// Build the [`WorkflowHost`].
     ///
     /// # Errors
@@ -141,6 +149,9 @@ impl WorkflowHostBuilder {
         if let Some(ref log_sink) = self.log_sink {
             executor = executor.with_log_sink(Arc::clone(log_sink));
         }
+        if let Some(ref artifact_store) = self.artifact_store {
+            executor = executor.with_artifact_store(Arc::clone(artifact_store));
+        }
 
         Ok(WorkflowHost {
             persistence,
@@ -149,6 +160,7 @@ impl WorkflowHostBuilder {
             lifecycle: self.lifecycle,
             search: self.search,
             service_provider: self.service_provider,
+            artifact_store: self.artifact_store,
             registry: Arc::new(RwLock::new(InMemoryWorkflowRegistry::new())),
             step_registry: Arc::new(RwLock::new(StepRegistry::new())),
             executor: Arc::new(executor),

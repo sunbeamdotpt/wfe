@@ -14,8 +14,8 @@ use wfe_core::models::{
 };
 use wfe_core::traits::registry::WorkflowRegistry;
 use wfe_core::traits::{
-    DistributedLockProvider, HostContext, LifecyclePublisher, PersistenceProvider, QueueProvider,
-    SearchIndex, ServiceProvider, StepBody, WorkflowData,
+    ArtifactStore, DistributedLockProvider, HostContext, LifecyclePublisher, PersistenceProvider,
+    QueueProvider, SearchIndex, ServiceProvider, StepBody, WorkflowData,
 };
 use wfe_core::{Result, WfeError};
 
@@ -90,6 +90,7 @@ pub struct WorkflowHost {
     pub(crate) registry: Arc<RwLock<InMemoryWorkflowRegistry>>,
     pub(crate) step_registry: Arc<RwLock<StepRegistry>>,
     pub(crate) service_provider: Option<Arc<dyn ServiceProvider>>,
+    pub(crate) artifact_store: Option<Arc<dyn ArtifactStore>>,
     pub(crate) executor: Arc<WorkflowExecutor>,
     pub(crate) shutdown: CancellationToken,
 }
