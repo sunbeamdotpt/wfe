@@ -11,8 +11,8 @@ use crate::models::{
     Event, ExecutionError, PointerStatus, QueueType, WorkflowDefinition, WorkflowStatus,
 };
 use crate::traits::{
-    DistributedLockProvider, LifecyclePublisher, PersistenceProvider, QueueProvider, SearchIndex,
-    StepExecutionContext,
+    ArtifactStore, DistributedLockProvider, LifecyclePublisher, PersistenceProvider, QueueProvider,
+    SearchIndex, StepExecutionContext,
 };
 use crate::{Result, WfeError};
 
@@ -30,6 +30,8 @@ pub struct WorkflowExecutor {
     pub search: Option<Arc<dyn SearchIndex>>,
     /// Log sink.
     pub log_sink: Option<Arc<dyn crate::traits::LogSink>>,
+    /// Artifact store for OCI-compatible inputs.
+    pub artifact_store: Option<Arc<dyn ArtifactStore>>,
 }
 
 impl WorkflowExecutor {
@@ -45,6 +47,7 @@ impl WorkflowExecutor {
             lifecycle: None,
             search: None,
             log_sink: None,
+            artifact_store: None,
         }
     }
 
@@ -60,6 +63,11 @@ impl WorkflowExecutor {
 
     pub fn with_search(mut self, search: Arc<dyn SearchIndex>) -> Self {
         self.search = Some(search);
+        self
+    }
+
+    pub fn with_artifact_store(mut self, store: Arc<dyn ArtifactStore>) -> Self {
+        self.artifact_store = Some(store);
         self
     }
 
@@ -250,10 +258,17 @@ impl WorkflowExecutor {
                 cancellation_token,
                 host_context,
                 log_sink: self.log_sink.as_deref(),
+                artifact_store: self.artifact_store.as_deref(),
             };
 
-            // d. Call step.run(context).
+            // d. Mount artifacts, run step, unmount artifacts.
+            if let Err(e) = step_body.mount_artifacts(&context).await {
+                error!(workflow_id, step_id, error = %e, "mount_artifacts failed");
+            }
             let step_result = step_body.run(&context).await;
+            if let Err(e) = step_body.unmount_artifacts(&context).await {
+                error!(workflow_id, step_id, error = %e, "unmount_artifacts failed");
+            }
 
             // Now we can mutate again since context is dropped.
             match step_result {

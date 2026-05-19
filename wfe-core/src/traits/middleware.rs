@@ -71,6 +71,7 @@ mod tests {
             cancellation_token: tokio_util::sync::CancellationToken::new(),
             host_context: None,
             log_sink: None,
+            artifact_store: None,
         };
         mw.pre_step(&ctx).await.unwrap();
     }
@@ -92,6 +93,7 @@ mod tests {
             cancellation_token: tokio_util::sync::CancellationToken::new(),
             host_context: None,
             log_sink: None,
+            artifact_store: None,
         };
         let result = ExecutionResult::next();
         mw.post_step(&ctx, &result).await.unwrap();

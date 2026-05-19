@@ -5,6 +5,7 @@ use serde::de::DeserializeOwned;
 use crate::models::{
     ExecutionPointer, ExecutionResult, WorkflowDefinition, WorkflowInstance, WorkflowStep,
 };
+use crate::traits::ArtifactStore;
 
 /// Marker trait for all data types that flow between workflow steps.
 /// Anything that is serializable and deserializable qualifies.
@@ -55,6 +56,8 @@ pub struct StepExecutionContext<'a> {
     pub host_context: Option<&'a dyn HostContext>,
     /// Log sink for streaming step output. None if not configured.
     pub log_sink: Option<&'a dyn super::LogSink>,
+    /// Artifact store for resolving and mounting OCI-compatible inputs.
+    pub artifact_store: Option<&'a dyn ArtifactStore>,
 }
 
 // Manual Debug impl since dyn HostContext is not Debug.
@@ -69,6 +72,7 @@ impl<'a> std::fmt::Debug for StepExecutionContext<'a> {
             .field("definition", &self.definition.is_some())
             .field("host_context", &self.host_context.is_some())
             .field("log_sink", &self.log_sink.is_some())
+            .field("artifact_store", &self.artifact_store.is_some())
             .finish()
     }
 }
@@ -109,4 +113,22 @@ pub trait StepBody: Send + Sync {
     /// - `Err(WfeError::Execution("msg".into()))` — mark the pointer as failed
     /// - [`ExecutionResult::persist(data)`](crate::models::ExecutionResult::persist) — persist state and pause
     async fn run(&mut self, context: &StepExecutionContext<'_>) -> crate::Result<ExecutionResult>;
+
+    /// Mount any artifacts this step requires.
+    ///
+    /// Called by the executor loop **before** [`run`](Self::run).
+    /// Default implementation is a no-op for primitives that don't consume
+    /// artifact inputs.
+    async fn mount_artifacts(&mut self, _context: &StepExecutionContext<'_>) -> crate::Result<()> {
+        Ok(())
+    }
+
+    /// Unmount and clean up artifacts.
+    ///
+    /// Called by the executor loop **after** [`run`](Self::run) completes,
+    /// regardless of success or failure.
+    /// Default implementation is a no-op.
+    async fn unmount_artifacts(&mut self, _context: &StepExecutionContext<'_>) -> crate::Result<()> {
+        Ok(())
+    }
 }

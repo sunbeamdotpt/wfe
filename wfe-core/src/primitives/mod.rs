@@ -70,6 +70,7 @@ mod test_helpers {
             cancellation_token: CancellationToken::new(),
             host_context: None,
             log_sink: None,
+            artifact_store: None,
         }
     }
 
