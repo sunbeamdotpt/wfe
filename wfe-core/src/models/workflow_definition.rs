@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -310,6 +311,38 @@ impl WorkflowStep {
             step_config: None,
             when: None,
         }
+    }
+
+    /// Extract artifact input declarations from the step's raw configuration.
+    ///
+    /// Looks for `config.inputs` (a map of name → target path) and
+    /// `config.input` (a single artifact name, used by buildkit). Returns
+    /// a map of input name → target path. For `config.input`, the target
+    /// path is empty since buildkit uses the artifact as a build context
+    /// override rather than a mount point.
+    pub fn artifact_inputs(&self) -> HashMap<String, String> {
+        let mut result = HashMap::new();
+
+        let config = match self.step_config.as_ref() {
+            Some(c) => c,
+            None => return result,
+        };
+
+        // Map form: inputs: { repo: /workspace/repo }
+        if let Some(inputs) = config.get("inputs").and_then(|v| v.as_object()) {
+            for (k, v) in inputs {
+                if let Some(s) = v.as_str() {
+                    result.insert(k.clone(), s.to_string());
+                }
+            }
+        }
+
+        // Single form: input: repo (buildkit)
+        if let Some(input) = config.get("input").and_then(|v| v.as_str()) {
+            result.insert(input.to_string(), String::new());
+        }
+
+        result
     }
 }
 
