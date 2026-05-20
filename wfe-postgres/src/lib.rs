@@ -34,6 +34,11 @@ impl PostgresPersistenceProvider {
         Ok(Self { pool })
     }
 
+    /// Create from an existing pool (useful for tests with custom pool options).
+    pub fn from_pool(pool: PgPool) -> Self {
+        Self { pool }
+    }
+
     /// Truncate all tables (for test cleanup).
     pub async fn truncate_all(&self) -> std::result::Result<(), sqlx::Error> {
         sqlx::query(
@@ -846,178 +851,10 @@ impl PersistenceProvider for PostgresPersistenceProvider {
     }
 
     async fn ensure_store_exists(&self) -> Result<()> {
-        sqlx::query("CREATE SCHEMA IF NOT EXISTS wfc")
-            .execute(&self.pool)
+        sqlx::migrate!("./migrations")
+            .run(&self.pool)
             .await
-            .map_err(Self::map_sqlx_err)?;
-
-        sqlx::query(
-            r#"CREATE TABLE IF NOT EXISTS wfc.workflows (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL UNIQUE,
-                root_workflow_id TEXT,
-                definition_id TEXT NOT NULL,
-                version INT NOT NULL,
-                description TEXT,
-                reference TEXT,
-                status TEXT NOT NULL,
-                data JSONB NOT NULL DEFAULT '{}',
-                next_execution BIGINT,
-                create_time TIMESTAMPTZ NOT NULL,
-                complete_time TIMESTAMPTZ
-            )"#,
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(Self::map_sqlx_err)?;
-
-        // Upgrade older databases that lack the `name` column. Back-fill with
-        // the UUID so the NOT NULL + UNIQUE invariant holds retroactively;
-        // callers can re-run with a real name on the next persist.
-        sqlx::query(
-            r#"DO $$
-            BEGIN
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = 'wfc' AND table_name = 'workflows'
-                      AND column_name = 'name'
-                ) THEN
-                    ALTER TABLE wfc.workflows ADD COLUMN name TEXT;
-                    UPDATE wfc.workflows SET name = id WHERE name IS NULL;
-                    ALTER TABLE wfc.workflows ALTER COLUMN name SET NOT NULL;
-                    CREATE UNIQUE INDEX IF NOT EXISTS idx_workflows_name
-                        ON wfc.workflows (name);
-                END IF;
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = 'wfc' AND table_name = 'workflows'
-                      AND column_name = 'root_workflow_id'
-                ) THEN
-                    ALTER TABLE wfc.workflows ADD COLUMN root_workflow_id TEXT;
-                END IF;
-            END$$;"#,
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(Self::map_sqlx_err)?;
-
-        sqlx::query(
-            r#"CREATE TABLE IF NOT EXISTS wfc.definition_sequences (
-                definition_id TEXT PRIMARY KEY,
-                next_num BIGINT NOT NULL
-            )"#,
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(Self::map_sqlx_err)?;
-
-        sqlx::query(
-            r#"CREATE TABLE IF NOT EXISTS wfc.execution_pointers (
-                id TEXT PRIMARY KEY,
-                workflow_id TEXT NOT NULL REFERENCES wfc.workflows(id),
-                step_id INT NOT NULL,
-                active BOOLEAN NOT NULL DEFAULT TRUE,
-                status TEXT NOT NULL,
-                sleep_until TIMESTAMPTZ,
-                persistence_data JSONB,
-                start_time TIMESTAMPTZ,
-                end_time TIMESTAMPTZ,
-                event_name TEXT,
-                event_key TEXT,
-                event_published BOOLEAN DEFAULT FALSE,
-                event_data JSONB,
-                step_name TEXT,
-                retry_count INT DEFAULT 0,
-                children JSONB DEFAULT '[]',
-                context_item JSONB,
-                predecessor_id TEXT,
-                outcome JSONB,
-                scope JSONB DEFAULT '[]',
-                extension_attributes JSONB DEFAULT '{}'
-            )"#,
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(Self::map_sqlx_err)?;
-
-        sqlx::query(
-            r#"CREATE TABLE IF NOT EXISTS wfc.events (
-                id TEXT PRIMARY KEY,
-                event_name TEXT NOT NULL,
-                event_key TEXT NOT NULL,
-                event_data JSONB NOT NULL DEFAULT 'null',
-                event_time TIMESTAMPTZ NOT NULL,
-                is_processed BOOLEAN DEFAULT FALSE
-            )"#,
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(Self::map_sqlx_err)?;
-
-        sqlx::query(
-            r#"CREATE TABLE IF NOT EXISTS wfc.event_subscriptions (
-                id TEXT PRIMARY KEY,
-                workflow_id TEXT NOT NULL,
-                step_id INT NOT NULL,
-                execution_pointer_id TEXT NOT NULL,
-                event_name TEXT NOT NULL,
-                event_key TEXT NOT NULL,
-                subscribe_as_of TIMESTAMPTZ NOT NULL,
-                subscription_data JSONB,
-                external_token TEXT,
-                external_worker_id TEXT,
-                external_token_expiry TIMESTAMPTZ
-            )"#,
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(Self::map_sqlx_err)?;
-
-        sqlx::query(
-            r#"CREATE TABLE IF NOT EXISTS wfc.execution_errors (
-                id SERIAL PRIMARY KEY,
-                error_time TIMESTAMPTZ NOT NULL,
-                workflow_id TEXT NOT NULL,
-                execution_pointer_id TEXT NOT NULL,
-                message TEXT NOT NULL
-            )"#,
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(Self::map_sqlx_err)?;
-
-        sqlx::query(
-            r#"CREATE TABLE IF NOT EXISTS wfc.scheduled_commands (
-                id SERIAL PRIMARY KEY,
-                command_name TEXT NOT NULL,
-                data TEXT NOT NULL,
-                execute_time BIGINT NOT NULL,
-                UNIQUE(command_name, data)
-            )"#,
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(Self::map_sqlx_err)?;
-
-        // Create indexes (IF NOT EXISTS for idempotency)
-        let indexes = [
-            "CREATE INDEX IF NOT EXISTS idx_workflows_next_execution ON wfc.workflows (next_execution)",
-            "CREATE INDEX IF NOT EXISTS idx_workflows_status ON wfc.workflows (status)",
-            "CREATE INDEX IF NOT EXISTS idx_events_name_key ON wfc.events (event_name, event_key)",
-            "CREATE INDEX IF NOT EXISTS idx_events_is_processed ON wfc.events (is_processed)",
-            "CREATE INDEX IF NOT EXISTS idx_events_event_time ON wfc.events (event_time)",
-            "CREATE INDEX IF NOT EXISTS idx_subscriptions_name_key ON wfc.event_subscriptions (event_name, event_key)",
-            "CREATE INDEX IF NOT EXISTS idx_subscriptions_workflow ON wfc.event_subscriptions (workflow_id)",
-            "CREATE INDEX IF NOT EXISTS idx_scheduled_commands_execute_time ON wfc.scheduled_commands (execute_time)",
-        ];
-
-        for idx in &indexes {
-            sqlx::query(idx)
-                .execute(&self.pool)
-                .await
-                .map_err(Self::map_sqlx_err)?;
-        }
-
+            .map_err(|e| WfeError::Persistence(e.to_string()))?;
         Ok(())
     }
 }

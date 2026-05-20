@@ -9,7 +9,7 @@ description = "PostgreSQL persistence provider for WFE"
 
 [dependencies]
 wfe-core = { workspace = true }
-sqlx = { workspace = true }
+sqlx = { workspace = true, features = ["migrate"] }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
