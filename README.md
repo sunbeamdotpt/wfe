@@ -241,7 +241,7 @@ docker compose down
 
 The compose file starts:
 
-- PostgreSQL 17 on port `5433`
+- PostgreSQL 17 on port `5432` (shared workspace instance)
 - Valkey 8 on port `6379`
 - OpenSearch 2 on port `9200`
 

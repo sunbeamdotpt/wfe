@@ -12,7 +12,7 @@ Implements the full `PersistenceProvider` trait backed by PostgreSQL via sqlx. A
 use wfe_postgres::PostgresPersistenceProvider;
 
 let provider = PostgresPersistenceProvider::new(
-    "postgres://wfe:wfe@localhost:5433/wfe_test"
+    "postgres://wfe:wfe@localhost:5432/wfe_test"
 ).await?;
 
 // Create schema and tables (idempotent)
@@ -69,7 +69,7 @@ docker compose up -d postgres
 cargo test -p wfe-postgres
 ```
 
-Default test connection string: `postgres://wfe:wfe@localhost:5433/wfe_test`
+Default test connection string: `postgres://wfe:wfe@localhost:5432/wfe_test`
 
 ## License
 
