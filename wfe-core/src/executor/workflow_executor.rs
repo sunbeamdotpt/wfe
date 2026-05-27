@@ -354,8 +354,9 @@ impl WorkflowExecutor {
                 Err(e) => {
                     // f. Handle error.
                     let error_msg = e.to_string();
+                    let step_name = step.name.as_deref().unwrap_or("(unnamed)");
                     tracing::Span::current().record("step.status", "failed");
-                    warn!(workflow_id, step_id, error = %error_msg, "Step execution failed");
+                    warn!(workflow_id, step_id, step_name, error = %error_msg, "Step execution failed");
 
                     self.publish_lifecycle(crate::models::LifecycleEvent::new(
                         &workflow.id,
