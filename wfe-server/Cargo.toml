@@ -1,10 +1,10 @@
 [package]
 name = "wfe-server"
-version = "1.9.4"
+version = "1.10.0"
 edition.workspace = true
 license.workspace = true
-repository = "https://github.com/sunbeamdotpt/sunbeam"
-homepage = "https://github.com/sunbeamdotpt/sunbeam"
+repository = "https://github.com/sunbeamdotpt/wfe"
+homepage = "https://github.com/sunbeamdotpt/wfe"
 description = "Headless workflow server with gRPC API and HTTP webhooks"
 
 [[bin]]
