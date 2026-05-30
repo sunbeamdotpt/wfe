@@ -367,6 +367,10 @@ pub struct StepConfig {
     pub namespace: Option<String>,
     /// Image pull policy: Always, IfNotPresent, Never.
     pub pull_policy: Option<String>,
+    /// Artifact outputs to capture after the step completes.
+    /// Map of output name → container path.
+    #[serde(default)]
+    pub artifact_outputs: HashMap<String, String>,
 
     // --- Cargo ---
     /// Target package for cargo steps (`-p`).

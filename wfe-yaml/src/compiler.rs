@@ -964,6 +964,7 @@ fn build_kubernetes_config(
         timeout_ms,
         pull_policy: config.pull_policy.clone(),
         namespace: config.namespace.clone(),
+        artifact_outputs: config.artifact_outputs.clone(),
     };
 
     let cluster_config = ClusterConfig {
