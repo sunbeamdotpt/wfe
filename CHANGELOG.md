@@ -2,6 +2,57 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.10.0] - 2026-05-30
+
+### Added
+
+- **Artifact Store**: New pluggable artifact system for passing files and build
+  outputs between workflow steps.
+  - `ArtifactStore` trait with `mount()` / `unmount()` lifecycle hooks.
+  - `LocalArtifactStore` implementation for filesystem-backed storage.
+  - `ArtifactVolume` abstraction wired through `StepExecutionContext` so every
+    executor can read and produce artifacts.
+  - `WorkflowStep::artifact_inputs()` for declaring artifact dependencies on
+    individual steps.
+- **wfe-yaml**: `git-repo` step executor — clone a Git repository at a specific
+  ref and expose it as an artifact for downstream steps.
+- **wfe-yaml**: Artifact input mounting for `shell` steps — local files or
+  artifacts from previous steps are mounted into the step's working directory.
+- **wfe-buildkit**: Support for `docker`, `oci`, `tar`, and `local` output types
+  when building images, with results pushed to the artifact store.
+- **wfe-buildkit** / **wfe-containerd**: Artifact injection via `Diff.Apply`,
+  allowing containerd and BuildKit executors to consume artifact inputs
+  directly.
+- **wfe**: `WorkflowHostBuilder` gains `use_artifact_store()` for wiring an
+  artifact store into the host.
+- **wfe**: Graphviz DOT output for workflow definitions — useful for
+  documentation and debugging complex graphs.
+- **wfe**: Default error behavior on `WorkflowBuilder` and improved sequence
+  child spawning.
+- **wfe-core**: `StepBody` gains `mount()` / `unmount()` lifecycle hooks for
+  pre-step setup and post-step teardown.
+- **wfectl**: Auto-detection of file paths in `-i` inputs — files are
+  automatically stored as artifacts instead of being passed as raw strings.
+- **wfe-yaml**: BuildKit context can now be omitted when an artifact input is
+  present, simplifying image-build steps that consume a git-repo artifact.
+- **wfe**: Persistence exposed on `StepExecutionContext` so long-running steps
+  can emit mid-flight heartbeats.
+- Extensive rustdoc coverage added across all WFE crates.
+
+### Changed
+
+- **wfe-postgres**: Migrated from inline schema to sqlx migrations; connection
+  pool reduced to prevent exhaustion in test suites.
+- Docker Compose configuration unified into the workspace manifest.
+- Project extracted from monorepo into a standalone workspace with its own root
+  `Cargo.toml`.
+
+### Fixed
+
+- **wfectl**: Cleaned up span noise and added step names to workflow error
+  output for easier debugging.
+- **wfe-postgres**: Added missing `last_heartbeat_at` column.
+
 ## [1.9.1] - 2026-04-09
 
 ### Added
