@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
+use bytes::Bytes;
 use wfe_core::models::service::{ReadinessCheck, ReadinessProbe, ServiceDefinition, ServicePort};
+use wfe_core::traits::ArtifactStore;
 use wfe_core::traits::ServiceProvider;
 use wfe_core::traits::step::StepBody;
 use wfe_kubernetes::KubernetesServiceProvider;
@@ -9,10 +11,10 @@ use wfe_kubernetes::client;
 use wfe_kubernetes::config::{ClusterConfig, KubernetesStepConfig};
 use wfe_kubernetes::namespace;
 
-/// Path to the Lima sunbeam VM kubeconfig.
+/// Path to the Lima wfe VM kubeconfig.
 fn kubeconfig_path() -> String {
     let home = std::env::var("HOME").unwrap();
-    format!("{home}/.lima/lima-sunbeam/copied-from-guest/kubeconfig.yaml")
+    format!("{home}/.lima/lima-wfe/copied-from-guest/kubeconfig.yaml")
 }
 
 fn cluster_config() -> ClusterConfig {
@@ -46,6 +48,7 @@ fn step_config(image: &str, run: &str) -> KubernetesStepConfig {
         timeout_ms: None,
         pull_policy: None,
         namespace: None,
+        artifact_outputs: HashMap::new(),
     }
 }
 
@@ -928,4 +931,259 @@ async fn sub_workflow_inherits_shared_volume_from_data() {
     );
 
     namespace::delete_namespace(&client, &ns).await.ok();
+}
+
+// ── Artifact Store ───────────────────────────────────────────────────
+
+#[tokio::test]
+async fn run_job_with_artifact_input() {
+    let config = cluster_config();
+    let k8s_client = client::create_client(&config).await.unwrap();
+
+    // Create a local artifact store with a test artifact.
+    let store_dir = std::env::temp_dir().join(format!("wfe-k8s-artifact-test-{}", uuid::Uuid::new_v4()));
+    tokio::fs::create_dir_all(&store_dir).await.unwrap();
+    let store = wfe_core::local_artifact_store::LocalArtifactStore::open(&store_dir).await.unwrap();
+
+    // Build a tar.gz artifact containing a file.
+    let artifact_bytes = tokio::task::spawn_blocking(|| {
+        let mut buf = Vec::new();
+        let enc = flate2::write::GzEncoder::new(&mut buf, flate2::Compression::default());
+        let mut tar = tar::Builder::new(enc);
+        let mut header = tar::Header::new_gnu();
+        header.set_path("artifact.txt").unwrap();
+        header.set_size(15);
+        header.set_mode(0o644);
+        header.set_cksum();
+        tar.append(&header, std::io::Cursor::new(b"hello artifact\n")).unwrap();
+        let enc = tar.into_inner().unwrap();
+        enc.finish().unwrap();
+        buf
+    }).await.unwrap();
+
+    let reader: std::pin::Pin<Box<dyn tokio::io::AsyncRead + Send>> =
+        Box::pin(std::io::Cursor::new(artifact_bytes));
+    let artifact_ref = store.put(reader).await.unwrap();
+
+    // Build artifact volume.
+    let mut artifacts = std::collections::HashMap::new();
+    artifacts.insert("mydata".to_string(), Bytes::from(
+        tokio::fs::read(store_dir.join("blobs/sha256").join(&artifact_ref.digest.strip_prefix("sha256:").unwrap())).await.unwrap()
+    ));
+    let artifact_volume = wfe_core::ArtifactVolume::from_artifacts(artifacts);
+
+    let ns = unique_id("artifact-in");
+    let mut step_cfg = step_config(
+        "alpine:3.18",
+        "for i in 1 2 3 4 5; do [ -f /wfe-artifacts/inputs/mydata/artifact.txt ] && break; sleep 1; done; cat /wfe-artifacts/inputs/mydata/artifact.txt && echo \"##wfe[output result=ok]\"",
+    );
+    step_cfg.namespace = Some(ns.clone());
+
+    let mut step =
+        wfe_kubernetes::KubernetesStep::new(step_cfg, config.clone(), k8s_client.clone());
+
+    let instance = wfe_core::models::WorkflowInstance::new(
+        "artifact-in-wf",
+        1,
+        serde_json::json!({}),
+    );
+    let mut ws = wfe_core::models::WorkflowStep::new(0, "alpine-artifact-in");
+    ws.name = Some("artifact-in-step".into());
+    let pointer = wfe_core::models::ExecutionPointer::new(0);
+
+    let ctx = wfe_core::traits::step::StepExecutionContext {
+        definition: None,
+        item: None,
+        execution_pointer: &pointer,
+        persistence_data: None,
+        step: &ws,
+        workflow: &instance,
+        cancellation_token: tokio_util::sync::CancellationToken::new(),
+        host_context: None,
+        log_sink: None,
+        artifact_store: Some(&store),
+        artifact_volume: Some(&artifact_volume),
+        artifact_package: None,
+        persistence: None,
+    };
+
+    // mount_artifacts must be called before run (mirrors executor loop).
+    step.mount_artifacts(&ctx).await.unwrap();
+    let result = step.run(&ctx).await.unwrap();
+    step.unmount_artifacts(&ctx).await.unwrap();
+
+    assert!(result.proceed);
+    let output = result.output_data.unwrap();
+    let stdout = output["artifact-in-step.stdout"].as_str().unwrap_or("");
+    assert!(stdout.contains("hello artifact"), "expected artifact content in stdout, got: {stdout}");
+    assert_eq!(output["result"], "ok");
+
+    namespace::delete_namespace(&k8s_client, &ns).await.ok();
+    let _ = tokio::fs::remove_dir_all(&store_dir).await;
+}
+
+#[tokio::test]
+async fn run_job_with_artifact_output() {
+    let config = cluster_config();
+    let k8s_client = client::create_client(&config).await.unwrap();
+
+    let store_dir = std::env::temp_dir().join(format!("wfe-k8s-artifact-out-test-{}", uuid::Uuid::new_v4()));
+    tokio::fs::create_dir_all(&store_dir).await.unwrap();
+    let store = wfe_core::local_artifact_store::LocalArtifactStore::open(&store_dir).await.unwrap();
+
+    let ns = unique_id("artifact-out");
+    let mut step_cfg = step_config(
+        "alpine:3.18",
+        "mkdir -p /wfe-artifacts/outputs/build && echo 'build artifact' > /wfe-artifacts/outputs/build/bin.txt",
+    );
+    step_cfg.namespace = Some(ns.clone());
+    step_cfg.artifact_outputs.insert("build".into(), "/wfe-artifacts/outputs/build".into());
+
+    let mut step =
+        wfe_kubernetes::KubernetesStep::new(step_cfg, config.clone(), k8s_client.clone());
+
+    let instance = wfe_core::models::WorkflowInstance::new(
+        "artifact-out-wf",
+        1,
+        serde_json::json!({}),
+    );
+    let mut ws = wfe_core::models::WorkflowStep::new(0, "alpine-artifact-out");
+    ws.name = Some("artifact-out-step".into());
+    let pointer = wfe_core::models::ExecutionPointer::new(0);
+
+    let ctx = wfe_core::traits::step::StepExecutionContext {
+        definition: None,
+        item: None,
+        execution_pointer: &pointer,
+        persistence_data: None,
+        step: &ws,
+        workflow: &instance,
+        cancellation_token: tokio_util::sync::CancellationToken::new(),
+        host_context: None,
+        log_sink: None,
+        artifact_store: Some(&store),
+        artifact_volume: None,
+        artifact_package: None,
+        persistence: None,
+    };
+
+    let result = step.run(&ctx).await.unwrap();
+    assert!(result.proceed);
+
+    let output = result.output_data.unwrap();
+    assert!(
+        output.get("build").is_some(),
+        "expected artifact ref in output data, got: {output}"
+    );
+    let artifact_digest = wfe_core::models::parse_artifact_ref(&output["build"]).unwrap();
+    assert!(store.exists(&artifact_digest).await, "artifact should exist in store");
+
+    namespace::delete_namespace(&k8s_client, &ns).await.ok();
+    let _ = tokio::fs::remove_dir_all(&store_dir).await;
+}
+
+#[tokio::test]
+async fn run_job_with_artifact_output_but_no_store() {
+    let config = cluster_config();
+    let k8s_client = client::create_client(&config).await.unwrap();
+
+    let ns = unique_id("artifact-out-no-store");
+    let mut step_cfg = step_config(
+        "alpine:3.18",
+        "mkdir -p /wfe-artifacts/outputs/build && echo 'build artifact' > /wfe-artifacts/outputs/build/bin.txt",
+    );
+    step_cfg.namespace = Some(ns.clone());
+    step_cfg.artifact_outputs.insert("build".into(), "/wfe-artifacts/outputs/build".into());
+
+    let mut step =
+        wfe_kubernetes::KubernetesStep::new(step_cfg, config.clone(), k8s_client.clone());
+
+    let instance = wfe_core::models::WorkflowInstance::new(
+        "artifact-out-no-store-wf",
+        1,
+        serde_json::json!({}),
+    );
+    let mut ws = wfe_core::models::WorkflowStep::new(0, "alpine-artifact-out-no-store");
+    ws.name = Some("artifact-out-no-store-step".into());
+    let pointer = wfe_core::models::ExecutionPointer::new(0);
+
+    let ctx = wfe_core::traits::step::StepExecutionContext {
+        definition: None,
+        item: None,
+        execution_pointer: &pointer,
+        persistence_data: None,
+        step: &ws,
+        workflow: &instance,
+        cancellation_token: tokio_util::sync::CancellationToken::new(),
+        host_context: None,
+        log_sink: None,
+        artifact_store: None, // No store — artifact should be copied but not persisted.
+        artifact_volume: None,
+        artifact_package: None,
+        persistence: None,
+    };
+
+    let result = step.run(&ctx).await.unwrap();
+    assert!(result.proceed);
+
+    // Without a store, the artifact ref should NOT appear in output data.
+    let output = result.output_data.unwrap();
+    assert!(
+        output.get("build").is_none(),
+        "expected no artifact ref when store is None, got: {output}"
+    );
+
+    namespace::delete_namespace(&k8s_client, &ns).await.ok();
+}
+
+#[tokio::test]
+async fn run_job_without_explicit_namespace() {
+    let config = cluster_config();
+    let k8s_client = client::create_client(&config).await.unwrap();
+
+    // Don't set namespace — it should fall back to namespace_prefix + workflow_id.
+    let mut step_cfg = step_config("alpine:3.18", "echo 'hello from fallback ns'");
+
+    let mut step =
+        wfe_kubernetes::KubernetesStep::new(step_cfg, config.clone(), k8s_client.clone());
+
+    let wf_id = unique_id("fallback-ns");
+    let instance = wfe_core::models::WorkflowInstance::new(&wf_id, 1, serde_json::json!({}));
+    let mut ws = wfe_core::models::WorkflowStep::new(0, "alpine-fallback-ns");
+    ws.name = Some("fallback-ns-step".into());
+    let pointer = wfe_core::models::ExecutionPointer::new(0);
+
+    let ctx = wfe_core::traits::step::StepExecutionContext {
+        definition: None,
+        item: None,
+        execution_pointer: &pointer,
+        persistence_data: None,
+        step: &ws,
+        workflow: &instance,
+        cancellation_token: tokio_util::sync::CancellationToken::new(),
+        host_context: None,
+        log_sink: None,
+        artifact_store: None,
+        artifact_volume: None,
+        artifact_package: None,
+        persistence: None,
+    };
+
+    let result = step.run(&ctx).await.unwrap();
+    assert!(result.proceed);
+
+    let output = result.output_data.unwrap();
+    assert!(
+        output["fallback-ns-step.stdout"]
+            .as_str()
+            .unwrap()
+            .contains("hello from fallback ns")
+    );
+
+    // Cleanup the auto-generated namespace.
+    let expected_ns = wfe_kubernetes::namespace::namespace_name(
+        &config.namespace_prefix,
+        &wf_id,
+    );
+    namespace::delete_namespace(&k8s_client, &expected_ns).await.ok();
 }
