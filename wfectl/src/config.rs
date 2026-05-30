@@ -7,10 +7,10 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-/// Default wfe-server endpoint (Pingora terminates TLS, h2c upstream).
-pub const DEFAULT_SERVER: &str = "https://builds.sunbeam.pt:443";
+/// Default wfe-server endpoint.
+pub const DEFAULT_SERVER: &str = "http://localhost:50051";
 /// Default OIDC issuer.
-pub const DEFAULT_ISSUER: &str = "https://auth.sunbeam.pt/";
+pub const DEFAULT_ISSUER: &str = "https://auth.local/";
 
 /// Persisted user configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
