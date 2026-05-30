@@ -1,0 +1,107 @@
+[workspace]
+resolver = "3"
+
+members = [
+    "wfe",
+    "wfe-core",
+    "wfe-sqlite",
+    "wfe-postgres",
+    "wfe-opensearch",
+    "wfe-valkey",
+    "wfe-yaml",
+    "wfe-buildkit",
+    "wfe-buildkit-protos",
+    "wfe-containerd",
+    "wfe-containerd-protos",
+    "wfe-rustlang",
+    "wfe-server-protos",
+    "wfe-kubernetes",
+    "wfe-server",
+    "wfe-deno",
+    "wfectl",
+]
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/sunbeamdotpt/wfe"
+
+[workspace.dependencies]
+anyhow = "1.0"
+async-trait = "0.1"
+bytes = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4.5", features = ["derive"] }
+comfy-table = "7"
+dashmap = "6"
+deno_core = "0.394"
+deno_error = "0.7"
+dirs = "5"
+flate2 = "1"
+futures = "0.3"
+gix = { version = "0.81.0", default-features = false, features = ["sha1", "blocking-network-client", "worktree-mutation", "serde", "parallel", "revision", "merge"] }
+hex = "0.4"
+indicatif = { version = "0.17", features = ["tokio"] }
+insta = { version = "1", features = ["json", "yaml"] }
+jiff = "0.2"
+k8s-openapi = { version = "0.27", features = ["latest"] }
+kube = { version = "3.1", features = ["runtime", "client", "ws"] }
+opensearch = "2"
+opentelemetry = "0.27"
+opentelemetry-otlp = "0.27"
+opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"] }
+parking_lot = "0.12"
+pretty_assertions = "1"
+prost = "0.14"
+prost-build = "0.13"
+prost-types = "0.14"
+rand = "0.8"
+redis = { version = "0.27", features = ["tokio-comp", "aio", "connection-manager"] }
+regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking"] }
+rstest = "0.23"
+rsa = "0.9"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+sha2 = "0.10"
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "sqlite", "postgres", "uuid", "chrono", "json"] }
+subtle = "2"
+tar = "0.4"
+tempfile = "3"
+thiserror = "2.0"
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+tokio-util = "0.7"
+tonic = "0.14"
+tonic-build = "0.14"
+tonic-prost = "0.14"
+tonic-prost-build = "0.14"
+tonic-reflection = "0.14"
+tonic-web = "0.14"
+tower = { version = "0.5", features = ["full"] }
+tower-http = { version = "0.6", features = ["trace", "cors", "timeout", "compression-gzip"] }
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-opentelemetry = "0.28"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+url = "2"
+uuid = { version = "1.0", features = ["v4", "v7", "serde"] }
+wiremock = "0.6"
+yaml-merge-keys = { version = "0.8", features = ["serde_yaml"] }
+
+# Internal path-based crates
+wfe = { path = "wfe", version = "1.9.4" }
+wfe-core = { path = "wfe-core", version = "1.9.4", features = ["test-support"] }
+wfe-sqlite = { path = "wfe-sqlite", version = "1.9.4" }
+wfe-postgres = { path = "wfe-postgres", version = "1.9.4" }
+wfe-opensearch = { path = "wfe-opensearch", version = "1.9.4" }
+wfe-valkey = { path = "wfe-valkey", version = "1.9.4" }
+wfe-yaml = { path = "wfe-yaml", version = "1.9.4", features = ["rustlang", "buildkit", "containerd", "kubernetes"] }
+wfe-buildkit = { path = "wfe-buildkit", version = "1.9.4" }
+wfe-buildkit-protos = { path = "wfe-buildkit-protos", version = "1.9.4" }
+wfe-containerd = { path = "wfe-containerd", version = "1.9.4" }
+wfe-containerd-protos = { path = "wfe-containerd-protos", version = "1.9.4" }
+wfe-rustlang = { path = "wfe-rustlang", version = "1.9.4" }
+wfe-server-protos = { path = "wfe-server-protos", version = "1.9.4" }
+wfe-kubernetes = { path = "wfe-kubernetes", version = "1.9.4" }
