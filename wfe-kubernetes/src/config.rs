@@ -57,7 +57,7 @@ fn default_shared_volume_size() -> String {
 }
 
 /// Per-step configuration for a Kubernetes Job execution.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct KubernetesStepConfig {
     /// Container image to run.
     pub image: String,
@@ -98,6 +98,11 @@ pub struct KubernetesStepConfig {
     /// Override the auto-generated namespace.
     #[serde(default)]
     pub namespace: Option<String>,
+    /// Artifact outputs to capture after the Job completes.
+    /// Map of output name → container path (relative or absolute).
+    /// Each path is tar-gzipped and stored in the artifact store.
+    #[serde(default)]
+    pub artifact_outputs: HashMap<String, String>,
 }
 
 #[cfg(test)]
@@ -157,6 +162,7 @@ mod tests {
             timeout_ms: Some(300_000),
             pull_policy: Some("IfNotPresent".into()),
             namespace: None,
+            artifact_outputs: HashMap::new(),
         };
         let json = serde_json::to_string(&config).unwrap();
         let parsed: KubernetesStepConfig = serde_json::from_str(&json).unwrap();

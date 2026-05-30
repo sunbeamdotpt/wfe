@@ -35,11 +35,23 @@ pub fn build_job(
     env_overrides: &HashMap<String, String>,
     cluster: &ClusterConfig,
     shared_volume: Option<&SharedVolumeMount>,
+    has_artifacts: bool,
+    artifact_input_names: &[String],
 ) -> Job {
     let job_name = sanitize_name(step_name);
 
     // Build container command.
-    let (command, args) = resolve_command(config);
+    let (command, mut args) = resolve_command(config);
+
+    // When there are artifact outputs, append a short sleep to give the
+    // executor time to copy files out before the pod completes.
+    if !config.artifact_outputs.is_empty() {
+        if let Some(ref mut a) = args {
+            if let Some(first) = a.first_mut() {
+                first.push_str(" && sleep 5");
+            }
+        }
+    }
 
     // Merge environment variables: overrides first, then config (config wins).
     let env_vars = build_env_vars(env_overrides, &config.env);
@@ -57,13 +69,38 @@ pub fn build_job(
     labels.insert(LABEL_STEP_NAME.into(), step_name.to_string());
     labels.insert(LABEL_MANAGED_BY.into(), "wfe-kubernetes".into());
 
-    let volume_mounts = shared_volume.map(|sv| {
-        vec![VolumeMount {
+    let mut volume_mounts = Vec::new();
+    if let Some(sv) = shared_volume {
+        volume_mounts.push(VolumeMount {
             name: SHARED_VOLUME_NAME.into(),
             mount_path: sv.mount_path.clone(),
             ..Default::default()
-        }]
-    });
+        });
+    }
+    if has_artifacts {
+        volume_mounts.push(VolumeMount {
+            name: "wfe-artifacts".into(),
+            mount_path: "/wfe-artifacts".into(),
+            ..Default::default()
+        });
+    }
+    let volume_mounts = if volume_mounts.is_empty() {
+        None
+    } else {
+        Some(volume_mounts)
+    };
+
+    // Inject INPUT_<NAME> env vars for mounted artifacts.
+    let mut env_vars = env_vars;
+    for name in artifact_input_names {
+        let mount_point = format!("/wfe-artifacts/inputs/{name}");
+        env_vars.push(EnvVar {
+            name: format!("INPUT_{}", name.to_uppercase()),
+            value: Some(mount_point),
+            ..Default::default()
+        });
+    }
+    env_vars.sort_by(|a, b| a.name.cmp(&b.name));
 
     let container = Container {
         name: "step".into(),
@@ -102,16 +139,25 @@ pub fn build_job(
         )
     };
 
-    let volumes = shared_volume.map(|sv| {
-        vec![Volume {
+    let mut volumes = Vec::new();
+    if let Some(sv) = shared_volume {
+        volumes.push(Volume {
             name: SHARED_VOLUME_NAME.into(),
             persistent_volume_claim: Some(PersistentVolumeClaimVolumeSource {
                 claim_name: sv.claim_name.clone(),
                 read_only: Some(false),
             }),
             ..Default::default()
-        }]
-    });
+        });
+    }
+    if has_artifacts {
+        volumes.push(Volume {
+            name: "wfe-artifacts".into(),
+            empty_dir: Some(k8s_openapi::api::core::v1::EmptyDirVolumeSource::default()),
+            ..Default::default()
+        });
+    }
+    let volumes = if volumes.is_empty() { None } else { Some(volumes) };
 
     Job {
         metadata: ObjectMeta {
@@ -255,6 +301,7 @@ mod tests {
             timeout_ms: None,
             pull_policy: None,
             namespace: None,
+            artifact_outputs: HashMap::new(),
         };
         let job = build_job(
             &config,
@@ -263,6 +310,8 @@ mod tests {
             &HashMap::new(),
             &default_cluster(),
             None,
+            false,
+            &[],
         );
 
         assert_eq!(job.metadata.name, Some("test-step".into()));
@@ -297,6 +346,7 @@ mod tests {
             timeout_ms: None,
             pull_policy: None,
             namespace: None,
+            artifact_outputs: HashMap::new(),
         };
         let job = build_job(
             &config,
@@ -305,6 +355,8 @@ mod tests {
             &HashMap::new(),
             &default_cluster(),
             None,
+            false,
+            &[],
         );
         let container = &job.spec.unwrap().template.spec.unwrap().containers[0];
 
@@ -327,6 +379,7 @@ mod tests {
             timeout_ms: None,
             pull_policy: None,
             namespace: None,
+            artifact_outputs: HashMap::new(),
         };
         let job = build_job(
             &config,
@@ -335,6 +388,8 @@ mod tests {
             &HashMap::new(),
             &default_cluster(),
             None,
+            false,
+            &[],
         );
         let container = &job.spec.unwrap().template.spec.unwrap().containers[0];
 
@@ -356,6 +411,7 @@ mod tests {
             timeout_ms: None,
             pull_policy: None,
             namespace: None,
+            artifact_outputs: HashMap::new(),
         };
         let overrides: HashMap<String, String> = [
             ("WORKFLOW_ID".into(), "wf-123".into()),
@@ -363,7 +419,7 @@ mod tests {
         ]
         .into();
 
-        let job = build_job(&config, "step", "ns", &overrides, &default_cluster(), None);
+        let job = build_job(&config, "step", "ns", &overrides, &default_cluster(), None, false, &[]);
         let container = &job.spec.unwrap().template.spec.unwrap().containers[0];
         let env = container.env.as_ref().unwrap();
 
@@ -390,6 +446,7 @@ mod tests {
             timeout_ms: None,
             pull_policy: None,
             namespace: None,
+            artifact_outputs: HashMap::new(),
         };
         let job = build_job(
             &config,
@@ -398,6 +455,8 @@ mod tests {
             &HashMap::new(),
             &default_cluster(),
             None,
+            false,
+            &[],
         );
         let container = &job.spec.unwrap().template.spec.unwrap().containers[0];
         let resources = container.resources.as_ref().unwrap();
@@ -430,8 +489,9 @@ mod tests {
             timeout_ms: None,
             pull_policy: Some("Always".into()),
             namespace: None,
+            artifact_outputs: HashMap::new(),
         };
-        let job = build_job(&config, "step", "ns", &HashMap::new(), &cluster, None);
+        let job = build_job(&config, "step", "ns", &HashMap::new(), &cluster, None, false, &[]);
         let pod_spec = job.spec.unwrap().template.spec.unwrap();
 
         assert_eq!(pod_spec.service_account_name, Some("wfe-runner".into()));
@@ -459,6 +519,7 @@ mod tests {
             timeout_ms: None,
             pull_policy: None,
             namespace: None,
+            artifact_outputs: HashMap::new(),
         };
         let job = build_job(
             &config,
@@ -467,6 +528,8 @@ mod tests {
             &HashMap::new(),
             &default_cluster(),
             None,
+            false,
+            &[],
         );
         let labels = job.metadata.labels.as_ref().unwrap();
         assert_eq!(labels.get(LABEL_STEP_NAME), Some(&"my-step".to_string()));
