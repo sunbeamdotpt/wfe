@@ -1,0 +1,154 @@
+# Lima VM: Ubuntu LTS + k3s + Cilium + nerdctl + BuildKit
+# For wfe-kubernetes integration tests.
+#
+# Usage:
+#   limactl create --name lima-wfe ./test/lima/lima-wfe.yaml
+#   limactl start lima-wfe
+#   export KUBECONFIG=$(limactl list lima-wfe --format 'unix://{{.Dir}}/copied-from-guest/kubeconfig.yaml')
+#
+# Run tests:
+#   cargo test -p wfe-kubernetes --test integration
+#
+# Teardown:
+#   limactl stop lima-wfe
+#   limactl delete lima-wfe
+
+minimumLimaVersion: "2.0.0"
+
+mountType: virtiofs
+cpus: 4
+memory: 8GiB
+disk: 30GiB
+
+images:
+  - location: "https://cloud-images.ubuntu.com/releases/26.04/release/ubuntu-26.04-server-cloudimg-arm64.img"
+    arch: "aarch64"
+  - location: "https://cloud-images.ubuntu.com/releases/26.04/release/ubuntu-26.04-server-cloudimg-amd64.img"
+    arch: "x86_64"
+
+mounts: []
+
+containerd:
+  system: false
+  user: false
+
+provision:
+  # 1. Base packages
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux
+      apt-get update
+      apt-get install -y \
+        curl bash iptables ip6tables coreutils findutils grep \
+        open-iscsi openssh-server pigz tar gzip
+      systemctl enable iscsid || true
+      systemctl start iscsid || true
+
+  # 2. Raise inotify limits
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux
+      cat > /etc/sysctl.d/99-inotify.conf << 'EOF'
+      fs.inotify.max_user_watches = 524288
+      fs.inotify.max_user_instances = 512
+      EOF
+      sysctl --system
+
+  # 3. Swap file
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux
+      if [ ! -f /swapfile ]; then
+        fallocate -l 4G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=4096
+        chmod 600 /swapfile
+        mkswap /swapfile
+        swapon /swapfile
+        echo '/swapfile none swap sw 0 0' >> /etc/fstab
+      fi
+
+  # 4. Mount propagation fix (Cilium needs rshared for BPF)
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux
+      mount --make-rshared /
+      cat > /etc/systemd/system/mount-shared.service << 'EOF'
+      [Unit]
+      Description=Set mount propagation to rshared for Cilium BPF
+      Before=k3s.service
+
+      [Service]
+      Type=oneshot
+      ExecStart=/bin/mount --make-rshared /
+      RemainAfterExit=yes
+
+      [Install]
+      WantedBy=multi-user.target
+      EOF
+      systemctl daemon-reload
+      systemctl enable mount-shared || true
+
+  # 5. Install k3s (no traefik, no servicelb, no flannel)
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux
+      if [ ! -f /usr/local/bin/k3s ]; then
+        curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server \
+          --write-kubeconfig-mode=644 \
+          --disable=traefik \
+          --disable=servicelb \
+          --flannel-backend=none \
+          --disable-network-policy" sh -
+      fi
+
+  # 6. Install Cilium CLI
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux
+      if command -v cilium >/dev/null 2>&1; then exit 0; fi
+      ARCH=$(uname -m)
+      [ "$ARCH" = "aarch64" ] && CLARCH="arm64" || CLARCH="amd64"
+      CILIUM_CLI_VERSION=$(curl -fsSL https://raw.githubusercontent.com/cilium/cilium-cli/main/stable.txt)
+      curl -fsSL "https://github.com/cilium/cilium-cli/releases/download/${CILIUM_CLI_VERSION}/cilium-linux-${CLARCH}.tar.gz" \
+        | tar -xz -C /usr/local/bin
+      chmod +x /usr/local/bin/cilium
+
+  # 7. Install Cilium into k3s
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux
+      export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+      for i in $(seq 1 60); do
+        kubectl get nodes >/dev/null 2>&1 && break
+        sleep 2
+      done
+      if ! kubectl get ns cilium-system >/dev/null 2>&1; then
+        cilium install --set kubeProxyReplacement=true
+      fi
+      cilium status --wait --wait-duration 5m || true
+
+probes:
+  - script: |
+      #!/bin/bash
+      set -eux
+      if ! timeout 30 bash -c "until test -f /etc/rancher/k3s/k3s.yaml; do sleep 3; done"; then
+        echo >&2 "k3s is not ready yet"
+        exit 1
+      fi
+    hint: "Waiting for k3s kubeconfig"
+
+copyToHost:
+  - guest: "/etc/rancher/k3s/k3s.yaml"
+    host: "{{.Dir}}/copied-from-guest/kubeconfig.yaml"
+    deleteOnStop: true
+
+portForwards:
+  - guestPort: 6443
+    hostPort: 6443
+    proto: tcp
