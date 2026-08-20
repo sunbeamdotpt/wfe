@@ -1,0 +1,17 @@
+version: v2
+modules:
+  - path: proto
+    name: buf.build/sunbeamdotpt/wfe
+lint:
+  use:
+    - STANDARD
+  # The service is named `Wfe`, not `WfeService`; renaming it would break
+  # the generated Rust API (wfe_server::Wfe / wfe_client::WfeClient).
+  except:
+    - SERVICE_SUFFIX
+    # Streaming RPCs return domain types (LifecycleEvent, LogEntry) instead
+    # of <Rpc>Response wrappers.
+    - RPC_RESPONSE_STANDARD_NAME
+breaking:
+  use:
+    - FILE

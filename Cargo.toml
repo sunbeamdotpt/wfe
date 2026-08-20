@@ -19,6 +19,7 @@ members = [
     "wfe-server",
     "wfe-deno",
     "wfectl",
+    "wfe-nats",
 ]
 
 [workspace.package]
@@ -29,6 +30,7 @@ repository = "https://github.com/sunbeamdotpt/wfe"
 
 [workspace.dependencies]
 anyhow = "1.0"
+async-nats = "0.39"
 async-trait = "0.1"
 bytes = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
@@ -106,3 +108,4 @@ wfe-containerd-protos = { path = "wfe-containerd-protos", version = "1.10.0" }
 wfe-rustlang = { path = "wfe-rustlang", version = "1.10.0" }
 wfe-server-protos = { path = "wfe-server-protos", version = "1.10.0" }
 wfe-kubernetes = { path = "wfe-kubernetes", version = "1.10.0" }
+wfe-nats = { path = "wfe-nats", version = "1.10.0" }
