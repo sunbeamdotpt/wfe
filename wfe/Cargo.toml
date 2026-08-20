@@ -41,7 +41,6 @@ opentelemetry-otlp = { workspace = true, optional = true }
 [dev-dependencies]
 wfe-core = { workspace = true, features = ["test-support"] }
 wfe-sqlite = { workspace = true }
-wfe-yaml = { workspace = true, features = ["deno"] }
 pretty_assertions = { workspace = true }
 rstest = { workspace = true }
 wiremock = { workspace = true }

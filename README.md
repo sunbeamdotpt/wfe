@@ -288,11 +288,11 @@ WFE includes a self-hosting CI pipeline defined in `workflows.yaml` at the repos
 
 ```sh
 # Default — uses current directory as workspace
-cargo run --example run_pipeline -p wfe -- workflows.yaml
+cargo run --example run_pipeline -p wfe-yaml -- workflows.yaml
 
 # With explicit configuration
 WFE_CONFIG='{"workspace_dir":"/path/to/wfe","registry":"sunbeam","git_remote":"origin","coverage_threshold":85}' \
-  cargo run --example run_pipeline -p wfe -- workflows.yaml
+  cargo run --example run_pipeline -p wfe-yaml -- workflows.yaml
 ```
 
 ### WFE features demonstrated
