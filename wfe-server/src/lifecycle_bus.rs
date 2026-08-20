@@ -26,6 +26,10 @@ impl LifecyclePublisher for BroadcastLifecyclePublisher {
         let _ = self.sender.send(event);
         Ok(())
     }
+
+    fn subscribe(&self) -> wfe_core::Result<tokio::sync::broadcast::Receiver<LifecycleEvent>> {
+        Ok(self.sender.subscribe())
+    }
 }
 
 #[cfg(test)]

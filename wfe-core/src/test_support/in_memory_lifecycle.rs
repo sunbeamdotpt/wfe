@@ -1,22 +1,28 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, broadcast};
 
 use crate::Result;
 use crate::models::LifecycleEvent;
 use crate::traits::LifecyclePublisher;
 
+/// Default broadcast channel capacity for lifecycle events.
+const DEFAULT_CAPACITY: usize = 256;
+
 /// An in-memory implementation of `LifecyclePublisher` for testing.
 #[derive(Debug, Clone)]
 pub struct InMemoryLifecyclePublisher {
     events: Arc<Mutex<Vec<LifecycleEvent>>>,
+    sender: broadcast::Sender<LifecycleEvent>,
 }
 
 impl InMemoryLifecyclePublisher {
     pub fn new() -> Self {
+        let (sender, _) = broadcast::channel(DEFAULT_CAPACITY);
         Self {
             events: Arc::new(Mutex::new(Vec::new())),
+            sender,
         }
     }
 
@@ -35,8 +41,13 @@ impl Default for InMemoryLifecyclePublisher {
 #[async_trait]
 impl LifecyclePublisher for InMemoryLifecyclePublisher {
     async fn publish(&self, event: LifecycleEvent) -> Result<()> {
-        self.events.lock().await.push(event);
+        self.events.lock().await.push(event.clone());
+        let _ = self.sender.send(event);
         Ok(())
+    }
+
+    fn subscribe(&self) -> Result<broadcast::Receiver<LifecycleEvent>> {
+        Ok(self.sender.subscribe())
     }
 }
 
