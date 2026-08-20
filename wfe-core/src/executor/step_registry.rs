@@ -8,6 +8,7 @@ pub struct StepRegistry {
 }
 
 impl StepRegistry {
+    /// Create an empty step registry.
     pub fn new() -> Self {
         Self {
             factories: HashMap::new(),

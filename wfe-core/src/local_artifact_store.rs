@@ -1,6 +1,5 @@
 //! Local filesystem-based artifact store using the OCI Image Layout.
 
-use std::fmt;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::time::{Duration, SystemTime};
@@ -12,7 +11,7 @@ use tar::Archive;
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use crate::models::{ArtifactRef, MEDIA_TYPE_OCI_LAYER_GZIP};
+use crate::models::ArtifactRef;
 use crate::traits::ArtifactStore;
 use crate::{Result, WfeError};
 
@@ -119,7 +118,6 @@ impl ArtifactStore for LocalArtifactStore {
             .map_err(|e| io_err("create tmp file", e))?;
         let mut hasher = Sha256::new();
         let mut buf = vec![0u8; 64 * 1024];
-        let mut total: u64 = 0;
 
         loop {
             let n = reader
@@ -133,7 +131,6 @@ impl ArtifactStore for LocalArtifactStore {
             file.write_all(&buf[..n])
                 .await
                 .map_err(|e| io_err("write tmp file", e))?;
-            total += n as u64;
         }
         file.flush()
             .await

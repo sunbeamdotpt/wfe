@@ -51,6 +51,7 @@ pub struct ExecutionPointer {
 }
 
 impl ExecutionPointer {
+    /// Create a new active pointer for the given step id.
     pub fn new(step_id: usize) -> Self {
         Self {
             id: uuid::Uuid::new_v4().to_string(),

@@ -11,6 +11,7 @@ pub struct InlineStep {
 }
 
 impl InlineStep {
+    /// Create a new inline step from a closure that returns an execution result.
     pub fn new(f: impl Fn() -> ExecutionResult + Send + Sync + 'static) -> Self {
         Self { body: Box::new(f) }
     }

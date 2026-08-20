@@ -21,6 +21,7 @@ pub struct ScheduledCommand {
 }
 
 impl ScheduledCommand {
+    /// Schedule a workflow to be processed at the given epoch time.
     pub fn process_workflow(workflow_id: impl Into<String>, execute_time: i64) -> Self {
         Self {
             command_name: CommandName::ProcessWorkflow,
@@ -29,6 +30,7 @@ impl ScheduledCommand {
         }
     }
 
+    /// Schedule an event to be processed at the given epoch time.
     pub fn process_event(event_id: impl Into<String>, execute_time: i64) -> Self {
         Self {
             command_name: CommandName::ProcessEvent,

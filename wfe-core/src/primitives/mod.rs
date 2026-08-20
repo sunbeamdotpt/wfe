@@ -20,18 +20,31 @@
 //! | [`WaitForStep`](crate::primitives::WaitForStep) | `StepBuilder::wait_for` | Block until an event arrives |
 //! | [`WhileStep`](crate::primitives::WhileStep) | `StepBuilder::while_do` | Loop while a condition holds |
 
+/// Multi-way branch primitive.
 pub mod decide;
+/// Delay/sleep primitive.
 pub mod delay;
+/// Workflow termination primitive.
 pub mod end_step;
+/// Collection iteration primitive.
 pub mod foreach_step;
+/// Conditional branch primitive.
 pub mod if_step;
+/// HTTP polling primitive.
 pub mod poll_endpoint;
+/// Recurring execution primitive.
 pub mod recur;
+/// Saga compensation container primitive.
 pub mod saga_container;
+/// Scheduled command primitive.
 pub mod schedule;
+/// Parallel sequence container primitive.
 pub mod sequence;
+/// Child workflow primitive.
 pub mod sub_workflow;
+/// Event wait primitive.
 pub mod wait_for;
+/// While-loop primitive.
 pub mod while_step;
 
 pub use decide::DecideStep;

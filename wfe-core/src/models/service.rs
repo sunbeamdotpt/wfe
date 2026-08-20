@@ -46,6 +46,7 @@ pub struct ServicePort {
 }
 
 impl ServicePort {
+    /// Create a TCP service port with no name.
     pub fn tcp(port: u16) -> Self {
         Self {
             container_port: port,
@@ -84,7 +85,12 @@ pub enum ReadinessCheck {
     /// Check if a TCP port is accepting connections.
     TcpSocket(u16),
     /// Make an HTTP GET request.
-    HttpGet { port: u16, path: String },
+    HttpGet {
+        /// Port to connect to.
+        port: u16,
+        /// URL path for the request.
+        path: String,
+    },
 }
 
 /// Runtime endpoint info for a provisioned service.

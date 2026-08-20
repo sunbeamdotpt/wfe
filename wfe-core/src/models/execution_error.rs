@@ -15,6 +15,7 @@ pub struct ExecutionError {
 }
 
 impl ExecutionError {
+    /// Create a new execution error recorded at the current time.
     pub fn new(
         workflow_id: impl Into<String>,
         execution_pointer_id: impl Into<String>,

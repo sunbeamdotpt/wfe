@@ -8,8 +8,13 @@ pub enum WfeError {
     WorkflowNotFound(String),
 
     #[error("Workflow definition not found: {id} v{version}")]
-    /// Definitionnotfound.
-    DefinitionNotFound { id: String, version: u32 },
+    /// Workflow definition was not found.
+    DefinitionNotFound {
+        /// Definition identifier.
+        id: String,
+        /// Definition version.
+        version: u32,
+    },
 
     #[error("Event not found: {0}")]
     /// Eventnotfound.

@@ -48,7 +48,7 @@ impl ArtifactVolume {
 
         let mut artifacts = HashMap::with_capacity(inputs.len());
 
-        for (name, _) in inputs {
+        for name in inputs.keys() {
             let value = data_obj
                 .get(name)
                 .ok_or_else(|| WfeError::StepExecution(format!("input '{name}' not found in workflow data")))?;
@@ -144,7 +144,7 @@ impl ArtifactVolume {
     /// `name → extracted path`.
     pub fn extract_all(&self, dest: &Path) -> Result<HashMap<String, PathBuf>> {
         let mut result = HashMap::with_capacity(self.artifacts.len());
-        for (name, _) in &self.artifacts {
+        for name in self.artifacts.keys() {
             let artifact_dest = dest.join(name);
             std::fs::create_dir_all(&artifact_dest).map_err(|e| {
                 WfeError::StepExecution(format!(

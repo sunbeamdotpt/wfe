@@ -25,6 +25,7 @@ impl<T> WorkflowData for T where T: Serialize + DeserializeOwned + Send + Sync +
 /// shared volume, RBAC — so sub-workflows can share state like a cloned
 /// repo checkout. Pass `None` when starting a brand-new root workflow.
 pub trait HostContext: Send + Sync {
+    /// Start a new workflow instance and return its generated id.
     fn start_workflow(
         &self,
         definition_id: &str,

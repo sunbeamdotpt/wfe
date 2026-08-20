@@ -6,9 +6,11 @@ use crate::traits::step::StepExecutionContext;
 /// Workflow-level middleware with default no-op implementations.
 #[async_trait]
 pub trait WorkflowMiddleware: Send + Sync {
+    /// Hook called before a workflow instance is executed.
     async fn pre_workflow(&self, _instance: &WorkflowInstance) -> crate::Result<()> {
         Ok(())
     }
+    /// Hook called after a workflow instance is executed.
     async fn post_workflow(&self, _instance: &WorkflowInstance) -> crate::Result<()> {
         Ok(())
     }
@@ -17,9 +19,11 @@ pub trait WorkflowMiddleware: Send + Sync {
 /// Step-level middleware with default no-op implementations.
 #[async_trait]
 pub trait StepMiddleware: Send + Sync {
+    /// Hook called before a step is executed.
     async fn pre_step(&self, _context: &StepExecutionContext<'_>) -> crate::Result<()> {
         Ok(())
     }
+    /// Hook called after a step is executed.
     async fn post_step(
         &self,
         _context: &StepExecutionContext<'_>,

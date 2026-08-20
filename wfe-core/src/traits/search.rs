@@ -26,8 +26,11 @@ pub enum SearchFilter {
     Status(crate::models::WorkflowStatus),
     /// Daterange.
     DateRange {
+        /// Field name to filter on.
         field: String,
+        /// Only include records before this time.
         before: Option<chrono::DateTime<chrono::Utc>>,
+        /// Only include records after this time.
         after: Option<chrono::DateTime<chrono::Utc>>,
     },
     /// Reference.
@@ -46,7 +49,9 @@ pub struct Page<T> {
 /// Search index for querying workflows.
 #[async_trait]
 pub trait SearchIndex: Send + Sync {
+    /// Index or re-index a workflow instance.
     async fn index_workflow(&self, instance: &WorkflowInstance) -> crate::Result<()>;
+    /// Search workflows matching the given terms and filters.
     async fn search(
         &self,
         terms: &str,
@@ -54,6 +59,8 @@ pub trait SearchIndex: Send + Sync {
         take: u64,
         filters: &[SearchFilter],
     ) -> crate::Result<Page<WorkflowSearchResult>>;
+    /// Initialize the search index.
     async fn start(&self) -> crate::Result<()>;
+    /// Shut down the search index.
     async fn stop(&self) -> crate::Result<()>;
 }

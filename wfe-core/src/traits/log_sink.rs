@@ -36,6 +36,7 @@ pub enum LogStreamType {
 /// from within step executors (shell, containerd, etc.) as lines are produced.
 #[async_trait]
 pub trait LogSink: Send + Sync {
+    /// Write a single log chunk to the sink.
     async fn write_chunk(&self, chunk: LogChunk);
 }
 

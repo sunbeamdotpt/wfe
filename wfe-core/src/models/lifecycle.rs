@@ -33,21 +33,27 @@ pub enum LifecycleEventType {
     Terminated,
     /// Error.
     Error {
+        /// Error message.
         message: String,
     },
     /// Stepstarted.
     StepStarted {
+        /// Step id.
         step_id: usize,
+        /// Step name.
         step_name: Option<String>,
     },
     /// Stepcompleted.
     StepCompleted {
+        /// Step id.
         step_id: usize,
+        /// Step name.
         step_name: Option<String>,
     },
 }
 
 impl LifecycleEvent {
+    /// Create a lifecycle event with the current timestamp.
     pub fn new(
         workflow_instance_id: impl Into<String>,
         workflow_definition_id: impl Into<String>,

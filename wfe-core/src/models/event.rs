@@ -19,6 +19,7 @@ pub struct Event {
 }
 
 impl Event {
+    /// Create a new unprocessed event with a generated id and current timestamp.
     pub fn new(
         event_name: impl Into<String>,
         event_key: impl Into<String>,
@@ -63,6 +64,7 @@ pub struct EventSubscription {
 }
 
 impl EventSubscription {
+    /// Create a new subscription for a workflow/pointer to receive an event.
     pub fn new(
         workflow_id: impl Into<String>,
         step_id: usize,

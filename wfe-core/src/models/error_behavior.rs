@@ -7,8 +7,10 @@ use serde::{Deserialize, Serialize};
 pub enum ErrorBehavior {
     /// Retry.
     Retry {
+        /// Delay between retries.
         #[serde(with = "duration_millis")]
         interval: Duration,
+        /// Maximum number of retry attempts.
         #[serde(default = "default_max_retries")]
         max_retries: u32,
     },

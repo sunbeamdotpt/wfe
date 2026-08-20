@@ -72,6 +72,7 @@ pub struct WorkflowDefinition {
 }
 
 impl WorkflowDefinition {
+    /// Create a new empty workflow definition with the given id and version.
     pub fn new(id: impl Into<String>, version: u32) -> Self {
         Self {
             id: id.into(),
@@ -296,6 +297,7 @@ pub struct WorkflowStep {
 }
 
 impl WorkflowStep {
+    /// Create a new step with the given id and type.
     pub fn new(id: usize, step_type: impl Into<String>) -> Self {
         Self {
             id,

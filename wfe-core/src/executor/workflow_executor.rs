@@ -36,6 +36,7 @@ pub struct WorkflowExecutor {
 }
 
 impl WorkflowExecutor {
+    /// Create a new executor with the required providers.
     pub fn new(
         persistence: Arc<dyn PersistenceProvider>,
         lock_provider: Arc<dyn DistributedLockProvider>,
@@ -52,21 +53,25 @@ impl WorkflowExecutor {
         }
     }
 
+    /// Attach a log sink for streaming step output.
     pub fn with_log_sink(mut self, sink: Arc<dyn crate::traits::LogSink>) -> Self {
         self.log_sink = Some(sink);
         self
     }
 
+    /// Attach a lifecycle publisher for workflow events.
     pub fn with_lifecycle(mut self, lifecycle: Arc<dyn LifecyclePublisher>) -> Self {
         self.lifecycle = Some(lifecycle);
         self
     }
 
+    /// Attach a search index for workflow instances.
     pub fn with_search(mut self, search: Arc<dyn SearchIndex>) -> Self {
         self.search = Some(search);
         self
     }
 
+    /// Attach an artifact store for resolving step inputs.
     pub fn with_artifact_store(mut self, store: Arc<dyn ArtifactStore>) -> Self {
         self.artifact_store = Some(store);
         self
@@ -74,10 +79,10 @@ impl WorkflowExecutor {
 
     /// Publish a lifecycle event if a publisher is configured.
     async fn publish_lifecycle(&self, event: crate::models::LifecycleEvent) {
-        if let Some(ref publisher) = self.lifecycle {
-            if let Err(e) = publisher.publish(event).await {
-                warn!(error = %e, "failed to publish lifecycle event");
-            }
+        if let Some(ref publisher) = self.lifecycle
+            && let Err(e) = publisher.publish(event).await
+        {
+            warn!(error = %e, "failed to publish lifecycle event");
         }
     }
 

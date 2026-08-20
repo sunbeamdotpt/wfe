@@ -50,6 +50,7 @@ pub struct WorkflowInstance {
 }
 
 impl WorkflowInstance {
+    /// Create a new runnable workflow instance with a generated id.
     pub fn new(
         workflow_definition_id: impl Into<String>,
         version: u32,

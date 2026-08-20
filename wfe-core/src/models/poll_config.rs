@@ -24,7 +24,9 @@ pub enum HttpMethod {
 pub enum PollCondition {
     /// Check a JSON path equals a value: e.g. JsonPathEquals("$.status", "complete")
     JsonPathEquals {
+        /// JSON path expression.
         path: String,
+        /// Expected value at the path.
         value: serde_json::Value,
     },
     /// Check HTTP status code
