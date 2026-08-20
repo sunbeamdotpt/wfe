@@ -2,7 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.11.0] - 2026-08-20
+## [1.11.1] - 2026-08-20
+
+### Fixed
+
+- **wfe**: Moved the `run_pipeline` example from `wfe` to `wfe-yaml` and removed
+  the `wfe-yaml` dev-dependency from `wfe`. This breaks the circular
+  dev-dependency between `wfe` and `wfe-yaml` that prevented `cargo publish`
+  from verifying the workspace.
+- **wfe-nats**: Added a `version` requirement to the optional `sdk` dependency
+  so the crate can be published to a registry.
+
+## [1.11.0] - 2026-08-20 [YANKED]
 
 ### Added
 

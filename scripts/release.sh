@@ -16,7 +16,7 @@ for crate in wfe-core wfe-containerd-protos wfe-buildkit-protos wfe-server-proto
 done
 
 # Middle layer
-for crate in wfe-sqlite wfe-postgres wfe-opensearch wfe-valkey wfe-buildkit wfe-containerd wfe-rustlang; do
+for crate in wfe-sqlite wfe-postgres wfe-opensearch wfe-valkey wfe-buildkit wfe-containerd wfe-rustlang wfe-nats; do
     echo "--- Publishing ${crate} ---"
     cargo publish -p "${crate}"
 done

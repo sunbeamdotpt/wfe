@@ -17,7 +17,7 @@
 #      sccache-region:             S3 region
 #      aws-access-key-id:          S3 credentials for sccache
 #      aws-secret-access-key:      S3 credentials for sccache
-#      cargo-registry-token:       sunbeam registry publish token
+#      cargo-registry-token:       crates.io publish token
 #      gitea-token:                tea CLI token for releases
 #      buildkit-ca-cert:           PEM-encoded CA cert (mTLS to buildkitd)
 #      buildkit-client-cert:       PEM client cert
@@ -50,7 +50,7 @@ _templates:
     # keys are shallow, so a step can't override `env:` and still inherit.
     GITEA_TOKEN: ${WFE_GITEA_TOKEN}
     TEA_TOKEN: ${WFE_GITEA_TOKEN}
-    CARGO_REGISTRIES_SUNBEAM_TOKEN: ${WFE_CARGO_REGISTRY_TOKEN}
+    CARGO_REGISTRY_TOKEN: ${WFE_CARGO_REGISTRY_TOKEN}
     BUILDKIT_CA_CERT: ${WFE_BUILDKIT_CA_CERT}
     BUILDKIT_CLIENT_CERT: ${WFE_BUILDKIT_CLIENT_CERT}
     BUILDKIT_CLIENT_KEY: ${WFE_BUILDKIT_CLIENT_KEY}
@@ -530,13 +530,13 @@ workflows:
             set -euo pipefail
             cd /workspace/wfe
             TAG="v${VERSION}"
-            git config user.email "wfe-ci@sunbeam.pt"
+            git config user.email "wfe-ci@localhost"
             git config user.name "wfe-ci"
             git tag -a "$TAG" -m "$TAG"
             git push origin "$TAG"
             echo "##wfe[output tag_created=true]"
 
-  # === publish: publish all crates to sunbeam registry ===
+  # === publish: publish all crates to crates.io ===
 
   - id: publish
     name: Publish Crates
@@ -553,7 +553,7 @@ workflows:
             cd /workspace/wfe
             for crate in wfe-core wfe-containerd-protos wfe-buildkit-protos wfe-server-protos; do
               echo "--- Publishing $crate ---"
-              cargo publish -p "$crate" --registry sunbeam 2>&1 || echo "Already published: $crate"
+              cargo publish -p "$crate" 2>&1 || echo "Already published: $crate"
             done
         error_behavior:
           type: retry
@@ -568,9 +568,9 @@ workflows:
             set -euo pipefail
             cd /workspace/wfe
             for crate in wfe-sqlite wfe-postgres wfe-opensearch wfe-valkey \
-                         wfe-buildkit wfe-containerd wfe-rustlang wfe-kubernetes; do
+                         wfe-buildkit wfe-containerd wfe-rustlang wfe-kubernetes wfe-nats; do
               echo "--- Publishing $crate ---"
-              cargo publish -p "$crate" --registry sunbeam 2>&1 || echo "Already published: $crate"
+              cargo publish -p "$crate" 2>&1 || echo "Already published: $crate"
             done
         error_behavior:
           type: retry
@@ -587,7 +587,7 @@ workflows:
             sleep 10
             for crate in wfe wfe-yaml; do
               echo "--- Publishing $crate ---"
-              cargo publish -p "$crate" --registry sunbeam 2>&1 || echo "Already published: $crate"
+              cargo publish -p "$crate" 2>&1 || echo "Already published: $crate"
             done
         error_behavior:
           type: retry
@@ -606,7 +606,7 @@ workflows:
             sleep 10
             for crate in wfe-server wfe-deno; do
               echo "--- Publishing $crate ---"
-              cargo publish -p "$crate" --registry sunbeam 2>&1 || echo "Already published: $crate"
+              cargo publish -p "$crate" 2>&1 || echo "Already published: $crate"
             done
             echo "##wfe[output all_published=true]"
         error_behavior:

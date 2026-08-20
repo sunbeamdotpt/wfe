@@ -9,7 +9,7 @@
 //   cargo run --example run_pipeline -p wfe-yaml -- workflows.yaml
 //
 // With config:
-//   WFE_CONFIG='{"workspace_dir":"/path/to/wfe","registry":"sunbeam"}' \
+//   WFE_CONFIG='{"workspace_dir":"/path/to/wfe","registry":"crates-io"}' \
 //     cargo run --example run_pipeline -p wfe-yaml -- workflows.yaml
 
 use std::collections::HashMap;
@@ -46,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut config: HashMap<String, serde_json::Value> = HashMap::from([
         ("workspace_dir".into(), json!(cwd)),
         ("coverage_threshold".into(), json!(85)),
-        ("registry".into(), json!("sunbeam")),
+        ("registry".into(), json!("crates-io")),
         ("git_remote".into(), json!("origin")),
         ("version".into(), json!("0.0.0")),
     ]);

@@ -9,7 +9,7 @@ description = "NATS/JetStream queue, lock, and lifecycle publisher for the WFE w
 
 [features]
 default = []
-testing = ["dep:sdk"]
+testing = []
 
 [dependencies]
 wfe-core = { workspace = true, features = ["test-support"] }
@@ -26,9 +26,8 @@ tokio-util = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
 
-sdk = { version = "3.3.3", git = "https://github.com/sunbeamdotpt/sdk", default-features = false, features = ["testing"], optional = true }
-
 [dev-dependencies]
 wfe-core = { workspace = true, features = ["test-support"] }
 tokio = { workspace = true, features = ["test-util"] }
 testcontainers = "0.27.3"
+sdk = { git = "https://github.com/sunbeamdotpt/sdk", default-features = false, features = ["testing"] }
