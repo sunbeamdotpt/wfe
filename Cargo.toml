@@ -23,7 +23,7 @@ members = [
 ]
 
 [workspace.package]
-version = "1.10.0"
+version = "1.11.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/sunbeamdotpt/wfe"
@@ -94,18 +94,18 @@ wiremock = "0.6"
 yaml-merge-keys = { version = "0.8", features = ["serde_yaml"] }
 
 # Internal path-based crates
-wfe = { path = "wfe", version = "1.10.0" }
-wfe-core = { path = "wfe-core", version = "1.10.0", features = ["test-support"] }
-wfe-sqlite = { path = "wfe-sqlite", version = "1.10.0" }
-wfe-postgres = { path = "wfe-postgres", version = "1.10.0" }
-wfe-opensearch = { path = "wfe-opensearch", version = "1.10.0" }
-wfe-valkey = { path = "wfe-valkey", version = "1.10.0" }
-wfe-yaml = { path = "wfe-yaml", version = "1.10.0", features = ["rustlang", "buildkit", "containerd", "kubernetes"] }
-wfe-buildkit = { path = "wfe-buildkit", version = "1.10.0" }
-wfe-buildkit-protos = { path = "wfe-buildkit-protos", version = "1.10.0" }
-wfe-containerd = { path = "wfe-containerd", version = "1.10.0" }
-wfe-containerd-protos = { path = "wfe-containerd-protos", version = "1.10.0" }
-wfe-rustlang = { path = "wfe-rustlang", version = "1.10.0" }
-wfe-server-protos = { path = "wfe-server-protos", version = "1.10.0" }
-wfe-kubernetes = { path = "wfe-kubernetes", version = "1.10.0" }
-wfe-nats = { path = "wfe-nats", version = "1.10.0" }
+wfe = { path = "wfe", version = "1.11.0" }
+wfe-core = { path = "wfe-core", version = "1.11.0", features = ["test-support"] }
+wfe-sqlite = { path = "wfe-sqlite", version = "1.11.0" }
+wfe-postgres = { path = "wfe-postgres", version = "1.11.0" }
+wfe-opensearch = { path = "wfe-opensearch", version = "1.11.0" }
+wfe-valkey = { path = "wfe-valkey", version = "1.11.0" }
+wfe-yaml = { path = "wfe-yaml", version = "1.11.0", features = ["rustlang", "buildkit", "containerd", "kubernetes"] }
+wfe-buildkit = { path = "wfe-buildkit", version = "1.11.0" }
+wfe-buildkit-protos = { path = "wfe-buildkit-protos", version = "1.11.0" }
+wfe-containerd = { path = "wfe-containerd", version = "1.11.0" }
+wfe-containerd-protos = { path = "wfe-containerd-protos", version = "1.11.0" }
+wfe-rustlang = { path = "wfe-rustlang", version = "1.11.0" }
+wfe-server-protos = { path = "wfe-server-protos", version = "1.11.0" }
+wfe-kubernetes = { path = "wfe-kubernetes", version = "1.11.0" }
+wfe-nats = { path = "wfe-nats", version = "1.11.0" }

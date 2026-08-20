@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.11.0] - 2026-08-20
+
+### Added
+
+- **wfe-nats**: New NATS-backed provider crate.
+  - `NatsQueueProvider` using JetStream push consumers for workflow and event
+    queuing.
+  - `NatsLockProvider` using JetStream KV for distributed locks.
+  - `NatsLifecyclePublisher` using NATS pub/sub for workflow lifecycle events.
+  - NATS callout authentication support via `NatsAuthCallout`.
+  - Integration tests using the SDK `testing` feature.
+- **wfe-core**: `LifecyclePublisher` trait now exposes `subscribe()` for
+  receiving lifecycle events.
+
+### Changed
+
+- **wfe-core**: Added missing rustdoc coverage across public traits, models,
+  executor, and primitives.
+- **wfe-core**: Resolved remaining `clippy` warnings.
+
 ## [1.10.0] - 2026-05-30
 
 ### Added
