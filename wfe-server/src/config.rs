@@ -29,6 +29,14 @@ pub struct Cli {
     #[arg(long, env = "WFE_DB_URL")]
     pub db_url: Option<String>,
 
+    /// PostgreSQL schema holding WFE tables (default: wfc).
+    #[arg(long, env = "WFE_DB_SCHEMA")]
+    pub db_schema: Option<String>,
+
+    /// Prefix for WFE PostgreSQL table names (default: none).
+    #[arg(long, env = "WFE_DB_TABLE_PREFIX")]
+    pub db_table_prefix: Option<String>,
+
     /// Queue backend: memory or valkey.
     #[arg(long, env = "WFE_QUEUE")]
     pub queue: Option<String>,
@@ -96,7 +104,22 @@ pub enum PersistenceConfig {
     Sqlite { path: String },
     #[serde(rename = "postgres")]
     /// Postgres.
-    Postgres { url: String },
+    Postgres {
+        /// Url.
+        url: String,
+        /// Schema holding WFE tables; kept separate from the application's
+        /// own tables so both can share a database. Default `wfc`.
+        #[serde(default = "default_postgres_schema")]
+        schema: String,
+        /// Prefix prepended to every WFE table name, for hosts that require
+        /// WFE to live in a shared schema. Default none.
+        #[serde(default)]
+        table_prefix: String,
+    },
+}
+
+fn default_postgres_schema() -> String {
+    "wfc".to_string()
 }
 
 impl Default for PersistenceConfig {
@@ -200,17 +223,61 @@ pub fn load(cli: &Cli) -> ServerConfig {
 
     // Persistence override.
     if let Some(ref backend) = cli.persistence {
+        // Carry over schema/prefix from the file when the CLI re-selects the
+        // postgres backend without restating them.
+        let (schema, table_prefix) = match &config.persistence {
+            PersistenceConfig::Postgres {
+                schema,
+                table_prefix,
+                ..
+            } => (schema.clone(), table_prefix.clone()),
+            _ => (default_postgres_schema(), String::new()),
+        };
         let url = cli.db_url.clone().unwrap_or_else(|| "wfe.db".to_string());
         config.persistence = match backend.as_str() {
-            "postgres" => PersistenceConfig::Postgres { url },
+            "postgres" => PersistenceConfig::Postgres {
+                url,
+                schema,
+                table_prefix,
+            },
             _ => PersistenceConfig::Sqlite { path: url },
         };
     } else if let Some(ref url) = cli.db_url {
-        // Infer backend from URL.
+        // Infer backend from URL, keeping any schema/prefix the file set.
+        let (schema, table_prefix) = match &config.persistence {
+            PersistenceConfig::Postgres {
+                schema,
+                table_prefix,
+                ..
+            } => (schema.clone(), table_prefix.clone()),
+            _ => (default_postgres_schema(), String::new()),
+        };
         if url.starts_with("postgres") {
-            config.persistence = PersistenceConfig::Postgres { url: url.clone() };
+            config.persistence = PersistenceConfig::Postgres {
+                url: url.clone(),
+                schema,
+                table_prefix,
+            };
         } else {
             config.persistence = PersistenceConfig::Sqlite { path: url.clone() };
+        }
+    }
+
+    // Postgres schema / table-prefix fine-tuning, whichever way the backend
+    // was selected (file, --persistence, or inferred from --db-url).
+    if cli.db_schema.is_some() || cli.db_table_prefix.is_some() {
+        if let PersistenceConfig::Postgres {
+            schema,
+            table_prefix,
+            ..
+        } = &mut config.persistence
+        {
+            if let Some(ref s) = cli.db_schema {
+                *schema = s.clone();
+            }
+            if let Some(ref p) = cli.db_table_prefix {
+                *table_prefix = p.clone();
+            }
         }
     }
 
@@ -319,6 +386,8 @@ version = 1
             http_addr: None,
             persistence: Some("postgres".to_string()),
             db_url: Some("postgres://db/wfe".to_string()),
+            db_schema: None,
+            db_table_prefix: None,
             queue: Some("valkey".to_string()),
             queue_url: Some("redis://valkey:6379".to_string()),
             search_url: Some("http://os:9200".to_string()),
@@ -328,7 +397,7 @@ version = 1
         let config = load(&cli);
         assert_eq!(config.grpc_addr, "127.0.0.1:9999".parse().unwrap());
         assert!(
-            matches!(config.persistence, PersistenceConfig::Postgres { ref url } if url == "postgres://db/wfe")
+            matches!(config.persistence, PersistenceConfig::Postgres { ref url, .. } if url == "postgres://db/wfe")
         );
         assert!(
             matches!(config.queue, QueueConfig::Valkey { ref url } if url == "redis://valkey:6379")
@@ -346,6 +415,8 @@ version = 1
             http_addr: None,
             persistence: None,
             db_url: Some("postgres://localhost/wfe".to_string()),
+            db_schema: None,
+            db_table_prefix: None,
             queue: None,
             queue_url: None,
             search_url: None,
@@ -357,6 +428,138 @@ version = 1
             config.persistence,
             PersistenceConfig::Postgres { .. }
         ));
+    }
+
+    #[test]
+    fn postgres_schema_and_prefix_default_when_unspecified() {
+        let toml = r#"
+[persistence]
+backend = "postgres"
+url = "postgres://localhost/wfe"
+"#;
+        let config: ServerConfig = toml::from_str(toml).unwrap();
+        match config.persistence {
+            PersistenceConfig::Postgres {
+                schema,
+                table_prefix,
+                ..
+            } => {
+                assert_eq!(schema, "wfc");
+                assert_eq!(table_prefix, "");
+            }
+            other => panic!("expected postgres, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn postgres_schema_and_prefix_from_file() {
+        let toml = r#"
+[persistence]
+backend = "postgres"
+url = "postgres://localhost/wfe"
+schema = "myapp_wfe"
+table_prefix = "wfe_"
+"#;
+        let config: ServerConfig = toml::from_str(toml).unwrap();
+        match config.persistence {
+            PersistenceConfig::Postgres {
+                schema,
+                table_prefix,
+                ..
+            } => {
+                assert_eq!(schema, "myapp_wfe");
+                assert_eq!(table_prefix, "wfe_");
+            }
+            other => panic!("expected postgres, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cli_db_schema_overrides_file_and_keeps_prefix() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            tmp.path(),
+            r#"
+[persistence]
+backend = "postgres"
+url = "postgres://localhost/wfe"
+schema = "from_file"
+table_prefix = "wfe_"
+"#,
+        )
+        .unwrap();
+        let cli = Cli {
+            config: tmp.path().to_path_buf(),
+            grpc_addr: None,
+            http_addr: None,
+            persistence: None,
+            db_url: None,
+            db_schema: Some("from_cli".to_string()),
+            db_table_prefix: None,
+            queue: None,
+            queue_url: None,
+            search_url: None,
+            workflows_dir: None,
+            auth_tokens: None,
+        };
+        let config = load(&cli);
+        match config.persistence {
+            PersistenceConfig::Postgres {
+                url,
+                schema,
+                table_prefix,
+            } => {
+                assert_eq!(url, "postgres://localhost/wfe");
+                assert_eq!(schema, "from_cli");
+                assert_eq!(table_prefix, "wfe_");
+            }
+            other => panic!("expected postgres, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cli_backend_reselection_keeps_file_schema() {
+        // Re-passing --persistence postgres must not reset schema/prefix that
+        // only the file set.
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            tmp.path(),
+            r#"
+[persistence]
+backend = "postgres"
+url = "postgres://old/wfe"
+schema = "from_file"
+table_prefix = "p_"
+"#,
+        )
+        .unwrap();
+        let cli = Cli {
+            config: tmp.path().to_path_buf(),
+            grpc_addr: None,
+            http_addr: None,
+            persistence: Some("postgres".to_string()),
+            db_url: Some("postgres://new/wfe".to_string()),
+            db_schema: None,
+            db_table_prefix: None,
+            queue: None,
+            queue_url: None,
+            search_url: None,
+            workflows_dir: None,
+            auth_tokens: None,
+        };
+        let config = load(&cli);
+        match config.persistence {
+            PersistenceConfig::Postgres {
+                url,
+                schema,
+                table_prefix,
+            } => {
+                assert_eq!(url, "postgres://new/wfe");
+                assert_eq!(schema, "from_file");
+                assert_eq!(table_prefix, "p_");
+            }
+            other => panic!("expected postgres, got {other:?}"),
+        }
     }
 
     // ── Security regression tests ──
@@ -373,6 +576,8 @@ version = 1
             http_addr: None,
             persistence: None,
             db_url: None,
+            db_schema: None,
+            db_table_prefix: None,
             queue: None,
             queue_url: None,
             search_url: None,

@@ -80,12 +80,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let queue = Arc::new(InMemoryQueueProvider::new());
             (persistence, lock, queue)
         }
-        (PersistenceConfig::Postgres { url }, QueueConfig::Valkey { url: valkey_url }) => {
-            tracing::info!("using Postgres + Valkey");
+        (
+            PersistenceConfig::Postgres {
+                url,
+                schema,
+                table_prefix,
+            },
+            QueueConfig::Valkey { url: valkey_url },
+        ) => {
+            tracing::info!(
+                schema = %schema,
+                table_prefix = %table_prefix,
+                "using Postgres + Valkey"
+            );
             let persistence = Arc::new(
-                wfe_postgres::PostgresPersistenceProvider::new(url)
-                    .await
-                    .expect("failed to init Postgres"),
+                wfe_postgres::PostgresPersistenceProvider::connect(
+                    url,
+                    wfe_postgres::PostgresOptions {
+                        schema: schema.clone(),
+                        table_prefix: table_prefix.clone(),
+                    },
+                )
+                .await
+                .expect("failed to init Postgres"),
             );
             let lock = Arc::new(
                 wfe_valkey::ValkeyLockProvider::new(valkey_url, "wfe")
