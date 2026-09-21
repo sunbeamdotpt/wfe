@@ -32,6 +32,9 @@ All notable changes to this project will be documented in this file.
   previous wfe-postgres version can be dropped, but nothing reads it.
 - **wfe-postgres**: Tests accept a `WFE_PG_TEST_URL` override for the
   connection string.
+- **wfe-valkey**: Tests accept a `WFE_VALKEY_TEST_URL` override for the
+  connection string (Valkey may live anywhere, e.g. published on a remote
+  Docker daemon).
 
 ## [1.11.1] - 2026-08-20
 
