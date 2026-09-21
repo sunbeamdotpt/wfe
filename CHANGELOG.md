@@ -2,6 +2,37 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.11.2] - 2026-09-21
+
+### Added
+
+- **wfe-postgres**: `PostgresOptions` (via `PostgresPersistenceProvider::connect`
+  and `from_pool_with`) to choose the schema WFE stores to (default `wfc`) and a
+  table-name prefix, so the engine can live inside an application's own
+  PostgreSQL database. Migrations still run through `sqlx::migrate!`, now on a
+  connection whose `search_path` targets the configured schema — so sqlx's
+  `_sqlx_migrations` tracking table lands inside that schema and no longer
+  conflicts with an application running its own sqlx migrations against
+  `public` in the same database. Table-prefix mode reuses the same embedded
+  migrations with identifiers rewritten at execution time and records progress
+  in a dedicated `_wfe_sqlx_migrations` table. Schema and prefix are validated
+  against PostgreSQL identifier rules.
+- **wfe-server**: `[persistence] schema` / `table_prefix` TOML keys,
+  `--db-schema` / `--db-table-prefix` flags, and `WFE_DB_SCHEMA` /
+  `WFE_DB_TABLE_PREFIX` environment variables for the new Postgres layout
+  options. CLI overrides preserve values set by the config file.
+
+### Changed
+
+- **wfe-postgres**: Migration files are now unqualified and resolve through the
+  connection's `search_path` instead of hardcoding the `wfc` schema. Existing
+  deployments are unaffected: the tables were already created and all DDL is
+  idempotent. The migration history is re-recorded inside the configured schema
+  (`wfc._sqlx_migrations`); a stale `public._sqlx_migrations` row from a
+  previous wfe-postgres version can be dropped, but nothing reads it.
+- **wfe-postgres**: Tests accept a `WFE_PG_TEST_URL` override for the
+  connection string.
+
 ## [1.11.1] - 2026-08-20
 
 ### Fixed
