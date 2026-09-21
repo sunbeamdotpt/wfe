@@ -45,8 +45,12 @@ impl LocalArtifactStore {
         let root = root.as_ref().to_path_buf();
         let blobs = root.join("blobs/sha256");
         let meta = root.join("meta");
-        fs::create_dir_all(&blobs).await.map_err(|e| io_err("create blob dir", e))?;
-        fs::create_dir_all(&meta).await.map_err(|e| io_err("create meta dir", e))?;
+        fs::create_dir_all(&blobs)
+            .await
+            .map_err(|e| io_err("create blob dir", e))?;
+        fs::create_dir_all(&meta)
+            .await
+            .map_err(|e| io_err("create meta dir", e))?;
 
         // Write oci-layout marker if missing.
         let oci_layout = root.join("oci-layout");
@@ -164,10 +168,7 @@ impl ArtifactStore for LocalArtifactStore {
         Ok(ArtifactRef::new(digest))
     }
 
-    async fn get(
-        &self,
-        digest: &str,
-    ) -> Result<Option<Pin<Box<dyn tokio::io::AsyncRead + Send>>>> {
+    async fn get(&self, digest: &str) -> Result<Option<Pin<Box<dyn tokio::io::AsyncRead + Send>>>> {
         if self.gc_expired(digest).await? {
             return Ok(None);
         }
@@ -260,8 +261,14 @@ mod tests {
         let store = LocalArtifactStore::open(tmp.path()).await.unwrap();
         let data = make_test_tar_gz();
 
-        let a1 = store.put(Box::pin(Cursor::new(data.clone()))).await.unwrap();
-        let a2 = store.put(Box::pin(Cursor::new(data.clone()))).await.unwrap();
+        let a1 = store
+            .put(Box::pin(Cursor::new(data.clone())))
+            .await
+            .unwrap();
+        let a2 = store
+            .put(Box::pin(Cursor::new(data.clone())))
+            .await
+            .unwrap();
         assert_eq!(a1.digest, a2.digest);
     }
 
@@ -269,11 +276,13 @@ mod tests {
     async fn missing_returns_none() {
         let tmp = tempfile::tempdir().unwrap();
         let store = LocalArtifactStore::open(tmp.path()).await.unwrap();
-        assert!(store
-            .get("sha256:0000000000000000000000000000000000000000000000000000000000000000")
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            store
+                .get("sha256:0000000000000000000000000000000000000000000000000000000000000000")
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[tokio::test]

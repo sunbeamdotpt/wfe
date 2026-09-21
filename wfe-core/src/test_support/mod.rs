@@ -1,5 +1,10 @@
 /// Testcontainers-backed service helpers (Postgres, Valkey) for integration
 /// suites; resolves the workspace Docker daemon, remote TLS included.
+///
+/// Gated on the feature (not `test`): the optional testcontainers/rustls
+/// dependencies only exist when `test-support` is enabled, while this module
+/// tree also compiles for `cargo test -p wfe-core` without it.
+#[cfg(feature = "test-support")]
 pub mod containers;
 /// Fixtures.
 pub mod fixtures;

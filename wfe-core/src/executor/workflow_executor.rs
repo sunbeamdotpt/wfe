@@ -7,10 +7,10 @@ use super::condition;
 use super::error_handler;
 use super::result_processor;
 use super::step_registry::StepRegistry;
+use crate::artifact_volume::ArtifactVolume;
 use crate::models::{
     Event, ExecutionError, PointerStatus, QueueType, WorkflowDefinition, WorkflowStatus,
 };
-use crate::artifact_volume::ArtifactVolume;
 use crate::traits::{
     ArtifactStore, DistributedLockProvider, LifecyclePublisher, PersistenceProvider, QueueProvider,
     SearchIndex, StepExecutionContext,

@@ -67,7 +67,7 @@ mod test_helpers {
     use crate::traits::step::StepExecutionContext;
     use tokio_util::sync::CancellationToken;
 
-/// Make context.
+    /// Make context.
     pub fn make_context<'a>(
         pointer: &'a ExecutionPointer,
         step: &'a WorkflowStep,
@@ -90,12 +90,12 @@ mod test_helpers {
         }
     }
 
-/// Default workflow.
+    /// Default workflow.
     pub fn default_workflow() -> WorkflowInstance {
         WorkflowInstance::new("test-workflow", 1, serde_json::json!({}))
     }
 
-/// Default step.
+    /// Default step.
     pub fn default_step() -> WorkflowStep {
         WorkflowStep::new(0, "TestStep")
     }

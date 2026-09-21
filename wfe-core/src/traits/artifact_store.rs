@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
-use crate::models::ArtifactRef;
 use crate::Result;
+use crate::models::ArtifactRef;
 
 /// A content-addressed store for OCI-compatible artifact blobs.
 ///
@@ -19,18 +19,12 @@ pub trait ArtifactStore: Send + Sync + fmt::Debug {
     ///
     /// The implementation should compute the digest while streaming and
     /// verify that the stored bytes match.
-    async fn put(
-        &self,
-        reader: Pin<Box<dyn tokio::io::AsyncRead + Send>>,
-    ) -> Result<ArtifactRef>;
+    async fn put(&self, reader: Pin<Box<dyn tokio::io::AsyncRead + Send>>) -> Result<ArtifactRef>;
 
     /// Open a blob for reading.
     ///
     /// Returns `None` if the digest is not known to this store.
-    async fn get(
-        &self,
-        digest: &str,
-    ) -> Result<Option<Pin<Box<dyn tokio::io::AsyncRead + Send>>>>;
+    async fn get(&self, digest: &str) -> Result<Option<Pin<Box<dyn tokio::io::AsyncRead + Send>>>>;
 
     /// Check existence without opening.
     async fn exists(&self, digest: &str) -> bool;

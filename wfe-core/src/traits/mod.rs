@@ -41,6 +41,7 @@ pub mod service;
 /// The core step trait and execution context.
 pub mod step;
 
+pub use artifact_store::ArtifactStore;
 pub use lifecycle::LifecyclePublisher;
 pub use lock::DistributedLockProvider;
 pub use log_sink::{LogChunk, LogSink, LogStreamType};
@@ -54,4 +55,3 @@ pub use registry::WorkflowRegistry;
 pub use search::{Page, SearchFilter, SearchIndex, WorkflowSearchResult};
 pub use service::ServiceProvider;
 pub use step::{HostContext, StepBody, StepExecutionContext, WorkflowData};
-pub use artifact_store::ArtifactStore;

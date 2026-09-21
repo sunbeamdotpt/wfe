@@ -40,12 +40,12 @@ mod duration_millis {
 
     use serde::{Deserialize, Deserializer, Serializer};
 
-/// Serialize.
+    /// Serialize.
     pub fn serialize<S: Serializer>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_u64(duration.as_millis() as u64)
     }
 
-/// Deserialize.
+    /// Deserialize.
     pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Duration, D::Error> {
         let millis = u64::deserialize(deserializer)?;
         Ok(Duration::from_millis(millis))

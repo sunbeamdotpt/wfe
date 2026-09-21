@@ -2,12 +2,12 @@ use async_trait::async_trait;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
+use super::persistence::PersistenceProvider;
 use crate::artifact_volume::{ArtifactVolume, ArtifactVolumePackage};
 use crate::models::{
     ExecutionPointer, ExecutionResult, WorkflowDefinition, WorkflowInstance, WorkflowStep,
 };
 use crate::traits::ArtifactStore;
-use super::persistence::PersistenceProvider;
 
 /// Marker trait for all data types that flow between workflow steps.
 /// Anything that is serializable and deserializable qualifies.
@@ -144,7 +144,10 @@ pub trait StepBody: Send + Sync {
     /// Called by the executor loop **after** [`run`](Self::run) completes,
     /// regardless of success or failure.
     /// Default implementation is a no-op.
-    async fn unmount_artifacts(&mut self, _context: &StepExecutionContext<'_>) -> crate::Result<()> {
+    async fn unmount_artifacts(
+        &mut self,
+        _context: &StepExecutionContext<'_>,
+    ) -> crate::Result<()> {
         Ok(())
     }
 }

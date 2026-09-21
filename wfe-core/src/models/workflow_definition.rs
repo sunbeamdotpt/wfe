@@ -122,12 +122,19 @@ impl WorkflowDefinition {
     pub fn write_dot<W: std::fmt::Write>(&self, w: &mut W) -> std::fmt::Result {
         let display = self.display_name();
         writeln!(w, "digraph {} {{", dot_escape_id(&self.id))?;
-        writeln!(w, "    label={}", dot_escape(&format!("{} v{}", display, self.version)))?;
+        writeln!(
+            w,
+            "    label={}",
+            dot_escape(&format!("{} v{}", display, self.version))
+        )?;
         writeln!(w, "    labelloc=t")?;
         writeln!(w, "    fontsize=14")?;
         writeln!(w, "    fontname=\"Helvetica-Bold\"")?;
         writeln!(w, "    rankdir=TB")?;
-        writeln!(w, "    graph [fontname=\"Helvetica\", fontsize=10, bgcolor=\"white\", margin=20]")?;
+        writeln!(
+            w,
+            "    graph [fontname=\"Helvetica\", fontsize=10, bgcolor=\"white\", margin=20]"
+        )?;
         writeln!(
             w,
             "    node [fontname=\"Helvetica\", shape=box, style=\"rounded,filled\", fillcolor=\"#f3f4f6\", fontsize=9, penwidth=1.0]"
@@ -228,10 +235,7 @@ impl WorkflowDefinition {
 
         // Name (if set)
         if let Some(ref name) = step.name {
-            lines.push(format!(
-                "<TR><TD><B>{}</B></TD></TR>",
-                html_escape(name)
-            ));
+            lines.push(format!("<TR><TD><B>{}</B></TD></TR>", html_escape(name)));
         }
 
         // Type (always shown, cleaned up)
@@ -354,7 +358,10 @@ impl WorkflowStep {
 
 /// Escape a string for use inside DOT double-quoted identifiers / labels.
 fn dot_escape(s: &str) -> String {
-    let escaped = s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n");
+    let escaped = s
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n");
     format!("\"{}\"", escaped)
 }
 
@@ -627,13 +634,11 @@ mod tests {
     fn dot_condition_badge() {
         let mut def = WorkflowDefinition::new("conditional", 1);
         let mut step = WorkflowStep::new(0, "MaybeRun");
-        step.when = Some(StepCondition::Comparison(
-            crate::models::FieldComparison {
-                field: ".skip".to_string(),
-                operator: crate::models::ComparisonOp::Equals,
-                value: Some(serde_json::json!(false)),
-            },
-        ));
+        step.when = Some(StepCondition::Comparison(crate::models::FieldComparison {
+            field: ".skip".to_string(),
+            operator: crate::models::ComparisonOp::Equals,
+            value: Some(serde_json::json!(false)),
+        }));
         def.steps.push(step);
 
         let dot = def.to_dot();
@@ -658,8 +663,14 @@ mod tests {
 
     #[test]
     fn clean_type_name_strips_prefixes() {
-        assert_eq!(clean_type_name("wfe_core::primitives::sequence::SequenceStep"), "SequenceStep");
-        assert_eq!(clean_type_name("crate::workflows::steps::EnsureCilium"), "EnsureCilium");
+        assert_eq!(
+            clean_type_name("wfe_core::primitives::sequence::SequenceStep"),
+            "SequenceStep"
+        );
+        assert_eq!(
+            clean_type_name("crate::workflows::steps::EnsureCilium"),
+            "EnsureCilium"
+        );
         assert_eq!(clean_type_name("MyCustomStep"), "MyCustomStep");
         assert_eq!(clean_type_name("a::b::c::DeepStep"), "DeepStep");
     }

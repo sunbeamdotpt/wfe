@@ -49,24 +49,29 @@ impl ArtifactVolume {
         let mut artifacts = HashMap::with_capacity(inputs.len());
 
         for name in inputs.keys() {
-            let value = data_obj
-                .get(name)
-                .ok_or_else(|| WfeError::StepExecution(format!("input '{name}' not found in workflow data")))?;
+            let value = data_obj.get(name).ok_or_else(|| {
+                WfeError::StepExecution(format!("input '{name}' not found in workflow data"))
+            })?;
 
-            let digest = parse_artifact_ref(value)
-                .ok_or_else(|| WfeError::StepExecution(format!("input '{name}' is not an artifact reference")))?;
+            let digest = parse_artifact_ref(value).ok_or_else(|| {
+                WfeError::StepExecution(format!("input '{name}' is not an artifact reference"))
+            })?;
 
             let reader = store
                 .get(&digest)
                 .await
-                .map_err(|e| WfeError::StepExecution(format!("failed to get artifact '{name}': {e}")))?
+                .map_err(|e| {
+                    WfeError::StepExecution(format!("failed to get artifact '{name}': {e}"))
+                })?
                 .ok_or_else(|| WfeError::StepExecution(format!("artifact not found: {digest}")))?;
 
             let mut bytes = Vec::new();
             let mut reader = reader;
             tokio::io::AsyncReadExt::read_to_end(&mut reader, &mut bytes)
                 .await
-                .map_err(|e| WfeError::StepExecution(format!("failed to read artifact '{name}': {e}")))?;
+                .map_err(|e| {
+                    WfeError::StepExecution(format!("failed to read artifact '{name}': {e}"))
+                })?;
 
             artifacts.insert(name.clone(), Bytes::from(bytes));
         }
@@ -89,10 +94,9 @@ impl ArtifactVolume {
 
         for (name, value) in data_obj {
             if let Some(digest) = parse_artifact_ref(value) {
-                let reader = store
-                    .get(&digest)
-                    .await
-                    .map_err(|e| WfeError::StepExecution(format!("failed to get artifact '{name}': {e}")))?;
+                let reader = store.get(&digest).await.map_err(|e| {
+                    WfeError::StepExecution(format!("failed to get artifact '{name}': {e}"))
+                })?;
 
                 if let Some(reader) = reader {
                     let mut bytes = Vec::new();
@@ -100,7 +104,9 @@ impl ArtifactVolume {
                     tokio::io::AsyncReadExt::read_to_end(&mut reader, &mut bytes)
                         .await
                         .map_err(|e| {
-                            WfeError::StepExecution(format!("failed to read artifact '{name}': {e}"))
+                            WfeError::StepExecution(format!(
+                                "failed to read artifact '{name}': {e}"
+                            ))
                         })?;
                     artifacts.insert(name.clone(), Bytes::from(bytes));
                 }
@@ -137,7 +143,9 @@ impl ArtifactVolume {
             .get(name)
             .ok_or_else(|| WfeError::StepExecution(format!("artifact '{name}' not in volume")))?;
         crate::local_artifact_store::extract_artifact_to_dir(std::io::Cursor::new(bytes), dest)
-            .map_err(|e| WfeError::StepExecution(format!("failed to extract artifact '{name}': {e}")))
+            .map_err(|e| {
+                WfeError::StepExecution(format!("failed to extract artifact '{name}': {e}"))
+            })
     }
 
     /// Extract all artifacts to subdirectories under `dest`, returning
@@ -180,8 +188,9 @@ impl ArtifactVolume {
                 .entries()
                 .map_err(|e| WfeError::StepExecution(format!("failed to read tar entries: {e}")))?
             {
-                let mut entry = entry
-                    .map_err(|e| WfeError::StepExecution(format!("failed to read tar entry: {e}")))?;
+                let mut entry = entry.map_err(|e| {
+                    WfeError::StepExecution(format!("failed to read tar entry: {e}"))
+                })?;
                 let path = entry
                     .path()
                     .map_err(|e| WfeError::StepExecution(format!("invalid tar path: {e}")))?;
@@ -192,17 +201,20 @@ impl ArtifactVolume {
                     .ok_or_else(|| WfeError::StepExecution("invalid utf-8 path".to_string()))?;
 
                 let mut data = Vec::new();
-                std::io::Read::read_to_end(&mut entry, &mut data)
-                    .map_err(|e| WfeError::StepExecution(format!("failed to read entry data: {e}")))?;
+                std::io::Read::read_to_end(&mut entry, &mut data).map_err(|e| {
+                    WfeError::StepExecution(format!("failed to read entry data: {e}"))
+                })?;
 
                 let mut header = entry.header().clone();
-                header.set_path(new_path_str).map_err(|e| {
-                    WfeError::StepExecution(format!("failed to set tar path: {e}"))
-                })?;
+                header
+                    .set_path(new_path_str)
+                    .map_err(|e| WfeError::StepExecution(format!("failed to set tar path: {e}")))?;
 
                 tar_out
                     .append(&header, std::io::Cursor::new(data))
-                    .map_err(|e| WfeError::StepExecution(format!("failed to append tar entry: {e}")))?;
+                    .map_err(|e| {
+                        WfeError::StepExecution(format!("failed to append tar entry: {e}"))
+                    })?;
             }
 
             tar_out
@@ -229,7 +241,9 @@ impl ArtifactVolume {
                 header.set_cksum();
                 tar_out
                     .append(&header, std::io::Cursor::new(bytes))
-                    .map_err(|e| WfeError::StepExecution(format!("failed to append package entry: {e}")))?;
+                    .map_err(|e| {
+                        WfeError::StepExecution(format!("failed to append package entry: {e}"))
+                    })?;
             }
             tar_out
                 .finish()
@@ -256,8 +270,9 @@ impl ArtifactVolumePackage {
             .entries()
             .map_err(|e| WfeError::StepExecution(format!("failed to read package entries: {e}")))?
         {
-            let mut entry = entry
-                .map_err(|e| WfeError::StepExecution(format!("failed to read package entry: {e}")))?;
+            let mut entry = entry.map_err(|e| {
+                WfeError::StepExecution(format!("failed to read package entry: {e}"))
+            })?;
             let path = entry
                 .path()
                 .map_err(|e| WfeError::StepExecution(format!("invalid package path: {e}")))?;
@@ -268,8 +283,9 @@ impl ArtifactVolumePackage {
                 .to_string();
 
             let mut bytes = Vec::new();
-            std::io::Read::read_to_end(&mut entry, &mut bytes)
-                .map_err(|e| WfeError::StepExecution(format!("failed to read package entry: {e}")))?;
+            std::io::Read::read_to_end(&mut entry, &mut bytes).map_err(|e| {
+                WfeError::StepExecution(format!("failed to read package entry: {e}"))
+            })?;
             artifacts.insert(name, Bytes::from(bytes));
         }
 

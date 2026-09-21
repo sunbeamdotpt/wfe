@@ -36,6 +36,10 @@ pub mod workflow_definition;
 /// The mutable runtime instance of a workflow.
 pub mod workflow_instance;
 
+pub use artifact::{
+    ARTIFACT_REF_KEY, ArtifactBlob, ArtifactRef, MEDIA_TYPE_OCI_LAYER_GZIP,
+    MEDIA_TYPE_OCI_LAYER_TAR, artifact_ref_value, is_artifact_ref, parse_artifact_ref,
+};
 pub use condition::{ComparisonOp, FieldComparison, StepCondition};
 pub use error_behavior::ErrorBehavior;
 pub use event::{Event, EventSubscription};
@@ -53,10 +57,6 @@ pub use service::{
 pub use status::{PointerStatus, WorkflowStatus};
 pub use workflow_definition::{SharedVolume, StepOutcome, WorkflowDefinition, WorkflowStep};
 pub use workflow_instance::WorkflowInstance;
-pub use artifact::{
-    ArtifactBlob, ArtifactRef, ARTIFACT_REF_KEY, MEDIA_TYPE_OCI_LAYER_GZIP,
-    MEDIA_TYPE_OCI_LAYER_TAR, artifact_ref_value, is_artifact_ref, parse_artifact_ref,
-};
 
 /// Serde helper for `Option<Duration>` as milliseconds.
 pub(crate) mod option_duration_millis {
@@ -64,7 +64,7 @@ pub(crate) mod option_duration_millis {
 
     use serde::{Deserialize, Deserializer, Serializer};
 
-/// Serialize.
+    /// Serialize.
     pub fn serialize<S: Serializer>(
         duration: &Option<Duration>,
         serializer: S,
@@ -75,7 +75,7 @@ pub(crate) mod option_duration_millis {
         }
     }
 
-/// Deserialize.
+    /// Deserialize.
     pub fn deserialize<'de, D: Deserializer<'de>>(
         deserializer: D,
     ) -> Result<Option<Duration>, D::Error> {
@@ -90,12 +90,12 @@ pub(crate) mod duration_millis {
 
     use serde::{Deserialize, Deserializer, Serializer};
 
-/// Serialize.
+    /// Serialize.
     pub fn serialize<S: Serializer>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_u64(duration.as_millis() as u64)
     }
 
-/// Deserialize.
+    /// Deserialize.
     pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Duration, D::Error> {
         let millis = u64::deserialize(deserializer)?;
         Ok(Duration::from_millis(millis))
