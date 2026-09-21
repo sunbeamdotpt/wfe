@@ -108,15 +108,22 @@ Indexes are created on `next_execution`, `status`, `(event_name, event_key)`, `i
 
 ## Testing
 
-Requires a running PostgreSQL instance. The default test connection string is `postgres://wfe:wfe@localhost:5432/wfe_test`; override it with `WFE_PG_TEST_URL` when port 5432 is occupied by another PostgreSQL (for example a native install shadowing a Docker-published one):
+Self-contained: each suite starts a PostgreSQL testcontainer on whatever
+Docker endpoint the environment resolves (a remote TLS daemon via
+`DOCKER_HOST` included; the active `docker` context is mirrored when the
+variable is unset). Under nextest each test runs in its own process and
+therefore its own container — a few seconds per test against a remote daemon.
+To reuse a warm server instead, set `WFE_PG_TEST_URL`:
 
 ```sh
-docker run -d --name wfe-pg -e POSTGRES_USER=wfe -e POSTGRES_PASSWORD=wfe \
-  -e POSTGRES_DB=wfe_test -p 5432:5432 postgres:16
 cargo nextest run -p wfe-postgres
+# or, against an existing server:
+WFE_PG_TEST_URL=postgres://wfe:wfe@localhost:5432/wfe_test cargo nextest run -p wfe-postgres
 ```
 
-The suite must run serialized (shared database state); the repository's nextest config in `.config/nextest.toml` already does this, so prefer `cargo nextest run` over plain `cargo test`.
+The suite must run serialized (shared database state); the repository's nextest
+config in `.config/nextest.toml` already does this, so prefer `cargo nextest
+run` over plain `cargo test`.
 
 ## License
 

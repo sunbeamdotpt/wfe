@@ -24,4 +24,5 @@ pretty_assertions = { workspace = true }
 rstest = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 tokio-stream = { workspace = true }
+testcontainers = { workspace = true }
 uuid = { workspace = true }

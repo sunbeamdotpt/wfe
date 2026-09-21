@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **wfe-core**: `test-support` now ships testcontainers helpers
+  (`test_support::containers`): Postgres and Valkey builders that start on
+  whatever Docker endpoint the environment resolves — the workspace's remote
+  TLS daemon included, with the active `docker` context mirrored into
+  `DOCKER_HOST`/`DOCKER_CERT_PATH` when unset, and the rustls crypto provider
+  pinned (the dependency graph compiles both backends).
 - **wfe-postgres**: `PostgresOptions` (via `PostgresPersistenceProvider::connect`
   and `from_pool_with`) to choose the schema WFE stores to (default `wfc`) and a
   table-name prefix, so the engine can live inside an application's own
@@ -30,11 +36,10 @@ All notable changes to this project will be documented in this file.
   idempotent. The migration history is re-recorded inside the configured schema
   (`wfc._sqlx_migrations`); a stale `public._sqlx_migrations` row from a
   previous wfe-postgres version can be dropped, but nothing reads it.
-- **wfe-postgres**: Tests accept a `WFE_PG_TEST_URL` override for the
-  connection string.
-- **wfe-valkey**: Tests accept a `WFE_VALKEY_TEST_URL` override for the
-  connection string (Valkey may live anywhere, e.g. published on a remote
-  Docker daemon).
+- **wfe-postgres**, **wfe-valkey**: Integration suites are self-contained —
+  each starts its service as a testcontainer on the resolved Docker endpoint
+  (remote TLS daemon included). `WFE_PG_TEST_URL` / `WFE_VALKEY_TEST_URL`
+  override the connection string to reuse a warm server.
 
 ## [1.11.1] - 2026-08-20
 

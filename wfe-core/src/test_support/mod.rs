@@ -1,3 +1,6 @@
+/// Testcontainers-backed service helpers (Postgres, Valkey) for integration
+/// suites; resolves the workspace Docker daemon, remote TLS included.
+pub mod containers;
 /// Fixtures.
 pub mod fixtures;
 /// In memory lifecycle.

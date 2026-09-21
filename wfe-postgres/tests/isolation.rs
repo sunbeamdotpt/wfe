@@ -3,18 +3,12 @@
 //! bookkeeping kept inside the same schema so it cannot collide with the
 //! application's `_sqlx_migrations` in `public`.
 //!
-//! Requires a running PostgreSQL at
-//! `postgres://wfe:wfe@localhost:5432/wfe_test`.
+//! Runs against a `WFE_PG_TEST_URL` override or a Postgres testcontainer.
+mod common;
+
 use sqlx::Row;
 use wfe_core::persistence_suite;
 use wfe_core::traits::{PersistenceProvider, WorkflowRepository};
-
-/// Override with WFE_PG_TEST_URL when localhost:5432 is occupied by another
-/// PostgreSQL (see tests/persistence.rs).
-fn database_url() -> String {
-    std::env::var("WFE_PG_TEST_URL")
-        .unwrap_or_else(|_| "postgres://wfe:wfe@localhost:5432/wfe_test".to_string())
-}
 
 /// Distinct schema + prefix so the suite proves full isolation from the
 /// default `wfc` layout exercised by `tests/persistence.rs`.
@@ -24,9 +18,9 @@ const TEST_PREFIX: &str = "wfe_";
 async fn make_isolated_provider() -> wfe_postgres::PostgresPersistenceProvider {
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)
-        .connect(&database_url())
+        .connect(&common::database_url().await)
         .await
-        .expect("Failed to connect to PostgreSQL. Is the database running?");
+        .expect("Failed to connect to PostgreSQL testcontainer");
 
     let provider = wfe_postgres::PostgresPersistenceProvider::from_pool_with(
         pool,
@@ -46,9 +40,11 @@ persistence_suite!(make_isolated_provider);
 
 #[tokio::test]
 async fn tables_land_in_custom_schema_with_prefix() {
+    let _ = make_isolated_provider().await;
+
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(1)
-        .connect(&database_url())
+        .connect(&common::database_url().await)
         .await
         .unwrap();
 
@@ -119,7 +115,7 @@ async fn prefixed_store_is_usable_end_to_end() {
     // Data is really in the prefixed table, not somewhere else.
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(1)
-        .connect(&database_url())
+        .connect(&common::database_url().await)
         .await
         .unwrap();
     let row = sqlx::query(&format!(

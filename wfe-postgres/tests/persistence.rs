@@ -1,19 +1,16 @@
+mod common;
+
 use wfe_core::persistence_suite;
 use wfe_core::traits::PersistenceProvider;
 
-/// Override with WFE_PG_TEST_URL when localhost:5432 is occupied by another
-/// PostgreSQL (e.g. a native install shadowing a Docker-published one).
-fn database_url() -> String {
-    std::env::var("WFE_PG_TEST_URL")
-        .unwrap_or_else(|_| "postgres://wfe:wfe@localhost:5432/wfe_test".to_string())
-}
-
 async fn make_provider() -> wfe_postgres::PostgresPersistenceProvider {
+    let url = common::database_url().await;
+
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)
-        .connect(&database_url())
+        .connect(&url)
         .await
-        .expect("Failed to connect to PostgreSQL. Is the database running?");
+        .expect("Failed to connect to PostgreSQL testcontainer");
 
     let provider = wfe_postgres::PostgresPersistenceProvider::from_pool(pool);
     provider.ensure_store_exists().await.unwrap();
@@ -32,9 +29,9 @@ async fn migration_tracking_lands_inside_wfc_schema() {
 
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(1)
-        .connect(&database_url())
+        .connect(&common::database_url().await)
         .await
-        .expect("Failed to connect to PostgreSQL. Is the database running?");
+        .expect("Failed to connect to PostgreSQL testcontainer");
 
     let in_wfc: (i64,) = sqlx::query_as(
         "SELECT COUNT(*) FROM information_schema.tables \

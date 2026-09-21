@@ -1,30 +1,16 @@
+mod common;
+
 use std::time::Duration;
 
 use wfe_core::models::{LifecycleEvent, LifecycleEventType};
 use wfe_core::traits::LifecyclePublisher;
 
-/// Override with WFE_VALKEY_TEST_URL when localhost:6379 is occupied or the
-/// Valkey server runs elsewhere (e.g. published on a remote Docker daemon).
-fn valkey_url() -> String {
-    std::env::var("WFE_VALKEY_TEST_URL")
-        .unwrap_or_else(|_| "redis://localhost:6379".to_string())
-}
-
-fn redis_available() -> bool {
-    redis::Client::open(valkey_url())
-        .and_then(|c| c.get_connection())
-        .is_ok()
-}
-
 #[tokio::test]
 async fn publish_subscribe_round_trip() {
-    if !redis_available() {
-        eprintln!("Skipping test: Valkey/Redis not available");
-        return;
-    }
+    let url = common::valkey_url().await;
 
     let prefix = format!("wfe_test_{}", uuid::Uuid::new_v4().simple());
-    let publisher = wfe_valkey::ValkeyLifecyclePublisher::new(&valkey_url(), &prefix)
+    let publisher = wfe_valkey::ValkeyLifecyclePublisher::new(&url, &prefix)
         .await
         .unwrap();
 
@@ -32,7 +18,7 @@ async fn publish_subscribe_round_trip() {
     let channel = format!("{}:lifecycle:{}", prefix, instance_id);
 
     // Set up a subscriber in a background task.
-    let sub_client = redis::Client::open(valkey_url()).unwrap();
+    let sub_client = redis::Client::open(url.as_str()).unwrap();
     let mut pubsub = sub_client.get_async_pubsub().await.unwrap();
     pubsub.subscribe(&channel).await.unwrap();
 
@@ -68,19 +54,16 @@ async fn publish_subscribe_round_trip() {
 
 #[tokio::test]
 async fn publish_to_all_channel() {
-    if !redis_available() {
-        eprintln!("Skipping test: Valkey/Redis not available");
-        return;
-    }
+    let url = common::valkey_url().await;
 
     let prefix = format!("wfe_test_{}", uuid::Uuid::new_v4().simple());
-    let publisher = wfe_valkey::ValkeyLifecyclePublisher::new(&valkey_url(), &prefix)
+    let publisher = wfe_valkey::ValkeyLifecyclePublisher::new(&url, &prefix)
         .await
         .unwrap();
 
     let all_channel = format!("{}:lifecycle:all", prefix);
 
-    let sub_client = redis::Client::open(valkey_url()).unwrap();
+    let sub_client = redis::Client::open(url.as_str()).unwrap();
     let mut pubsub = sub_client.get_async_pubsub().await.unwrap();
     pubsub.subscribe(&all_channel).await.unwrap();
 

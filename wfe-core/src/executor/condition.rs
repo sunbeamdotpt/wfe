@@ -724,7 +724,7 @@ mod tests {
 
     #[test]
     fn float_comparison() {
-        let data = json!({"score": 3.14});
+        let data = json!({"score": 3.15});
         assert!(evaluate(&comp(".score", ComparisonOp::Gt, Some(json!(3.0))), &data).unwrap());
         assert!(evaluate(&comp(".score", ComparisonOp::Lt, Some(json!(4.0))), &data).unwrap());
         assert!(

@@ -62,14 +62,16 @@ Each provider creates its own multiplexed connection. The prefix parameter names
 
 ## Testing
 
-Requires a running Valkey instance. Use the project docker-compose:
+Self-contained: each suite starts a Valkey testcontainer on whatever Docker
+endpoint the environment resolves (a remote TLS daemon via `DOCKER_HOST`
+included; the active `docker` context is mirrored when the variable is unset).
 
 ```sh
-docker compose up -d valkey
-cargo test -p wfe-valkey
+cargo nextest run -p wfe-valkey
 ```
 
-Default test connection: `redis://127.0.0.1:6379`
+To reuse a warm server instead of a per-run container, set
+`WFE_VALKEY_TEST_URL` (e.g. `redis://alpha-0...:16379`).
 
 ## License
 
