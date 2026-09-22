@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- **wfe-postgres**: `ensure_store_exists` no longer leaves `search_path`
+  pointing at the WFE schema on the pooled connection it migrated through.
+  With a pool shared with the host application (`from_pool`) the next borrower
+  had its unqualified queries silently redirected into WFE's schema. The
+  previous value is captured before migrating and restored afterwards —
+  even when the migration itself fails — preserving any `after_connect`
+  search_path customization the application set up.
+
 ## [1.11.2] - 2026-09-21
 
 ### Added

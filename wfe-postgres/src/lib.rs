@@ -1317,12 +1317,24 @@ impl PersistenceProvider for PostgresPersistenceProvider {
         // application's own _sqlx_migrations (which lives wherever the app's
         // search_path points, usually public).
         let mut conn = self.pool.acquire().await.map_err(Self::map_sqlx_err)?;
+
+        // The connection returns to the pool after migrating — possibly a host
+        // application's pool, via `from_pool`. Save the previous search_path
+        // and restore it below, or every later borrower's unqualified queries
+        // silently resolve against WFE's schema. sqlx has no release hook,
+        // and `RESET` would discard any after_connect customization, so the
+        // exact previous value is restored instead.
+        let previous_search_path: String = sqlx::query_scalar("SHOW search_path")
+            .fetch_one(&mut *conn)
+            .await
+            .map_err(Self::map_sqlx_err)?;
+
         sqlx::query(&format!("SET search_path TO \"{}\"", self.options.schema))
             .execute(&mut *conn)
             .await
             .map_err(Self::map_sqlx_err)?;
 
-        if self.options.table_prefix.is_empty() {
+        let migrated = if self.options.table_prefix.is_empty() {
             // `run_direct` rather than `run`: `&mut PgConnection` trips the
             // "implementation of `Acquire` is not general enough" error through
             // `run`, which is precisely why sqlx exposes `run_direct`.
@@ -1334,11 +1346,25 @@ impl PersistenceProvider for PostgresPersistenceProvider {
                         "migration failed in schema {:?}: {e}",
                         self.options.schema
                     ))
-                })?;
+                })
         } else {
-            Self::run_prefixed_migrations(&mut conn, &self.options.table_prefix).await?;
+            Self::run_prefixed_migrations(&mut conn, &self.options.table_prefix).await
+        };
+
+        // Restore even when the migration failed; the saved value came from
+        // the server itself, so it is valid SET syntax as-is. A restore
+        // failure only surfaces when the migration itself succeeded.
+        if let Err(e) = sqlx::query(&format!("SET search_path TO {previous_search_path}"))
+            .execute(&mut *conn)
+            .await
+        {
+            if migrated.is_ok() {
+                return Err(Self::map_sqlx_err(e));
+            }
+            tracing::warn!("failed to restore search_path after failed migration: {e}");
         }
-        Ok(())
+
+        migrated
     }
 }
 
